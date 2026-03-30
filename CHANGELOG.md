@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.2] - 2026-03-30
+
+## What's Changed
+
+### Bug Fixes
+- fix(plugin): remove hardcoded hook paths from settings.json — fixes "notify.sh not found" error on Stop events for marketplace plugin installs
+
+### Other Changes
+- chore(plugin): migrate all references from traczewskim to nexus-a1
+- move git status/diff into git-operator, simplify commit skill
+
+**Full Changelog**: https://github.com/traczewskim/claude/compare/v0.1.0-rc.7...v1.0.2
+
 ## [1.0.1] - 2026-03-30
 
 ## What's Changed
