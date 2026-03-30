@@ -6,7 +6,7 @@ A Claude Code plugin covering the full development lifecycle — from requiremen
 
 ```bash
 # Add the marketplace
-/plugin marketplace add traczewskim/claude-skills
+/plugin marketplace add nexus-a1/claude-skills
 
 # Install the plugin
 /plugin install nexus@claude-skills

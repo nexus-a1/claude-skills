@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.1] - 2026-03-30
+
+## What's Changed
+
+### Fixes
+- Migrate all plugin references from `traczewskim/claude-skills` to `nexus-a1/claude-skills` as canonical distribution repo
+- Update README install instructions, marketplace.json, plugin.json, and docs/installation.md
+
+**Full Changelog**: https://github.com/traczewskim/claude/compare/v1.0.0...v1.0.1
+
 ## [1.0.0] - 2026-03-30
 
 ## What's Changed
