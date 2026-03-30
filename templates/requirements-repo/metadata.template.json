@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Template for requirements metadata. Copy this structure when archiving requirements.",
+
+  "id": "PROJECT-123",
+  "title": "Feature title (short, descriptive)",
+  "description": "Brief description of what this feature does",
+  "status": "completed",
+  "project": "project-name",
+
+  "dates": {
+    "created": "YYYY-MM-DD",
+    "completed": "YYYY-MM-DD",
+    "archived": "YYYY-MM-DD"
+  },
+
+  "tags": [
+    "domain-tag",
+    "technology-tag",
+    "feature-type"
+  ],
+
+  "components": [
+    "ComponentName",
+    "ServiceName",
+    "ControllerName"
+  ],
+
+  "apis": {
+    "added": [
+      "POST /api/resource",
+      "GET /api/resource/{id}"
+    ],
+    "modified": [
+      "GET /api/existing-endpoint"
+    ],
+    "removed": []
+  },
+
+  "database": {
+    "tables_affected": [
+      "table_name",
+      "another_table"
+    ],
+    "migrations": [
+      "YYYY_MM_DD_create_table.php",
+      "YYYY_MM_DD_add_columns.php"
+    ],
+    "schema_changes": [
+      "Added column: table.column_name",
+      "Modified index: table.index_name"
+    ]
+  },
+
+  "external_integrations": [
+    "AWS S3",
+    "Third-party API name",
+    "Library name"
+  ],
+
+  "related_tickets": [
+    "PROJECT-100",
+    "PROJECT-456"
+  ],
+
+  "dependencies": {
+    "blocks": [],
+    "blocked_by": [],
+    "relates_to": [
+      "PROJECT-789"
+    ]
+  },
+
+  "branch": "feature/PROJECT-123",
+  "pr_url": "https://github.com/org/repo/pull/123",
+
+  "agents_used": [
+    "context-builder",
+    "archivist",
+    "archaeologist",
+    "data-modeler",
+    "business-analyst"
+  ],
+
+  "implementation": {
+    "approach": "Brief description of implementation approach chosen",
+    "patterns_used": [
+      "Design pattern 1",
+      "Design pattern 2"
+    ],
+    "technologies": [
+      "Technology 1",
+      "Framework/Library used"
+    ]
+  },
+
+  "notes": [
+    "Important decision: why we chose approach X over Y",
+    "Gotcha: be careful of Z when implementing similar features",
+    "Performance consideration: optimized for large datasets"
+  ]
+}

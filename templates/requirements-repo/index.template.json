@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Searchable index for requirements repository. Maintained by archivist agent.",
+
+  "version": "1.0",
+  "last_updated": "YYYY-MM-DDT10:00:00Z",
+  "total_tickets": 0,
+
+  "tickets": [
+    {
+      "id": "PROJECT-123",
+      "title": "Feature title",
+      "description": "Brief description",
+      "status": "completed",
+      "project": "project-name",
+      "date": "YYYY-MM-DD",
+      "tags": ["tag1", "tag2", "tag3"],
+      "components": ["Component1", "Component2"],
+      "apis": ["POST /api/resource", "GET /api/resource/{id}"],
+      "path": "PROJECT-123/",
+      "archived": false
+    }
+  ],
+
+  "tags": {
+    "export": 3,
+    "api": 15,
+    "database": 8,
+    "authentication": 5
+  },
+
+  "components": {
+    "UserController": 5,
+    "AuthService": 3,
+    "ExportService": 2
+  },
+
+  "projects": {
+    "main-app": 25,
+    "admin-portal": 10,
+    "api-service": 8
+  }
+}

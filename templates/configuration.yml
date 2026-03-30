@@ -1,0 +1,233 @@
+# =============================================================================
+# Claude Skills — Project Configuration
+# =============================================================================
+#
+# Per-project configuration for skills and agents.
+# Place this file at: .claude/configuration.yml
+#
+# Everything is optional — skills fall back to sensible defaults when absent.
+# Use /configuration-init for an interactive setup wizard.
+#
+# Full documentation: docs/installation.md (Per-Project Configuration section)
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Execution Mode
+# -----------------------------------------------------------------------------
+# Controls how multi-agent skills run parallel research phases.
+#
+# Two modes available:
+#   "team" (default) — agents run as teammates via TeamCreate, can read each
+#     other's findings and cross-pollinate insights via SendMessage.
+#     Higher quality results through real-time collaboration.
+#   "subagent" — agents run as independent parallel tasks.
+#     Lower token cost, faster execution, no cross-pollination.
+#
+# Two configuration formats:
+#
+#   Simple (applies to all phases):
+#     execution_mode: team
+#
+#   Per-phase (granular control):
+#     execution_mode:
+#       default: team
+#       overrides:
+#         debug: subagent   # opt out specific phases if needed
+#
+# Available phase names:
+#   requirements_deep_dive  — /create-requirements Stage 3 (parallel research)
+#   qa_review               — /implement Phase 4 (QA agents + quality-guard)
+#   documentation_update    — /update-documentation Phases 2-4
+#   refactor                — /refactor Step 5.1 (quality gate loop)
+#   debug                   — /debug Phase 6 (verification review)
+#   local_pr_review         — /local-pr-review Step 4 (review agents)
+#   pr_review               — /pr-review Step 4 (review agents)
+#
+# All skills that use multiple agents support both modes.
+# Both formats are fully supported — simple string is a shorthand for
+# { default: <value>, overrides: {} }.
+# -----------------------------------------------------------------------------
+execution_mode: team
+
+
+# -----------------------------------------------------------------------------
+# Storage
+# -----------------------------------------------------------------------------
+# Defines WHERE artifacts are stored. Two concepts:
+#
+#   locations — named storage backends (git repos or local directories)
+#   artifacts — maps logical artifact names to locations + subdirectories
+#
+# This abstraction lets you point multiple artifact types at the same
+# git repository, and skills resolve paths automatically.
+# -----------------------------------------------------------------------------
+storage:
+
+  # ---------------------------------------------------------------------------
+  # Storage Locations
+  # ---------------------------------------------------------------------------
+  # Each location has:
+  #   type: "git" or "directory"
+  #     - git:       auto-syncs (pull before read, commit+push after write)
+  #     - directory:  local only, no sync
+  #   path: absolute or relative path
+  #     - git locations should use absolute paths
+  #     - "directory" locations can be relative to project root
+  #
+  # You can define as many locations as needed. Common patterns:
+  #   - Single team repo for all shared artifacts
+  #   - Separate repos for requirements vs product docs
+  #   - Local-only setup (no git sync)
+  # ---------------------------------------------------------------------------
+  locations:
+    team-knowledge:
+      type: git                                    # git-managed shared repository
+      path: /path/to/team-knowledge                # absolute path to git repo
+    local:
+      type: directory                              # local project directory
+      path: .claude                                # relative to project root
+
+  # ---------------------------------------------------------------------------
+  # Artifact Types
+  # ---------------------------------------------------------------------------
+  # Maps logical artifact names to storage locations.
+  # Each artifact has:
+  #   location: reference to a key in storage.locations above
+  #   subdir:   subdirectory within that location
+  #
+  # Resolved path = locations[location].path + "/" + subdir
+  #
+  # Example: requirements → team-knowledge → /path/to/team-knowledge/requirements
+  #
+  # Artifact types and what uses them:
+  #   requirements      — /archive-requirements, /search-requirements, archivist
+  #   proposals         — /create-proposal
+  #   product-knowledge — product-expert agent
+  #   brainstorms       — /brainstorm
+  #   work              — /create-requirements, /implement, /resume-work, /epic
+  #   refactoring       — refactorer agent
+  # ---------------------------------------------------------------------------
+  artifacts:
+    requirements:      { location: team-knowledge, subdir: requirements }
+    proposals:         { location: team-knowledge, subdir: proposals }
+    product-knowledge: { location: team-knowledge, subdir: . }
+    brainstorms:       { location: local, subdir: brainstorm }
+    work:              { location: local, subdir: work }
+    refactoring:       { location: local, subdir: work/refactoring-sessions }
+
+
+# -----------------------------------------------------------------------------
+# Project
+# -----------------------------------------------------------------------------
+# Optional project-level settings consumed by skills.
+#
+#   ecosystem    Technology stack for this project. When set, /create-proposal
+#                skips the interactive "Detected: X. Confirm?" question and uses
+#                this value directly.
+#
+#   Supported values: php-symfony, php, react, node, go, java, python
+# -----------------------------------------------------------------------------
+# project:
+#   ecosystem: php-symfony
+
+
+# -----------------------------------------------------------------------------
+# Requirements Behavior Flags
+# -----------------------------------------------------------------------------
+# Controls the archivist agent's behavior during workflows.
+# These are separate from storage — they govern WHEN things happen,
+# not WHERE they're stored.
+#
+# Only relevant if you have a requirements artifact configured above.
+# If this entire section is absent, all flags default to their listed values.
+#
+#   auto_search          Search for similar past work during /create-requirements
+#                        Stage 3. Shows matches to help reuse patterns and
+#                        avoid re-inventing solutions.
+#
+#   auto_archive         After /implement creates a PR, offer to archive the
+#                        completed requirements to the team knowledge base.
+#
+#   auto_load_threshold  Confidence score (0.0–1.0) above which matched
+#                        requirements are automatically loaded into context
+#                        instead of just suggested. Higher = more selective.
+#
+#   max_suggestions      Maximum number of similar past requirements to show
+#                        during the planning phase.
+#
+#   archive_on_pr        Specifically trigger archival offer after PR creation
+#                        (vs. after implementation completion).
+# -----------------------------------------------------------------------------
+requirements:
+  auto_search: true
+  auto_archive: true
+  auto_load_threshold: 0.9
+  max_suggestions: 3
+  archive_on_pr: true
+
+
+# =============================================================================
+# Configuration Profiles
+# =============================================================================
+# Below are common configuration patterns. Copy the one that fits your setup
+# and remove sections you don't need.
+#
+# --- Minimal (local only, no shared repos) ---
+#
+#   execution_mode: team
+#   # That's it! All paths use defaults under .claude/
+#
+#
+# --- With Requirements KB ---
+#
+#   execution_mode: team
+#   storage:
+#     locations:
+#       team-knowledge:
+#         type: git
+#         path: /home/user/team-requirements
+#       local:
+#         type: directory
+#         path: .claude
+#     artifacts:
+#       requirements: { location: team-knowledge, subdir: requirements }
+#       work:         { location: local, subdir: work }
+#   requirements:
+#     auto_search: true
+#     auto_archive: true
+#
+#
+# --- Per-phase execution mode ---
+#
+#   execution_mode:
+#     default: team
+#     overrides:
+#       debug: subagent                 # opt out debug (only 2 agents, less benefit)
+#
+#
+# --- Full (shared team repo for everything) ---
+#
+#   execution_mode: team
+#   storage:
+#     locations:
+#       team-knowledge:
+#         type: git
+#         path: /home/user/team-knowledge
+#       local:
+#         type: directory
+#         path: .claude
+#     artifacts:
+#       requirements:      { location: team-knowledge, subdir: requirements }
+#       proposals:         { location: team-knowledge, subdir: proposals }
+#       product-knowledge: { location: team-knowledge, subdir: . }
+#       brainstorms:       { location: local, subdir: brainstorm }
+#       work:              { location: local, subdir: work }
+#       refactoring:       { location: local, subdir: work/refactoring-sessions }
+#   requirements:
+#     auto_search: true
+#     auto_archive: true
+#     auto_load_threshold: 0.9
+#     max_suggestions: 3
+#     archive_on_pr: true
+# =============================================================================

@@ -1,0 +1,20 @@
+{
+  "name": "nexus",
+  "version": "1.0.0",
+  "description": "Comprehensive skill and agent collection for AI-driven development workflows — planning, implementation, testing, review, and release",
+  "author": {
+    "name": "nexus-a1",
+    "url": "https://github.com/nexus-a1"
+  },
+  "repository": "https://github.com/nexus-a1/claude-skills",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "agents",
+    "workflow",
+    "implementation",
+    "requirements",
+    "code-review",
+    "testing"
+  ]
+}

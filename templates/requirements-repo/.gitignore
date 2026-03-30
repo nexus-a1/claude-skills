@@ -1,0 +1,45 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.bak
+.temp/
+
+# Lock files (if using any tooling)
+*.lock
+
+# Local configuration overrides
+local.json
+*.local.json
+
+# Build artifacts (if generating docs from requirements)
+build/
+dist/
+
+# Node modules (if using scripts for processing)
+node_modules/
+
+# Python virtual environment (if using scripts)
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Logs
+*.log
+logs/
+
+# Don't ignore index.json - it should be committed
+!index.json
+
+# Don't ignore templates
+!templates/

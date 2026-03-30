@@ -1,0 +1,17 @@
+{
+  "name": "claude-skills",
+  "owner": {
+    "name": "nexus-a1"
+  },
+  "plugins": [
+    {
+      "name": "nexus",
+      "source": {
+        "source": "github",
+        "repo": "nexus-a1/claude-skills"
+      },
+      "description": "AI-driven development workflows — planning, implementation, testing, review, and release",
+      "version": "1.0.0"
+    }
+  ]
+}
