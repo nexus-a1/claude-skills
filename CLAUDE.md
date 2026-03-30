@@ -15,6 +15,8 @@
 
 **IMPORTANT**: Always delegate specialized tasks to agents. This improves quality and reduces context usage.
 
+**CRITICAL — Agent name format**: Always invoke agents by their **plain name** (e.g., `git-operator`). Never use a namespace prefix like `nexus:git-operator`. Agents are resolved by plain name regardless of plugin context. Using a namespace prefix will cause an "unknown skill" error.
+
 ### Mandatory Agent Delegation
 
 The following operations **MUST** always use their designated agents:

@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.3] - 2026-03-30
+
+## What's Changed
+
+### Bug Fixes
+- fix(plugin): prevent namespace prefix on agent invocations — Claude was prepending `nexus:` to agent names (e.g., `nexus:git-operator`) in plugin context, causing "unknown skill" errors. Added explicit CLAUDE.md instruction to always use plain agent names.
+
+**Full Changelog**: https://github.com/traczewskim/claude/compare/v1.0.2...v1.0.3
+
 ## [1.0.2] - 2026-03-30
 
 ## What's Changed
