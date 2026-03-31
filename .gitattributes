@@ -1,0 +1,13 @@
+# Ensure shell scripts always use LF line endings to prevent "not found"
+# errors on Linux/WSL caused by CRLF shebangs (#!/bin/bash\r)
+*.sh text eol=lf
+
+# Python scripts
+*.py text eol=lf
+
+# Markdown and JSON use LF
+*.md text eol=lf
+*.json text eol=lf
+
+# Default: detect text files and normalize to LF
+* text=auto eol=lf

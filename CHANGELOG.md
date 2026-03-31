@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.5] - 2026-03-31
+
+## What's Changed
+
+### Bug Fixes
+- [SKILLS-000] fix(skills): handle git fetch failure in release skill context
+- [SKILLS-000] fix(hooks): prevent CRLF line endings in distributed scripts
+- [SKILLS-000] fix(ci): remove legacy plugin publish job
+
+**Full Changelog**: https://github.com/traczewskim/claude/compare/v1.0.4...v1.0.5
+
 ## [1.0.4] - 2026-03-31
 
 ## What's Changed

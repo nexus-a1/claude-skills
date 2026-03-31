@@ -18,7 +18,7 @@ Git status: !`git status -sb`
 
 Arguments provided: $ARGUMENTS
 
-Available tags: !`git fetch --tags origin 2>/dev/null && git tag --sort=-version:refname | head -20`
+Available tags: !`git fetch --tags origin 2>/dev/null; git tag --sort=-version:refname 2>/dev/null | head -20`
 
 Available branches: !`git branch -a | grep -E '(master|main|release/)' | head -20`
 
