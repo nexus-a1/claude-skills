@@ -1,6 +1,6 @@
 # Claude Nexus Plugin
 
-A Claude Code plugin covering the full development lifecycle — from requirements through release — with **27 skills**, **20 agents**, **16 rules**, and **4 hooks**.
+A Claude Code plugin covering the full development lifecycle — from requirements through release — with **28 skills**, **20 agents**, **16 rules**, and **4 hooks**.
 
 ## Installation
 
@@ -29,7 +29,7 @@ Skills are invoked with the `nexus:` namespace prefix (e.g., `/nexus:brainstorm`
 
 | Component | Count | Purpose |
 |-----------|-------|---------|
-| Skills | 27 | Slash commands for the full dev lifecycle |
+| Skills | 28 | Slash commands for the full dev lifecycle |
 | Agents | 20 | Specialized sub-agents invoked by skills |
 | Rules | 16 | Domain-specific coding standards (PHP, React, cross-cutting) |
 | Hooks | 4 | Pre/post-tool automation (commit validation, audit, notifications) |

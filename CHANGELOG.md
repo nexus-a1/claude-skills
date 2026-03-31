@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.4] - 2026-03-31
+
+## What's Changed
+
+### Features
+- feat(skills): add `/nexus:report-issue` skill — draft and submit bug reports or feature requests to the nexus repo using current conversation context, with sensitivity check and confirmation step
+
+### Bug Fixes
+- fix(plugin): prevent namespace prefix on agent invocations — stops Claude from incorrectly prepending `nexus:` to agent names (e.g. `nexus:git-operator`), causing "unknown skill" errors
+- fix(plugin): remove hardcoded hook paths from `settings.json` — fixes "notify.sh not found" errors on Stop events for marketplace plugin installs
+
+### Other Changes
+- chore(plugin): migrate all references from traczewskim to nexus-a1
+
+**Full Changelog**: https://github.com/traczewskim/claude/compare/v1.0.3...v1.0.4
+
 ## [1.0.3] - 2026-03-30
 
 ## What's Changed
