@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.7] - 2026-03-31
+
+## Bug Fixes
+
+- Harden release skill `git fetch` shell interpolation with `|| true` guard — prevents skill from aborting at load time when fetch fails (network unavailable, no remote configured, etc.)
+
+**Closes:** nexus-a1/claude-skills#4, nexus-a1/claude-skills#5
+
+**Full Changelog**: https://github.com/traczewskim/claude/compare/v1.0.6...v1.0.7
+
 ## [1.0.6] - 2026-03-31
 
 ## What's Changed
