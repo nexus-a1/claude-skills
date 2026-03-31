@@ -202,6 +202,7 @@ If **Yes**: write the body to a temp file and create the issue:
 
 ```bash
 BODY_FILE=$(mktemp)
+ERROR_FILE=$(mktemp)
 cat > "$BODY_FILE" << 'ISSUE_BODY'
 {full issue body}
 ISSUE_BODY
@@ -210,16 +211,26 @@ gh issue create \
   --repo "nexus-a1/claude-skills" \
   --title "{title}" \
   --body-file "$BODY_FILE" \
-  --label "{bug|enhancement}" 2>/dev/null || \
-gh issue create \
-  --repo "nexus-a1/claude-skills" \
-  --title "{title}" \
-  --body-file "$BODY_FILE"
+  --label "{bug|enhancement}" 2>"$ERROR_FILE"
 
-rm -f "$BODY_FILE"
+if [ $? -ne 0 ]; then
+  if grep -qi "label" "$ERROR_FILE"; then
+    # Label doesn't exist — retry without it
+    gh issue create \
+      --repo "nexus-a1/claude-skills" \
+      --title "{title}" \
+      --body-file "$BODY_FILE"
+  else
+    # Different error — surface it
+    cat "$ERROR_FILE" >&2
+    false
+  fi
+fi
+
+rm -f "$BODY_FILE" "$ERROR_FILE"
 ```
 
-> Using `--body-file` avoids shell quoting issues with error messages, stack traces, and special characters in the body. The first attempt includes `--label`; if the label doesn't exist, the fallback omits it.
+> Using `--body-file` avoids shell quoting issues with error messages, stack traces, and special characters in the body. Stderr is captured to a temp file so label-not-found errors trigger a no-label fallback, while other errors (network, auth, repo not found) are surfaced to the user.
 
 ---
 

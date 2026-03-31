@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.6] - 2026-03-31
+
+## What's Changed
+
+### Bug Fixes
+- [SKILLS-000] fix(skills): surface non-label errors in report-issue stderr handling
+
+**Full Changelog**: https://github.com/traczewskim/claude/compare/v1.0.5...v1.0.6
+
 ## [1.0.5] - 2026-03-31
 
 ## What's Changed
