@@ -5,7 +5,7 @@ model: sonnet
 userInvocable: true
 description: Decompose large initiatives into dependency-mapped, wave-sequenced tickets with per-ticket requirements. Use when a feature is too large for a single /create-requirements run — typically 5+ tickets with complex interdependencies.
 argument-hint: <epic-description>
-allowed-tools: Read, Write, Grep, Glob, Bash(git:*), Bash(mkdir:*), Bash(yq:*), Task, AskUserQuestion
+allowed-tools: "Read, Write, Grep, Glob, Bash(git:*), Bash(mkdir:*), Bash(yq:*), Task, AskUserQuestion"
 ---
 
 # Epic Command

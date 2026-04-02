@@ -5,7 +5,7 @@ category: documentation
 userInvocable: true
 description: Review and update project documentation using an agent team. Inventories docs, identifies gaps and drift, updates technical and API docs in parallel.
 argument-hint: [scope|path]
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(git log:*), Bash(git diff:*), Bash(mkdir:*), Bash(date:*), Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
+allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(git log:*), Bash(git diff:*), Bash(mkdir:*), Bash(date:*), Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
 ---
 
 # Update Documentation

@@ -5,7 +5,7 @@ model: haiku
 userInvocable: true
 description: Annotate an active work session with a note, scope change, or new finding. Appends a timestamped entry to state.json and updates the manifest. Use mid-session when you learn something that should be preserved.
 argument-hint: [identifier] [note]
-allowed-tools: Read, Write, Bash(jq:*), AskUserQuestion
+allowed-tools: "Read, Write, Bash(jq:*), AskUserQuestion"
 ---
 
 # Update Context

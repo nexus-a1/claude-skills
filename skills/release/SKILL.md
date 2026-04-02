@@ -5,7 +5,7 @@ model: haiku
 userInvocable: true
 description: Create a GitHub release with a version tag and auto-generated changelog. Supports pre-releases. Final step of the release workflow.
 argument-hint: [version] [branch] [--pre-release]
-allowed-tools: Bash(git tag:*), Bash(git fetch:*), Bash(git log:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git status:*), Bash(gh release create:*), Bash(gh pr list:*), AskUserQuestion, Skill
+allowed-tools: "Bash(git tag:*), Bash(git fetch:*), Bash(git log:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git status:*), Bash(gh release create:*), Bash(gh pr list:*), AskUserQuestion, Skill"
 ---
 
 # Release Command

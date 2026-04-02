@@ -5,7 +5,7 @@ model: opus
 userInvocable: true
 description: Create a formal design document for a feature or component. Guides through requirements, approach brainstorming, and iterative proposal drafts with approval gate before optional implementation. Use when you need a written design approved before committing to code.
 argument-hint: [proposal-name or identifier]
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(git:*), Bash(mkdir:*), Bash(yq:*), Bash(grep:*), Bash(cp:*), Task, AskUserQuestion
+allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(git:*), Bash(mkdir:*), Bash(yq:*), Bash(grep:*), Bash(cp:*), Task, AskUserQuestion"
 ---
 
 # Create Proposal

@@ -5,7 +5,7 @@ model: haiku
 userInvocable: true
 description: Show all active work sessions across brainstorms, requirements, proposals, and epics. Fast overview of where you left off.
 argument-hint: [slug]
-allowed-tools: Read, Glob, Bash(jq:*), Bash(git:*), Bash(ls:*), Bash(yq:*)
+allowed-tools: "Read, Glob, Bash(jq:*), Bash(git:*), Bash(ls:*), Bash(yq:*)"
 ---
 
 # Status

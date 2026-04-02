@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.1] - 2026-04-02
+
+## Bug Fix
+
+### Fix YAML frontmatter rendering on GitHub
+
+Quoted `allowed-tools` values containing colons (e.g., `Bash(jq:*)`) in 17 skill frontmatter blocks. GitHub's YAML parser rejected unquoted colons as invalid mapping syntax, causing `Error in user YAML` when viewing SKILL.md files on GitHub.
+
+No behavioral change — Claude Code receives the identical parsed value with or without quotes.
+
+### Full Changelog
+https://github.com/traczewskim/claude/compare/v1.1.0...v1.1.1
+
 ## [1.1.0] - 2026-04-02
 
 ## What's New

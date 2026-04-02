@@ -5,7 +5,7 @@ category: code-quality
 userInvocable: true
 description: Review a pull request with thorough analysis, severity levels, and actionable feedback
 argument-hint: [--interactive] [pr-number]
-allowed-tools: Read, Write, Glob, Grep, Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr review:*), Bash(gh api:*), Bash(gh repo view:*), Bash(git diff:*), Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
+allowed-tools: "Read, Write, Glob, Grep, Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr review:*), Bash(gh api:*), Bash(gh repo view:*), Bash(git diff:*), Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
 ---
 
 # Review Pull Request Command

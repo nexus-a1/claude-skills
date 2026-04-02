@@ -5,7 +5,7 @@ category: code-quality
 userInvocable: true
 description: Analyze code and suggest refactoring improvements with agent-driven analysis
 argument-hint: [file|directory]
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash(git diff:*), Bash(git log:*), Bash(git status:*), Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage, EnterWorktree, ExitWorktree
+allowed-tools: "Read, Write, Edit, Grep, Glob, Bash(git diff:*), Bash(git log:*), Bash(git status:*), Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage, EnterWorktree, ExitWorktree"
 ---
 
 # Refactor Command
