@@ -167,6 +167,56 @@ requirements:
   archive_on_pr: true
 
 
+# -----------------------------------------------------------------------------
+# Worktree Isolation (optional)
+# -----------------------------------------------------------------------------
+# When enabled, code-modifying skills (/implement, /debug, /refactor) work in
+# isolated git worktrees instead of the main working tree.
+#
+# Mode is auto-detected — no configuration needed:
+#   - Inside a git repo → single-repo worktree (via EnterWorktree)
+#   - Plain directory with git repos as subdirs → per-service worktrees
+#
+# Benefits:
+#   - Your working tree stays clean while agents make changes
+#   - Multiple tickets can run in parallel without branch conflicts
+#   - Easy cleanup: remove the worktree directory when done
+#
+# Behavior:
+#   - Skills enter worktrees at start, keep them after completion
+#   - State files remain in the original directory for resume capability
+#   - Agents work transparently — they receive absolute paths
+#   - Read-only skills (brainstorm, create-requirements) are unaffected
+#
+#   enabled  — opt-in toggle (default: false)
+#   root     — multi-repo only: where ticket workspaces live (default: .worktrees)
+# -----------------------------------------------------------------------------
+# worktree:
+#   enabled: false
+#   root: .worktrees
+
+
+# -----------------------------------------------------------------------------
+# Multi-Repo Workspace (optional)
+# -----------------------------------------------------------------------------
+# When Claude starts in a plain directory containing multiple git repositories,
+# the framework auto-discovers services by scanning subdirectories for .git.
+#
+# Define services explicitly ONLY if you want to limit which repos are included.
+# Omit entirely for single-repo projects or to use auto-discovery.
+#
+# Each service has:
+#   name — identifier used in worktree paths and agent context
+#   path — relative or absolute path to the git repo
+# -----------------------------------------------------------------------------
+# workspace:
+#   services:
+#     - name: service1
+#       path: ./service1
+#     - name: service2
+#       path: ./service2
+
+
 # =============================================================================
 # Configuration Profiles
 # =============================================================================

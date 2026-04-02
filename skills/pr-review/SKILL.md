@@ -29,6 +29,30 @@ while [[ "$_d" != "/" ]]; do
   fi
   _d="$(dirname "$_d")"
 done
+WORKSPACE_ROOT=""
+if [[ -n "$CONFIG" ]]; then
+  WORKSPACE_ROOT="$(cd "$(dirname "$CONFIG")/.." && pwd)"
+fi
+WORKSPACE_ROOT="${WORKSPACE_ROOT:-$PWD}"
+WORKSPACE_MODE="single"
+DISCOVERED_SERVICES=()
+if git -C "$WORKSPACE_ROOT" rev-parse --is-inside-work-tree &>/dev/null; then
+  WORKSPACE_MODE="single"
+else
+  for dir in "${WORKSPACE_ROOT}"/*/; do
+    if [[ -d "${dir}.git" ]]; then
+      DISCOVERED_SERVICES+=("$(basename "$dir")")
+    fi
+  done
+  [[ ${#DISCOVERED_SERVICES[@]} -gt 0 ]] && WORKSPACE_MODE="multi"
+fi
+if [[ -f "$CONFIG" ]]; then
+  _svc_count=$(yq -r '.workspace.services | length // 0' "$CONFIG" 2>/dev/null)
+  if [[ "$_svc_count" -gt 0 ]]; then
+    WORKSPACE_MODE="multi"
+    DISCOVERED_SERVICES=()
+  fi
+fi
 resolve_exec_mode() {
   local phase="$1"
   local default="${2:-team}"
@@ -43,6 +67,13 @@ resolve_exec_mode() {
     fi
   else
     echo "$default"
+  fi
+}
+resolve_worktree_enabled() {
+  if [[ -f "$CONFIG" ]]; then
+    yq -r '.worktree.enabled // "false"' "$CONFIG"
+  else
+    echo "false"
   fi
 }
 # END_SHARED: resolve-config

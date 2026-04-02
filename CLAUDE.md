@@ -233,9 +233,29 @@ All skills that use multiple agents support configurable execution mode (`"subag
 | `requirements.max_suggestions` | `3` | Maximum suggestions to show |
 | `requirements.archive_on_pr` | `true` | Archive when PR is created |
 
+**`worktree`** — Worktree isolation for code-modifying skills. Optional.
+
+| Key | Default | Purpose |
+|-----|---------|---------|
+| `worktree.enabled` | `false` | Opt-in toggle; code-modifying skills work in isolated worktrees |
+| `worktree.root` | `.worktrees` | Multi-repo only: where ticket workspace directories are created |
+
+**`workspace`** — Multi-repo workspace definition. Optional.
+
+| Key | Purpose |
+|-----|---------|
+| `workspace.services[].name` | Service identifier (used in worktree paths and agent context) |
+| `workspace.services[].path` | Relative or absolute path to the git repo |
+
+Workspace mode is auto-detected — no configuration needed:
+- Inside a git repo → **single mode** (uses `EnterWorktree`/`ExitWorktree`)
+- Plain directory with git repos as subdirs → **multi mode** (per-service worktrees via `git worktree add`)
+
+Define `workspace.services` only to limit which repos are included. If omitted, all git repos in immediate subdirectories are auto-discovered.
+
 ### How It Works
 
-Skills find `.claude/configuration.yml` by walking up from CWD (supports monorepo layouts). If absent, skills fall back to hardcoded defaults (e.g., `.claude/work`).
+Skills find `.claude/configuration.yml` by walking up from CWD. All relative artifact paths are anchored to the workspace root (where `configuration.yml` lives), ensuring state files resolve correctly even from inside worktrees. If absent, skills fall back to hardcoded defaults (e.g., `.claude/work`).
 
 ### Setup
 

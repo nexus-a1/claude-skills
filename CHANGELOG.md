@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.1.0] - 2026-04-02
+
+## What's New
+
+### Project-agnostic git worktree isolation
+
+Code-modifying skills (`/implement`, `/debug`, `/refactor`) can now operate in isolated git worktrees, keeping your working tree clean and enabling parallel work on multiple tickets.
+
+**Zero-config auto-detection:**
+- Inside a git repo → single-repo mode (uses `EnterWorktree`/`ExitWorktree`)
+- Plain directory with git repos as subdirs → multi-repo mode (per-service worktrees via `git worktree add`)
+
+**Opt-in via configuration:**
+```yaml
+# .claude/configuration.yml
+worktree:
+  enabled: true
+```
+
+**Multi-repo workspace support:**
+```
+main_dir/
+├── .worktrees/TICKET-123/    ← isolated workspace per ticket
+│   ├── service1/             ← git worktree
+│   └── service2/             ← git worktree
+├── service1/                 ← original (untouched)
+└── service2/
+```
+
+### Changes
+
+- **`resolve-config.sh`**: Added `WORKSPACE_ROOT` anchoring, `WORKSPACE_MODE` auto-detection, worktree helpers, service helpers. All artifact paths now resolve correctly from inside worktrees.
+- **`/implement`**: Worktree entry in Phase 0, exit after PR creation, state.json tracking, multi-repo cleanup hint
+- **`/debug`**: Worktree entry in Phase 0, auto-removed after commit
+- **`/refactor`**: Worktree entry before applying fixes
+- **`/resume-work`**: Re-enters worktrees from state.json metadata
+- **21 skills**: Synced `BEGIN_SHARED` inline blocks with workspace-aware `resolve-config`
+- **Configuration template**: Added `worktree` and `workspace` sections
+- **Documentation**: Full reference in `docs/configuration.md`
+
+### Full Changelog
+https://github.com/traczewskim/claude/compare/v1.0.7...v1.1.0
+
 ## [1.0.7] - 2026-03-31
 
 ## Bug Fixes

@@ -5,7 +5,7 @@ model: sonnet
 userInvocable: true
 description: Resume any interrupted work session — brainstorm, requirements, proposal, epic, or implementation. Scans for incomplete sessions and continues from the last saved checkpoint.
 argument-hint: [identifier]
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, AskUserQuestion
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, AskUserQuestion, EnterWorktree, ExitWorktree
 ---
 
 # Resume Work
@@ -49,22 +49,63 @@ while [[ "$_d" != "/" ]]; do
   _d="$(dirname "$_d")"
 done
 
+# --- Workspace root ---
+# The directory where .claude/configuration.yml lives.
+# All relative paths anchor here. Works from worktrees, subdirs, anywhere.
+WORKSPACE_ROOT=""
+if [[ -n "$CONFIG" ]]; then
+  WORKSPACE_ROOT="$(cd "$(dirname "$CONFIG")/.." && pwd)"
+fi
+WORKSPACE_ROOT="${WORKSPACE_ROOT:-$PWD}"
+
+# --- Workspace mode (auto-detect) ---
+# "single" = inside a git repo; "multi" = aggregate directory with git repos as subdirs
+WORKSPACE_MODE="single"
+DISCOVERED_SERVICES=()
+
+if git -C "$WORKSPACE_ROOT" rev-parse --is-inside-work-tree &>/dev/null; then
+  WORKSPACE_MODE="single"
+else
+  for dir in "${WORKSPACE_ROOT}"/*/; do
+    if [[ -d "${dir}.git" ]]; then
+      DISCOVERED_SERVICES+=("$(basename "$dir")")
+    fi
+  done
+  [[ ${#DISCOVERED_SERVICES[@]} -gt 0 ]] && WORKSPACE_MODE="multi"
+fi
+
+# Config override: if workspace.services defined, use that instead of auto-discovery
+if [[ -f "$CONFIG" ]]; then
+  _svc_count=$(yq -r '.workspace.services | length // 0' "$CONFIG" 2>/dev/null)
+  if [[ "$_svc_count" -gt 0 ]]; then
+    WORKSPACE_MODE="multi"
+    DISCOVERED_SERVICES=()
+  fi
+fi
+
 # --- Artifact resolution ---
 # Resolves an artifact path from configuration, with fallback defaults.
 # Usage: resolve_artifact <artifact_name> <default_subdir> [default_base]
-# Returns: resolved path (e.g., ".claude/work" or "/abs/path/to/requirements")
+# Returns: absolute path anchored to WORKSPACE_ROOT
 resolve_artifact() {
   local artifact="$1"
   local default_subdir="$2"
   local default_base="${3:-.claude}"
 
+  local result_path
   if [[ -f "$CONFIG" ]]; then
     local _LOC=$(yq -r ".storage.artifacts.${artifact}.location // \"local\"" "$CONFIG")
     local _BASE=$(yq -r ".storage.locations.${_LOC}.path // \"${default_base}\"" "$CONFIG")
     local _SUB=$(yq -r ".storage.artifacts.${artifact}.subdir // \"${default_subdir}\"" "$CONFIG")
-    echo "${_BASE}/${_SUB}"
+    result_path="${_BASE}/${_SUB}"
   else
-    echo "${default_base}/${default_subdir}"
+    result_path="${default_base}/${default_subdir}"
+  fi
+
+  if [[ "$result_path" != /* ]]; then
+    echo "${WORKSPACE_ROOT}/${result_path}"
+  else
+    echo "$result_path"
   fi
 }
 
@@ -76,14 +117,22 @@ resolve_artifact_typed() {
   local default_subdir="$2"
   local default_base="${3:-.claude}"
 
+  local result_path _TYPE
   if [[ -f "$CONFIG" ]]; then
     local _LOC=$(yq -r ".storage.artifacts.${artifact}.location // \"local\"" "$CONFIG")
     local _BASE=$(yq -r ".storage.locations.${_LOC}.path // \"${default_base}\"" "$CONFIG")
     local _SUB=$(yq -r ".storage.artifacts.${artifact}.subdir // \"${default_subdir}\"" "$CONFIG")
-    local _TYPE=$(yq -r ".storage.locations.${_LOC}.type // \"directory\"" "$CONFIG")
-    echo "${_BASE}/${_SUB}|${_TYPE}"
+    _TYPE=$(yq -r ".storage.locations.${_LOC}.type // \"directory\"" "$CONFIG")
+    result_path="${_BASE}/${_SUB}"
   else
-    echo "${default_base}/${default_subdir}|directory"
+    result_path="${default_base}/${default_subdir}"
+    _TYPE="directory"
+  fi
+
+  if [[ "$result_path" != /* ]]; then
+    echo "${WORKSPACE_ROOT}/${result_path}|${_TYPE}"
+  else
+    echo "${result_path}|${_TYPE}"
   fi
 }
 
@@ -107,6 +156,51 @@ resolve_exec_mode() {
   else
     echo "$default"
   fi
+}
+
+# --- Worktree helpers ---
+resolve_worktree_enabled() {
+  if [[ -f "$CONFIG" ]]; then
+    yq -r '.worktree.enabled // "false"' "$CONFIG"
+  else
+    echo "false"
+  fi
+}
+
+resolve_worktree_root() {
+  local default=".worktrees"
+  local root
+  if [[ -f "$CONFIG" ]]; then
+    root=$(yq -r ".worktree.root // \"${default}\"" "$CONFIG")
+  else
+    root="$default"
+  fi
+  [[ "$root" != /* ]] && echo "${WORKSPACE_ROOT}/${root}" || echo "$root"
+}
+
+# --- Service helpers (multi-mode) ---
+resolve_services() {
+  if [[ -f "$CONFIG" ]]; then
+    local _count=$(yq -r '.workspace.services | length // 0' "$CONFIG" 2>/dev/null)
+    if [[ "$_count" -gt 0 ]]; then
+      yq -r '.workspace.services[].name' "$CONFIG"
+      return
+    fi
+  fi
+  printf '%s\n' "${DISCOVERED_SERVICES[@]}"
+}
+
+resolve_service_path() {
+  local svc="$1"
+  if [[ -f "$CONFIG" ]]; then
+    local rel
+    rel=$(yq -r ".workspace.services[] | select(.name == \"${svc}\") | .path // empty" "$CONFIG" 2>/dev/null)
+    if [[ -n "$rel" ]]; then
+      [[ "$rel" != /* ]] && echo "${WORKSPACE_ROOT}/${rel}" || echo "$rel"
+      return
+    fi
+  fi
+  echo "${WORKSPACE_ROOT}/${svc}"
 }
 # END_SHARED: resolve-config
 WORK_DIR=$(resolve_artifact work work)
@@ -374,6 +468,30 @@ Continuing implementation...
   }
 }
 ```
+
+**Re-enter worktree (if applicable):**
+
+If `state.json` contains a `worktree` object with `enabled: true`:
+
+**Single mode** (`worktree.mode == "single"`):
+1. Check if worktree directory still exists at `.claude/worktrees/{worktree.name}/`
+   - If exists: call `EnterWorktree(name: "{worktree.name}")` to re-attach to the existing worktree
+   - If not: call `EnterWorktree(name: "{worktree.name}")` to create fresh
+2. Checkout the feature branch: `git checkout feature/{identifier}`
+
+**Multi mode** (`worktree.mode == "multi"`):
+1. Check if worktree paths in `state.json.worktree.services` still exist
+2. If all exist → reuse them (no action needed, just reference the paths)
+3. If any are missing → recreate:
+```bash
+for svc in {missing_services}; do
+  svc_path=$(resolve_service_path "$svc")
+  wt_path="{worktree.workspace}/${svc}"
+  git -C "$svc_path" worktree add "$wt_path" "feature/{identifier}" 2>/dev/null \
+    || git -C "$svc_path" worktree add "$wt_path" -b "feature/{identifier}"
+done
+```
+4. All agent prompts use worktree paths from state
 
 **Resume from last checkpoint:**
 1. Show what's been completed

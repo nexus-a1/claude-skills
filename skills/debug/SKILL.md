@@ -5,7 +5,7 @@ model: opus
 userInvocable: true
 description: Systematically debug a failing feature or error. Discovers code, investigates root cause, applies fix, verifies with tests, and commits. Use when something isn't working as expected.
 argument-hint: <error-or-description>
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage, EnterWorktree, ExitWorktree
 ---
 
 # Debug Skill
@@ -38,22 +38,63 @@ while [[ "$_d" != "/" ]]; do
   _d="$(dirname "$_d")"
 done
 
+# --- Workspace root ---
+# The directory where .claude/configuration.yml lives.
+# All relative paths anchor here. Works from worktrees, subdirs, anywhere.
+WORKSPACE_ROOT=""
+if [[ -n "$CONFIG" ]]; then
+  WORKSPACE_ROOT="$(cd "$(dirname "$CONFIG")/.." && pwd)"
+fi
+WORKSPACE_ROOT="${WORKSPACE_ROOT:-$PWD}"
+
+# --- Workspace mode (auto-detect) ---
+# "single" = inside a git repo; "multi" = aggregate directory with git repos as subdirs
+WORKSPACE_MODE="single"
+DISCOVERED_SERVICES=()
+
+if git -C "$WORKSPACE_ROOT" rev-parse --is-inside-work-tree &>/dev/null; then
+  WORKSPACE_MODE="single"
+else
+  for dir in "${WORKSPACE_ROOT}"/*/; do
+    if [[ -d "${dir}.git" ]]; then
+      DISCOVERED_SERVICES+=("$(basename "$dir")")
+    fi
+  done
+  [[ ${#DISCOVERED_SERVICES[@]} -gt 0 ]] && WORKSPACE_MODE="multi"
+fi
+
+# Config override: if workspace.services defined, use that instead of auto-discovery
+if [[ -f "$CONFIG" ]]; then
+  _svc_count=$(yq -r '.workspace.services | length // 0' "$CONFIG" 2>/dev/null)
+  if [[ "$_svc_count" -gt 0 ]]; then
+    WORKSPACE_MODE="multi"
+    DISCOVERED_SERVICES=()
+  fi
+fi
+
 # --- Artifact resolution ---
 # Resolves an artifact path from configuration, with fallback defaults.
 # Usage: resolve_artifact <artifact_name> <default_subdir> [default_base]
-# Returns: resolved path (e.g., ".claude/work" or "/abs/path/to/requirements")
+# Returns: absolute path anchored to WORKSPACE_ROOT
 resolve_artifact() {
   local artifact="$1"
   local default_subdir="$2"
   local default_base="${3:-.claude}"
 
+  local result_path
   if [[ -f "$CONFIG" ]]; then
     local _LOC=$(yq -r ".storage.artifacts.${artifact}.location // \"local\"" "$CONFIG")
     local _BASE=$(yq -r ".storage.locations.${_LOC}.path // \"${default_base}\"" "$CONFIG")
     local _SUB=$(yq -r ".storage.artifacts.${artifact}.subdir // \"${default_subdir}\"" "$CONFIG")
-    echo "${_BASE}/${_SUB}"
+    result_path="${_BASE}/${_SUB}"
   else
-    echo "${default_base}/${default_subdir}"
+    result_path="${default_base}/${default_subdir}"
+  fi
+
+  if [[ "$result_path" != /* ]]; then
+    echo "${WORKSPACE_ROOT}/${result_path}"
+  else
+    echo "$result_path"
   fi
 }
 
@@ -65,14 +106,22 @@ resolve_artifact_typed() {
   local default_subdir="$2"
   local default_base="${3:-.claude}"
 
+  local result_path _TYPE
   if [[ -f "$CONFIG" ]]; then
     local _LOC=$(yq -r ".storage.artifacts.${artifact}.location // \"local\"" "$CONFIG")
     local _BASE=$(yq -r ".storage.locations.${_LOC}.path // \"${default_base}\"" "$CONFIG")
     local _SUB=$(yq -r ".storage.artifacts.${artifact}.subdir // \"${default_subdir}\"" "$CONFIG")
-    local _TYPE=$(yq -r ".storage.locations.${_LOC}.type // \"directory\"" "$CONFIG")
-    echo "${_BASE}/${_SUB}|${_TYPE}"
+    _TYPE=$(yq -r ".storage.locations.${_LOC}.type // \"directory\"" "$CONFIG")
+    result_path="${_BASE}/${_SUB}"
   else
-    echo "${default_base}/${default_subdir}|directory"
+    result_path="${default_base}/${default_subdir}"
+    _TYPE="directory"
+  fi
+
+  if [[ "$result_path" != /* ]]; then
+    echo "${WORKSPACE_ROOT}/${result_path}|${_TYPE}"
+  else
+    echo "${result_path}|${_TYPE}"
   fi
 }
 
@@ -96,6 +145,51 @@ resolve_exec_mode() {
   else
     echo "$default"
   fi
+}
+
+# --- Worktree helpers ---
+resolve_worktree_enabled() {
+  if [[ -f "$CONFIG" ]]; then
+    yq -r '.worktree.enabled // "false"' "$CONFIG"
+  else
+    echo "false"
+  fi
+}
+
+resolve_worktree_root() {
+  local default=".worktrees"
+  local root
+  if [[ -f "$CONFIG" ]]; then
+    root=$(yq -r ".worktree.root // \"${default}\"" "$CONFIG")
+  else
+    root="$default"
+  fi
+  [[ "$root" != /* ]] && echo "${WORKSPACE_ROOT}/${root}" || echo "$root"
+}
+
+# --- Service helpers (multi-mode) ---
+resolve_services() {
+  if [[ -f "$CONFIG" ]]; then
+    local _count=$(yq -r '.workspace.services | length // 0' "$CONFIG" 2>/dev/null)
+    if [[ "$_count" -gt 0 ]]; then
+      yq -r '.workspace.services[].name' "$CONFIG"
+      return
+    fi
+  fi
+  printf '%s\n' "${DISCOVERED_SERVICES[@]}"
+}
+
+resolve_service_path() {
+  local svc="$1"
+  if [[ -f "$CONFIG" ]]; then
+    local rel
+    rel=$(yq -r ".workspace.services[] | select(.name == \"${svc}\") | .path // empty" "$CONFIG" 2>/dev/null)
+    if [[ -n "$rel" ]]; then
+      [[ "$rel" != /* ]] && echo "${WORKSPACE_ROOT}/${rel}" || echo "$rel"
+      return
+    fi
+  fi
+  echo "${WORKSPACE_ROOT}/${svc}"
 }
 # END_SHARED: resolve-config
 DEBUG_EXEC_MODE=$(resolve_exec_mode debug team)
@@ -144,6 +238,45 @@ See `~/.claude/shared/write-safety.md` for the full conventions.
 │ Phase 6: Verify                   → Run tests, ensure fix works      │
 │ Phase 7: Commit                   → Save the fix                     │
 └──────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Phase 0: Enter Worktree (Conditional)
+
+Skip if `resolve_worktree_enabled` returns `"false"`.
+
+**Single mode** (`WORKSPACE_MODE == "single"`):
+1. Call `EnterWorktree(name: "debug-{short_slug}")` where `{short_slug}` is derived from the issue description (e.g., `debug-login-500`)
+2. CWD moves to worktree; `$WORK_DIR` still resolves to original workspace root
+
+**Multi mode** (`WORKSPACE_MODE == "multi"`):
+1. Create per-service worktrees using each service's current branch:
+```bash
+WT_ROOT=$(resolve_worktree_root)
+DEBUG_WORKSPACE="${WT_ROOT}/debug-{short_slug}"
+mkdir -p "$DEBUG_WORKSPACE"
+
+for svc in $(resolve_services); do
+  svc_path=$(resolve_service_path "$svc")
+  wt_path="${DEBUG_WORKSPACE}/${svc}"
+  [[ -d "$wt_path" ]] && continue
+  CURRENT_BRANCH=$(git -C "$svc_path" branch --show-current 2>/dev/null || echo "HEAD")
+  git -C "$svc_path" worktree add "$wt_path" -b "debug/{short_slug}" 2>/dev/null \
+    || git -C "$svc_path" worktree add "$wt_path" "$CURRENT_BRANCH"
+  echo "Created worktree: ${svc}/ → ${wt_path}"
+done
+```
+2. All subsequent agent prompts use `$DEBUG_WORKSPACE/{service}/` paths
+
+**After Phase 7 (Commit)**: Single mode → `ExitWorktree(action: "remove")`. Multi mode → remove worktrees:
+```bash
+for svc in $(resolve_services); do
+  svc_path=$(resolve_service_path "$svc")
+  wt_path="${DEBUG_WORKSPACE}/${svc}"
+  [[ -d "$wt_path" ]] && git -C "$svc_path" worktree remove "$wt_path" --force 2>/dev/null
+done
+rmdir "$DEBUG_WORKSPACE" 2>/dev/null
 ```
 
 ---
