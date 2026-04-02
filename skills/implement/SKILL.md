@@ -433,8 +433,12 @@ Ensure on correct branch:
 **Multi mode:** branches already set during worktree creation.
 **No worktree:** standard checkout.
 
-```bash
-git checkout feature/{identifier}
+**Use Task tool with `subagent_type: "git-operator"`:**
+
+```
+Prompt: Switch to the existing branch feature/{identifier}.
+Do NOT create a new branch — just checkout the existing one.
+Do NOT push.
 ```
 
 **CRITICAL VALIDATION** - Verify we're on a feature branch:
@@ -1484,8 +1488,11 @@ if [[ ! "$current_branch" =~ ^feature/ ]]; then
 fi
 ```
 
-```bash
-git push origin feature/{identifier}
+**Use Task tool with `subagent_type: "git-operator"`:**
+
+```
+Prompt: Push branch feature/{identifier} to origin.
+Set upstream tracking if not already set.
 ```
 
 #### 5.2 Confirm Target Branch
@@ -1512,41 +1519,28 @@ Create PR to {base_branch}? [y/change/skip]
 
 #### 5.3 Create PR
 
-```bash
-gh pr create \
-  --base {target_branch} \
-  --head feature/{identifier} \
-  --title "[{identifier}] {feature_title}" \
-  --body "$(cat <<'EOF'
-## Summary
-{feature_summary}
+**Use Task tool with `subagent_type: "git-operator"`:**
 
-## Changes
-{list_of_changes}
+```
+Prompt: Create a pull request for feature/{identifier} targeting {target_branch}.
 
-## Quality Gate
-{quality_gate_result: PASSED | FAILED_OVERRIDE}
+Context for the PR description:
+- Identifier: {identifier}
+- Feature title: {feature_title}
+- Summary: {feature_summary}
+- Changes: {list_of_changes}
+- Quality gate result: {quality_gate_result: PASSED | FAILED_OVERRIDE}
+- Commits: {commit_list}
 
 {if FAILED_OVERRIDE, include:}
+Include in PR body:
 ⚠️ KNOWN CRITICAL ISSUES (user approved proceeding):
 - [{issue_id}] {description} in {file}:{line}
 
 {if IMPORTANT/MINOR issues remain, include:}
-### Remaining Review Findings
-🟡 **Important:**
-- {important_issue_description}
-
-🔵 **Minor:**
-- {minor_issue_description}
-
-## Test Plan
-- [ ] Unit tests pass
-- [ ] Manual testing completed
-
-## Commits
-{commit_list}
-EOF
-)"
+Include in PR body under "Remaining Review Findings":
+🟡 Important: {important_issues}
+🔵 Minor: {minor_issues}
 ```
 
 #### 5.4 Offer PR Review
@@ -1689,7 +1683,7 @@ Read `references/branch-safety-rules.md` for the complete branch safety rules. *
 - **State persistence**: Progress saved after each chunk for resume capability
 - **Chunk commits**: Each logical unit committed separately for clean history
 - **Smart detection**: Scans `$WORK_DIR/` for incomplete work
-- **Git-operator delegation**: All git operations go through git-operator agent
+- **Git-operator delegation**: All git mutation operations (checkout, commit, push, PR creation) go through git-operator agent. Read-only checks (`git branch --show-current`, `git diff-index`) and worktree setup (`git worktree add`) run inline — git-operator does not support worktree operations
 - **Quality gate**: Critical QA issues must be resolved (or explicitly overridden) before PR creation
 - **Auto-fix feedback loop**: Critical issues get up to 2 auto-fix attempts via refactorer (second attempt includes failure context), with targeted re-validation
 - **PR workflow**: Target branch from requirements phase, with confirmation

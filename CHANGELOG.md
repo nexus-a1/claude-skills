@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.2] - 2026-04-02
+
+## Bug Fix
+
+- **fix(implement):** Delegate all git mutation operations to git-operator agent (#114, fixes nexus-a1/claude-skills#8)
+  - Phase 0.2: `git checkout` → git-operator delegation
+  - Phase 5.1: `git push` → git-operator delegation
+  - Phase 5.3: `gh pr create` → git-operator delegation
+  - Clarified delegation rule in Important Notes (read-only checks and worktree ops remain inline)
+
 ## [1.1.1] - 2026-04-02
 
 ## Bug Fix
