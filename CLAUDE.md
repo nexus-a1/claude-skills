@@ -22,24 +22,29 @@
 The following operations **MUST** always use their designated agents:
 
 #### Git Operations → `git-operator`
-Every time git operations are needed (commit, push, PR), delegate to the `git-operator` agent. Never run git commit/push/PR commands directly.
+Every time git operations are needed (commit, push, PR), delegate to the `git-operator` agent via the **Task tool with `subagent_type: "git-operator"`**. Never run git commit/push/PR commands directly. Never use `SendMessage` — always spawn a fresh agent.
 ```
-Task(git-operator, "Commit and push: {description of changes}")
-Task(git-operator, "Commit, push, and create PR to {branch}: {description}")
+Use Task tool with subagent_type: "git-operator"
+Prompt: Commit and push: {description of changes}
+
+Use Task tool with subagent_type: "git-operator"
+Prompt: Commit, push, and create PR to {branch}: {description}
 ```
 
 **Exception:** Haiku-tier release skills (`/nexus:create-release`, `/nexus:merge-release`, `/nexus:release`) run git/gh commands directly for speed. These are simple, deterministic operations where git-operator delegation adds latency without quality benefit. `/nexus:commit` delegates staging and commit message generation to `git-operator` (which runs `git status`/`git diff` internally) but runs `git commit` directly. `/nexus:create-release-branch` delegates branch creation and push to `git-operator`.
 
 #### Documentation → `doc-writer`
-Every time documentation needs to be created or updated, delegate to the `doc-writer` agent.
+Every time documentation needs to be created or updated, delegate to the `doc-writer` agent via the **Task tool with `subagent_type: "doc-writer"`**.
 ```
-Task(doc-writer, "Document the {feature/component} including: {details}")
+Use Task tool with subagent_type: "doc-writer"
+Prompt: Document the {feature/component} including: {details}
 ```
 
 #### Pre-Commit Security Scan → `security-auditor`
-Before every commit in the implementation pipeline, run the `security-auditor` agent to ensure no sensitive data is committed.
+Before every commit in the implementation pipeline, run the `security-auditor` agent via the **Task tool with `subagent_type: "security-auditor"`**.
 ```
-Task(security-auditor, "Scan staged changes for PII and sensitive data exposure")
+Use Task tool with subagent_type: "security-auditor"
+Prompt: Scan staged changes for PII and sensitive data exposure
 ```
 
 ### Available Agents

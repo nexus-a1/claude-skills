@@ -58,8 +58,10 @@ If on `main` or `master`:
 
 Delegate staging and commit message generation to `git-operator` in a single call. The agent will run `git status` and `git diff` internally to understand the changes, stage appropriate files (avoiding sensitive files), and return a formatted commit message.
 
+**Use Task tool with `subagent_type: "git-operator"`:**
+
 ```
-Task(git-operator, "Stage all modified files (avoid .env, credentials, secrets) and generate a commit message.
+Prompt: Stage all modified files (avoid .env, credentials, secrets) and generate a commit message.
 
 Ticket Number: {ticket_number or "None"}
 Branch: {current_branch}
@@ -75,7 +77,7 @@ Commit message requirements:
 - Ticket prefix should preserve original casing
 - NO footers, NO attribution, NO Co-Authored-By lines
 
-Return ONLY the commit message, nothing else.")
+Return ONLY the commit message, nothing else.
 ```
 
 **The agent will stage the files and return** the formatted commit message ready to use.

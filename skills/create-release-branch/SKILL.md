@@ -176,8 +176,10 @@ Proceed? [y/n]
 
 Delegate branch creation and push to the `git-operator` agent:
 
+**Use Task tool with `subagent_type: "git-operator"`:**
+
 ```
-Task(git-operator, "Create branch release/${version} from ${resolved_ref} and push to origin")
+Prompt: Create branch release/${version} from ${resolved_ref} and push to origin.
 ```
 
 The git-operator will:

@@ -411,6 +411,7 @@ If all phases return no matches for the slug AND the user's phrasing implies cre
    - Launch archivist (if configured) and product-expert (if configured) in parallel
    - Aggregate findings into `${WORK_DIR}/{slug}/notes.md`
    - Update manifest
+   - **Do NOT `git add` or `git commit` the created files.** In multi-repo workspaces (`WORKSPACE_MODE="multi"`), the `_storage/` directory is at the workspace root which has no `.git`. Even in single-repo mode, leave committing to the user or a subsequent skill.
    - Report: "Context created and saved to `${WORK_DIR}/{slug}/notes.md`"
 
 ### Compile Results

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.1.4] - 2026-04-04
+
+## What's Changed
+
+### Features
+- Add /work-issue project-local skill (#116)
+- Make /work-issue autonomous with full PR cycle (#117)
+
+### Bug Fixes
+- Add Bash(yq:*) to update-context allowed-tools (#118)
+- Prevent git commit in /context Phase 3 for multi-repo workspaces (#119)
+
+**Full Changelog**: https://github.com/traczewskim/claude/compare/v1.1.3...v1.1.4
+
 ## [1.1.2] - 2026-04-02
 
 ## Bug Fix

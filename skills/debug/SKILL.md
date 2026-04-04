@@ -570,9 +570,10 @@ Fix verified successfully.
 
 **Goal:** Save the fix with proper documentation.
 
-**Delegate to git-operator:**
+**Use Task tool with `subagent_type: "git-operator"`:**
+
 ```
-Task(git-operator, "Commit and push: Fix /api/users to return 200 instead of 202")
+Prompt: Commit and push: Fix /api/users to return 200 instead of 202
 ```
 
 **Commit message format:**
