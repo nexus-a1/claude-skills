@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.5] - 2026-04-04
+
+## What's Changed
+
+### Bug Fixes
+- [SKILLS-014] fix(skills): delegate git mutations to git-operator in create-requirements, local-pr-review, rebuild-requirements-index (#120)
+
+**Full Changelog**: https://github.com/traczewskim/claude/compare/v1.1.4...v1.1.5
+
 ## [1.1.4] - 2026-04-04
 
 ## What's Changed

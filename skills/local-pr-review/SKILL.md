@@ -377,12 +377,14 @@ The PR body should include:
 
 **7.3 Create the PR:**
 
-```bash
-# Push branch if not already pushed
-git push -u origin {current_branch}
+**Use Task tool with `subagent_type: "git-operator"`:**
 
-# Create PR
-gh pr create --base {target_branch} --title "{title}" --body "{body}"
+```
+Prompt: Push branch {current_branch} to origin (with -u flag if not already tracking), then create a pull request targeting {target_branch}.
+
+PR title: {title}
+PR body:
+{body}
 ```
 
 **7.4 Show the PR URL** and confirm success.

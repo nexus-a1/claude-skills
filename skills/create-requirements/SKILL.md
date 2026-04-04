@@ -490,8 +490,11 @@ Store as `{base_branch}`.
 
 Create the branch locally. Remote push is deferred to Stage 2 (after initial context has been gathered).
 
-```bash
-git checkout -b feature/{identifier} {base_branch}
+**Use Task tool with `subagent_type: "git-operator"`:**
+
+```
+Prompt: Create a new local branch feature/{identifier} from {base_branch}.
+Do NOT push to remote yet.
 ```
 
 **VERIFICATION** (required):
@@ -740,8 +743,10 @@ Save output to `$WORK_DIR/{identifier}/context/discovery.json`
 
 Push the branch to remote for team visibility and resume capability, now that initial context has been gathered.
 
-```bash
-git push -u origin feature/{identifier}
+**Use Task tool with `subagent_type: "git-operator"`:**
+
+```
+Prompt: Push branch feature/{identifier} to origin with upstream tracking (-u flag).
 ```
 
 **VERIFICATION** (required):

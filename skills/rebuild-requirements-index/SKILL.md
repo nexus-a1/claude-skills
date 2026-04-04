@@ -489,11 +489,14 @@ ls -lt index.json.backup.*
 
 # Restore from backup
 cp index.json.backup.20260203_143022 index.json
+```
 
-# Commit restoration
-git add index.json
-git commit -m "Restore index from backup"
-git push
+Then delegate the commit to git-operator:
+
+**Use Task tool with `subagent_type: "git-operator"`:**
+
+```
+Prompt: Stage index.json, commit with message "Restore index from backup", and push to origin.
 ```
 
 ## Validation
