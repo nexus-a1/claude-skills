@@ -4,7 +4,7 @@ category: project-setup
 model: haiku
 userInvocable: true
 description: Show all active work sessions across brainstorms, requirements, proposals, and epics. Fast overview of where you left off.
-argument-hint: [slug]
+argument-hint: "[slug]"
 allowed-tools: "Read, Glob, Bash(jq:*), Bash(git:*), Bash(ls:*), Bash(yq:*)"
 ---
 
@@ -248,7 +248,7 @@ Active Work Sessions
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 To resume: /resume-work {identifier}
-To load context: /context {identifier}
+To load context: /load-context {identifier}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 

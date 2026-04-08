@@ -4,7 +4,7 @@ category: implementation
 model: haiku
 userInvocable: true
 description: Annotate an active work session with a note, scope change, or new finding. Appends a timestamped entry to state.json and updates the manifest. Use mid-session when you learn something that should be preserved.
-argument-hint: [identifier] [note]
+argument-hint: "[identifier] [note]"
 allowed-tools: "Read, Write, Bash(jq:*), Bash(yq:*), AskUserQuestion"
 ---
 
@@ -303,7 +303,7 @@ The `updates` array in `state.json` holds all manual annotations:
 }
 ```
 
-All planning and implementation skills read `updates` when loading context for resume or `/context`, and surface them under a **Session Updates** section.
+All planning and implementation skills read `updates` when loading context for resume or `/load-context`, and surface them under a **Session Updates** section.
 
 ---
 

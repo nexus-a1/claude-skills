@@ -4,7 +4,7 @@ model: sonnet
 category: code-quality
 userInvocable: true
 description: Review local branch changes before creating a pull request
-argument-hint: [base-branch]
+argument-hint: "[base-branch]"
 allowed-tools: "Read, Glob, Grep, Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git merge-base:*), Bash(git rev-parse:*), Bash(git status:*), Bash(git push:*), Bash(gh pr create:*), Bash(gh pr view:*), Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
 ---
 

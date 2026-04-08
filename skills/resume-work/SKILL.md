@@ -3,8 +3,8 @@ name: resume-work
 category: implementation
 model: sonnet
 userInvocable: true
-description: Resume any interrupted work session — brainstorm, requirements, proposal, epic, or implementation. Scans for incomplete sessions and continues from the last saved checkpoint.
-argument-hint: [identifier]
+description: Resume any interrupted work session — brainstorm, requirements, proposal, epic, or implementation. Scans for incomplete sessions and continues from the last saved checkpoint. Re-enters the original session's worktree if one was used; otherwise runs in the current working tree.
+argument-hint: "[identifier]"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, AskUserQuestion, EnterWorktree, ExitWorktree
 ---
 

@@ -3,7 +3,7 @@ name: todo
 model: haiku
 category: project-setup
 description: Add a new item to the project TODO.md with priority, category, and scope through an interactive wizard.
-argument-hint: [title or description of the TODO item]
+argument-hint: "[title or description of the TODO item]"
 userInvocable: true
 allowed-tools: Read, Write, Edit, Glob, AskUserQuestion
 ---

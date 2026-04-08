@@ -22,10 +22,39 @@
 The following operations **MUST** always use their designated agents:
 
 #### Git Operations → `git-operator`
-Every time git operations are needed (commit, push, PR), delegate to the `git-operator` agent via the **Task tool with `subagent_type: "git-operator"`**. Never run git commit/push/PR commands directly. Never use `SendMessage` — always spawn a fresh agent.
+
+**MUST delegate** any git *mutation* to the `git-operator` agent via the **Task tool with `subagent_type: "git-operator"`**. Never run mutating git commands directly via Bash, even if the operation looks trivial (e.g., pushing an existing local commit, applying a single-line fix, resolving conflicts that are already merged locally). Never use `SendMessage` — always spawn a fresh agent.
+
+##### Direct Bash vs. Delegate — explicit table
+
+| Command | Direct Bash OK? | Notes |
+|---------|----------------|-------|
+| `git status` | ✓ | Read-only |
+| `git diff`, `git diff --staged`, `git diff <ref>..<ref>` | ✓ | Read-only |
+| `git log`, `git show`, `git blame` | ✓ | Read-only |
+| `git branch --show-current`, `git branch -r`, `git branch --list` | ✓ | Read-only |
+| `git fetch` | ✓ | Updates remote refs only — no working-tree change |
+| `git rev-parse`, `git ls-files`, `git config --get` | ✓ | Read-only |
+| `git checkout -- <file>` | ✓ | Read-only restore of a tracked file |
+| `git commit` (any form, including `--amend`) | ✗ | Delegate — even one-line fixes |
+| `git push` (any form) | ✗ | Delegate — including pushing an already-merged commit or `git push -q` |
+| `git pull` | ✗ | Delegate — implicit merge/rebase |
+| `git merge`, `git rebase`, `git cherry-pick` | ✗ | Delegate — rewrites or extends history |
+| `git reset`, `git revert` | ✗ | Delegate — destructive |
+| `git checkout -b`, `git switch -c` | ✗ | Delegate — creates new branch |
+| `git checkout <branch>`, `git switch <branch>` | ✗ | Delegate — moves HEAD |
+| `git tag`, `git branch -d`, `git branch -D` | ✗ | Delegate — mutates refs |
+| `git stash` (any subcommand) | ✗ | Delegate — modifies working tree |
+| `git remote add/remove/set-url` | ✗ | Delegate — config mutation |
+
+**Rule of thumb:** If a git command writes to refs, history, the working tree, or the remote → delegate. If it only reads → direct Bash is OK. **"I already know what to do" is not a reason to skip delegation** — git-operator runs the safety checks (security-auditor verification, branch protection, sensitive-file scan) that direct Bash bypasses.
+
 ```
 Use Task tool with subagent_type: "git-operator"
 Prompt: Commit and push: {description of changes}
+
+Use Task tool with subagent_type: "git-operator"
+Prompt: Push existing commit on {branch} to origin (no new commit needed)
 
 Use Task tool with subagent_type: "git-operator"
 Prompt: Commit, push, and create PR to {branch}: {description}
@@ -190,7 +219,7 @@ execution_mode: team   # or "subagent"
 execution_mode:
   default: team
   overrides:
-    debug: subagent   # opt out specific phases if needed
+    troubleshoot: subagent   # opt out specific phases if needed
 ```
 
 | Value | Default | Behavior |
@@ -204,7 +233,7 @@ execution_mode:
 | `qa_review` | `/implement` | Phase 4 QA agents (test-writer, code-reviewer, security-auditor, quality-guard) |
 | `documentation_update` | `/update-documentation` | Phase 2-4 agents (context-builder, business-analyst, doc-writer) |
 | `refactor` | `/refactor` | Step 5.1 quality gate loop (code-reviewer, test-writer, quality-guard) |
-| `debug` | `/debug` | Phase 6 verification (security-auditor, quality-guard) |
+| `troubleshoot` | `/troubleshoot` | Phase 6 verification (security-auditor, quality-guard) |
 | `local_pr_review` | `/local-pr-review` | Step 4 review agents (code-reviewer, security-auditor, quality-guard) |
 | `pr_review` | `/pr-review` | Step 4 review agents (code-reviewer, security-auditor, quality-guard) |
 

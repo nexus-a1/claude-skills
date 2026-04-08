@@ -4,7 +4,7 @@ category: planning
 model: opus
 userInvocable: true
 description: Explore implementation strategies for business requirements. Interactive brainstorming that presents multiple approaches, trade-offs, and creates high-level implementation picture before committing to detailed specs.
-argument-hint: [--light] [feature-description] | promote <slug> [ticket-id]
+argument-hint: "[--light] [feature-description] | promote <slug> [ticket-id]"
 allowed-tools: "Read, Write, Glob, Grep, Bash(git:*), Bash(mkdir:*), Bash(jq:*), Bash(yq:*), Task, AskUserQuestion"
 ---
 

@@ -3,8 +3,8 @@ name: refactor
 model: sonnet
 category: code-quality
 userInvocable: true
-description: Analyze code and suggest refactoring improvements with agent-driven analysis
-argument-hint: [file|directory]
+description: Analyze code and suggest refactoring improvements with agent-driven analysis. Runs in the current working tree by default — set `worktree.enabled: true` in `.claude/configuration.yml` to isolate work in a git worktree.
+argument-hint: "[file|directory]"
 allowed-tools: "Read, Write, Edit, Grep, Glob, Bash(git diff:*), Bash(git log:*), Bash(git status:*), Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage, EnterWorktree, ExitWorktree"
 ---
 

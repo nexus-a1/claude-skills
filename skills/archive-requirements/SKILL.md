@@ -3,7 +3,7 @@ name: archive-requirements
 model: sonnet
 category: requirements-kb
 description: Manually archive completed requirements to team knowledge base
-argument-hint: [identifier]
+argument-hint: "[identifier]"
 userInvocable: true
 allowed-tools: Read, Bash, Task, AskUserQuestion
 ---

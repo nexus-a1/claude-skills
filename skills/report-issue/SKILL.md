@@ -4,7 +4,7 @@ model: sonnet
 category: analysis
 userInvocable: true
 description: Draft and submit a bug report or feature request to the nexus plugin repository, using current conversation context to auto-populate details.
-argument-hint: [--feature-request]
+argument-hint: "[--feature-request]"
 allowed-tools: "Read, Bash(gh issue create:*), Bash(gh auth status:*), Bash(jq:*), Bash(mktemp:*), AskUserQuestion"
 ---
 

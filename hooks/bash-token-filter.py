@@ -43,6 +43,22 @@ QUIET_OVERRIDES = [
     (re.compile(r'^docker\s+pull\b(?!.*\s-q)'), '-q', 'after_subcommand'),
     # make
     (re.compile(r'^make\b(?!.*\s-s)(?!.*--silent)'), '-s', 'after_command'),
+    # gh pr view — force --json with a safe field set to avoid the
+    # `repository.pullRequest.projectCards` deprecation error returned by
+    # GitHub GraphQL when the gh CLI's default text-mode query is used.
+    # Skip if --json, --web, -w, --help, or -h is already present.
+    (
+        re.compile(
+            r'^gh\s+pr\s+view\b'
+            r'(?!.*--json)'
+            r'(?!.*--web)'
+            r'(?!.*\s-w(\s|$))'
+            r'(?!.*--help)'
+            r'(?!.*\s-h(\s|$))'
+        ),
+        '--json number,title,state,url,headRefName,baseRefName,mergeable,mergeStateStatus,reviewDecision,author,body,additions,deletions,changedFiles,labels',
+        'at_end',
+    ),
 ]
 
 # Regex to split on the first shell operator (|, ||, &&, ;) while preserving it
@@ -79,6 +95,8 @@ def inject_flag(command, flag, position):
     elif position == 'after_subcommand':
         idx = min(2, len(parts))
         parts.insert(idx, flag)
+    elif position == 'at_end':
+        parts.append(flag)
     return ' '.join(parts)
 
 

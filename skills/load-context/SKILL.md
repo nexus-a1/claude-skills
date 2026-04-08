@@ -1,10 +1,10 @@
 ---
-name: context
+name: load-context
 category: implementation
 model: sonnet
 userInvocable: true
 description: Load all available context for a ticket or topic — work state, brainstorms, proposals, requirements KB, product knowledge, and git history — into a single unified summary.
-argument-hint: <identifier-or-query>
+argument-hint: "<identifier-or-query>"
 allowed-tools: "Read, Write, Glob, Grep, Bash(git:*), Task, AskUserQuestion"
 ---
 
@@ -17,8 +17,8 @@ Aggregate everything the system knows about a topic from all storage sources int
 ## Usage
 
 ```bash
-/context <slug-or-query>    # Aggregate context for a specific topic
-/context                    # List available context across all sources
+/load-context <slug-or-query>    # Aggregate context for a specific topic
+/load-context                    # List available context across all sources
 ```
 
 ## When to Use
@@ -237,7 +237,7 @@ done
 
 ---
 
-## Workflow: `/context <slug>`
+## Workflow: `/load-context <slug>`
 
 When a slug/query argument is provided, search all sources for matches.
 
@@ -420,7 +420,7 @@ After phases complete, compile all findings into the output format.
 
 ---
 
-## Workflow: `/context` (No Argument)
+## Workflow: `/load-context` (No Argument)
 
 When invoked without arguments, list what context is available across all sources.
 
@@ -467,7 +467,7 @@ api-refactor       API Controller Cleanup                                 ✓   
 
 4 topics found across local sources.
 
-Load details: /context <slug>
+Load details: /load-context <slug>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -481,7 +481,7 @@ Select a topic to load context for, or enter a search query:
 
 Options: list the slugs found, plus an "Other" option for free-text search.
 
-If user selects a slug, proceed with the `/context <slug>` workflow above.
+If user selects a slug, proceed with the `/load-context <slug>` workflow above.
 
 ---
 
@@ -561,8 +561,8 @@ Recent commits:
 No context found across any source.
 
 Available actions:
-- /context <query>                    Search by keyword
-- /create-requirements      Start new work
+- /load-context <query>               Search by keyword
+- /create-requirements                Start new work
 - /brainstorm                         Start brainstorming
 ```
 
@@ -581,9 +581,9 @@ Searched:
   Git history:    No matching branches or commits
 
 Suggestions:
-- Try a broader query: /context auth (instead of user-authentication)
+- Try a broader query: /load-context auth (instead of user-authentication)
 - Check spelling
-- List available context: /context
+- List available context: /load-context
 ```
 
 ### Configuration missing
@@ -618,7 +618,7 @@ Both agent searches run **in parallel** when triggered.
 ### Example 1: Full context for a ticket
 
 ```bash
-/context JIRA-123
+/load-context JIRA-123
 ```
 
 ```
@@ -666,7 +666,7 @@ Recent commits:
 ### Example 2: Search across sources
 
 ```bash
-/context authentication
+/load-context authentication
 ```
 
 Finds partial matches in work directories, brainstorms, proposals,
@@ -675,7 +675,7 @@ and searches requirements KB and product docs for "authentication".
 ### Example 3: List all available context
 
 ```bash
-/context
+/load-context
 ```
 
 Lists all slugs found across local sources with which sources

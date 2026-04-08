@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.1.6] - 2026-04-08
+
+## What's Changed
+
+### Features
+- Add /work-feedback project-local skill and feedback reports (#129)
+
+### Bug Fixes
+- Rename debug skill to troubleshoot to avoid native command conflict (#128)
+- Rename context skill to load-context to avoid native command conflict (#125)
+- Rewrite `gh pr view` to use --json to dodge projectCards GraphQL deprecation (#122)
+- Quote argument-hint values to prevent YAML list parsing (#124)
+
+### Documentation
+- Clarify worktree isolation is opt-in (default off) (#123)
+- Clarify git-operator delegation boundaries with explicit allow/delegate table (#121)
+
+**Full Changelog**: https://github.com/anthropics/claude-skills/compare/v1.1.5...v1.1.6
+
 ## [1.1.5] - 2026-04-04
 
 ## What's Changed

@@ -4,7 +4,7 @@ category: release-management
 model: haiku
 userInvocable: true
 description: Push a release branch and open a PR to the target branch. Step 2 of the release workflow — runs after branching, before merging.
-argument-hint: [target-branch] [version]
+argument-hint: "[target-branch] [version]"
 allowed-tools: "Bash(git push:*), Bash(git ls-remote:*), Bash(git branch:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-parse:*), Bash(git checkout:*), Bash(git fetch:*), Bash(git remote:*), Bash(gh pr create:*), Bash(gh pr list:*), Bash(gh pr edit:*), Bash(gh pr comment:*), AskUserQuestion"
 ---
 

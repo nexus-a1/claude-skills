@@ -4,7 +4,7 @@ category: release-management
 model: haiku
 userInvocable: true
 description: Stage and commit changes with a conventional commit message. Runs pre-commit checks automatically. Optionally prefixes with a ticket number.
-argument-hint: [ticket-number]
+argument-hint: "[ticket-number]"
 allowed-tools: "Bash(git commit:*), Bash(git branch:*), Bash(git checkout:*), Bash(git log:*), Bash(./vendor/bin/php-cs-fixer:*), Bash(php-cs-fixer:*), Bash(test:*), Bash(which:*), Task, AskUserQuestion"
 ---
 

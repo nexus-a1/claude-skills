@@ -1,18 +1,18 @@
 ---
-name: debug
+name: troubleshoot
 category: implementation
 model: opus
 userInvocable: true
-description: Systematically debug a failing feature or error. Discovers code, investigates root cause, applies fix, verifies with tests, and commits. Use when something isn't working as expected.
+description: Systematically troubleshoot a failing feature or error. Discovers code, investigates root cause, applies fix, verifies with tests, and commits. Use when something isn't working as expected. Runs in the current working tree by default — set `worktree.enabled: true` in `.claude/configuration.yml` to isolate work in a git worktree.
 argument-hint: <error-or-description>
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage, EnterWorktree, ExitWorktree
 ---
 
-# Debug Skill
+# Troubleshoot Skill
 
 Arguments: $ARGUMENTS
 
-Systematically debug issues through multi-agent orchestration: discover → investigate → fix → verify → commit.
+Systematically troubleshoot issues through multi-agent orchestration: discover → investigate → fix → verify → commit.
 
 ## Configuration
 
@@ -192,10 +192,10 @@ resolve_service_path() {
   echo "${WORKSPACE_ROOT}/${svc}"
 }
 # END_SHARED: resolve-config
-DEBUG_EXEC_MODE=$(resolve_exec_mode debug team)
+TROUBLESHOOT_EXEC_MODE=$(resolve_exec_mode troubleshoot team)
 ```
 
-Use `$DEBUG_EXEC_MODE` to determine team vs sub-agent behavior in Phase 6 (verify fix).
+Use `$TROUBLESHOOT_EXEC_MODE` to determine team vs sub-agent behavior in Phase 6 (verify fix).
 
 ## Write Safety
 
@@ -210,9 +210,9 @@ See `~/.claude/shared/write-safety.md` for the full conventions.
 ## Usage
 
 ```bash
-/debug "Endpoint /api/users returns 202 instead of 200"
-/debug "Login fails when password contains special characters"
-/debug "Database query times out on large datasets"
+/troubleshoot "Endpoint /api/users returns 202 instead of 200"
+/troubleshoot "Login fails when password contains special characters"
+/troubleshoot "Database query times out on large datasets"
 ```
 
 ## When to Use This Skill
@@ -247,36 +247,36 @@ See `~/.claude/shared/write-safety.md` for the full conventions.
 Skip if `resolve_worktree_enabled` returns `"false"`.
 
 **Single mode** (`WORKSPACE_MODE == "single"`):
-1. Call `EnterWorktree(name: "debug-{short_slug}")` where `{short_slug}` is derived from the issue description (e.g., `debug-login-500`)
+1. Call `EnterWorktree(name: "troubleshoot-{short_slug}")` where `{short_slug}` is derived from the issue description (e.g., `troubleshoot-login-500`)
 2. CWD moves to worktree; `$WORK_DIR` still resolves to original workspace root
 
 **Multi mode** (`WORKSPACE_MODE == "multi"`):
 1. Create per-service worktrees using each service's current branch:
 ```bash
 WT_ROOT=$(resolve_worktree_root)
-DEBUG_WORKSPACE="${WT_ROOT}/debug-{short_slug}"
-mkdir -p "$DEBUG_WORKSPACE"
+TROUBLESHOOT_WORKSPACE="${WT_ROOT}/troubleshoot-{short_slug}"
+mkdir -p "$TROUBLESHOOT_WORKSPACE"
 
 for svc in $(resolve_services); do
   svc_path=$(resolve_service_path "$svc")
-  wt_path="${DEBUG_WORKSPACE}/${svc}"
+  wt_path="${TROUBLESHOOT_WORKSPACE}/${svc}"
   [[ -d "$wt_path" ]] && continue
   CURRENT_BRANCH=$(git -C "$svc_path" branch --show-current 2>/dev/null || echo "HEAD")
-  git -C "$svc_path" worktree add "$wt_path" -b "debug/{short_slug}" 2>/dev/null \
+  git -C "$svc_path" worktree add "$wt_path" -b "troubleshoot/{short_slug}" 2>/dev/null \
     || git -C "$svc_path" worktree add "$wt_path" "$CURRENT_BRANCH"
   echo "Created worktree: ${svc}/ → ${wt_path}"
 done
 ```
-2. All subsequent agent prompts use `$DEBUG_WORKSPACE/{service}/` paths
+2. All subsequent agent prompts use `$TROUBLESHOOT_WORKSPACE/{service}/` paths
 
 **After Phase 7 (Commit)**: Single mode → `ExitWorktree(action: "remove")`. Multi mode → remove worktrees:
 ```bash
 for svc in $(resolve_services); do
   svc_path=$(resolve_service_path "$svc")
-  wt_path="${DEBUG_WORKSPACE}/${svc}"
+  wt_path="${TROUBLESHOOT_WORKSPACE}/${svc}"
   [[ -d "$wt_path" ]] && git -C "$svc_path" worktree remove "$wt_path" --force 2>/dev/null
 done
-rmdir "$DEBUG_WORKSPACE" 2>/dev/null
+rmdir "$TROUBLESHOOT_WORKSPACE" 2>/dev/null
 ```
 
 ---
@@ -486,7 +486,7 @@ Task(test-writer, "Write test for /api/users endpoint expecting 200 status code 
 
 **Goal:** Ensure the fix works and doesn't break anything.
 
-**Execution mode**: Determined by `$DEBUG_EXEC_MODE`.
+**Execution mode**: Determined by `$TROUBLESHOOT_EXEC_MODE`.
 
 ### 6.1 Run relevant tests
 ```bash
@@ -505,7 +505,7 @@ Task(test-fixer, "Fix failing test after changing /api/users to return 200 inste
 
 ### 6.3 Verification review
 
-**If `$DEBUG_EXEC_MODE` = `"subagent"`:**
+**If `$TROUBLESHOOT_EXEC_MODE` = `"subagent"`:**
 
 Run verification agents in parallel:
 
@@ -517,7 +517,7 @@ Prompt: Quick security audit of {endpoint/component} after {change description}.
 Check for: injection risks, auth bypass, data exposure from the fix.
 
 Task 2: subagent_type: "quality-guard"
-Prompt: Verify the debug fix (Level 2 — Implementation Validation).
+Prompt: Verify the troubleshoot fix (Level 2 — Implementation Validation).
 Fix diff: {git_diff}
 Root cause: {root_cause_analysis}
 Verify:
@@ -533,17 +533,17 @@ If skeptic raises BLOCKING gates, address them before committing.
 
 ---
 
-**If `$DEBUG_EXEC_MODE` = `"team"` (default):**
+**If `$TROUBLESHOOT_EXEC_MODE` = `"team"` (default):**
 
 ```
-TeamCreate(team_name="debug-verify")
+TeamCreate(team_name="troubleshoot-verify")
 
 TaskCreate: "Security audit of fix" (T1)
 TaskCreate: "Challenge the fix" (T2) — depends on T1
 
 [PARALLEL]
-Task tool: name: "debug-security", subagent_type: "security-auditor", team_name: "debug-verify"
-Task tool: name: "debug-skeptic", subagent_type: "quality-guard", team_name: "debug-verify"
+Task tool: name: "troubleshoot-security", subagent_type: "security-auditor", team_name: "troubleshoot-verify"
+Task tool: name: "troubleshoot-skeptic", subagent_type: "quality-guard", team_name: "troubleshoot-verify"
 ```
 
 Skeptic waits for security-auditor, then challenges. Agents resolve via SendMessage. Collect results and TeamDelete.
@@ -667,7 +667,7 @@ Task(test-fixer, "Fix all failing tests after changing /api/users status code")
 
 **Example:**
 ```bash
-/debug "Login endpoint returns 500 when password is empty
+/troubleshoot "Login endpoint returns 500 when password is empty
 Error: Call to a member function hash() on null
 Stack trace shows error in AuthService::validatePassword()
 Expected: 400 Bad Request with validation error
@@ -678,7 +678,7 @@ Actual: 500 Internal Server Error"
 
 ## Quality Checklist
 
-Before completing debug session:
+Before completing troubleshoot session:
 
 - [ ] Root cause identified and documented
 - [ ] Fix applied (code or tests)
@@ -694,7 +694,7 @@ Before completing debug session:
 
 **User:**
 ```bash
-/debug "Endpoint /api/users returns 202 instead of 200"
+/troubleshoot "Endpoint /api/users returns 202 instead of 200"
 ```
 
 **Skill Workflow:**

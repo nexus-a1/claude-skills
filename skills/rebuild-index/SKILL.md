@@ -482,5 +482,5 @@ Use AskUserQuestion for selection.
 
 - [Manifest System Reference](../../docs/manifest-system.md) — Schema details and update patterns
 - `/rebuild-requirements-index` — Requirements-specific index rebuild
-- `/context` — Uses manifests for fast listing and lookup
+- `/load-context` — Uses manifests for fast listing and lookup
 - `/resume-work` — Uses work manifest to find incomplete work

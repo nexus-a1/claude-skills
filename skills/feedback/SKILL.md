@@ -4,7 +4,7 @@ model: sonnet
 category: analysis
 userInvocable: true
 description: Generate a retrospective report analyzing agent pipeline execution, duplication, scope adherence, and output quality from a completed work session.
-argument-hint: [work-identifier] [--issue]
+argument-hint: "[work-identifier] [--issue]"
 allowed-tools: "Read, Write, Glob, Grep, Bash(git log:*), Bash(git diff:*), Bash(git branch:*), Bash(wc:*), Bash(jq:*), Bash(yq:*), Bash(mkdir:*), Bash(gh issue create:*), Task, AskUserQuestion"
 ---
 

@@ -33,14 +33,14 @@
 #     execution_mode:
 #       default: team
 #       overrides:
-#         debug: subagent   # opt out specific phases if needed
+#         troubleshoot: subagent   # opt out specific phases if needed
 #
 # Available phase names:
 #   requirements_deep_dive  — /create-requirements Stage 3 (parallel research)
 #   qa_review               — /implement Phase 4 (QA agents + quality-guard)
 #   documentation_update    — /update-documentation Phases 2-4
 #   refactor                — /refactor Step 5.1 (quality gate loop)
-#   debug                   — /debug Phase 6 (verification review)
+#   troubleshoot            — /troubleshoot Phase 6 (verification review)
 #   local_pr_review         — /local-pr-review Step 4 (review agents)
 #   pr_review               — /pr-review Step 4 (review agents)
 #
@@ -170,7 +170,7 @@ requirements:
 # -----------------------------------------------------------------------------
 # Worktree Isolation (optional)
 # -----------------------------------------------------------------------------
-# When enabled, code-modifying skills (/implement, /debug, /refactor) work in
+# When enabled, code-modifying skills (/implement, /troubleshoot, /refactor) work in
 # isolated git worktrees instead of the main working tree.
 #
 # Mode is auto-detected — no configuration needed:
