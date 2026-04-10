@@ -106,9 +106,26 @@ Document these patterns when found:
 
 Return a markdown document with entity diagrams and clear recommendations.
 
+## Scope Fence — STRICT
+
+**Analyze ONLY:**
+1. Entity fields and types
+2. SQL schema (tables, columns, constraints, indexes)
+3. Query patterns (access patterns, indexes for proposed queries, N+1 risks)
+
+**Do NOT analyze:**
+- Side effects, event listeners, or subscribers (archaeologist's domain)
+- Batch safety, ORM identity-map clearing, or transactional concerns (archaeologist's domain)
+- Architecture decisions, layer rules, or service boundaries (architect's domain)
+- Business rules or workflow states (product-expert's domain)
+
+If a finding does not fit one of the three allowed categories above, omit it.
+
 ## Output Constraints
 
-- **Target ~1500 tokens**. Be concise. Use tables and diagrams, not prose.
+- **Maximum output: 150 lines.** Hard cap, not a target.
+- Cut by removing: findings already in discovery.json, analysis outside the scope fence above, context-setting preamble.
+- Use tables and diagrams, not prose.
 - Only include entities and relationships **directly relevant to the feature**.
 
 DO NOT write migrations. ANALYZE and RECOMMEND only.

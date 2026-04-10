@@ -22,7 +22,9 @@ Using the inventory as your map (do NOT re-inventory endpoints/services), invest
 5. Historical context clues (TODOs, comments, workarounds)
 6. Modification risks - what could break
 
-Return concise findings (~1500 tokens) with file paths and line numbers.
+**Maximum output: 150 lines.** Cut by removing findings already in discovery.json, entity-schema details (data-modeler's domain), and architecture decisions (architect's domain).
+
+Return concise findings with file paths and line numbers.
 
 ---
 
@@ -50,12 +52,21 @@ Prompt: Analyze database schema and relationships for this feature.
 Feature: {feature_description}
 Entities identified: {entities_from_discovery}
 
+**Scope fence — analyze ONLY:**
+(1) Entity fields and types, (2) SQL schema, (3) query patterns.
+Do NOT analyze side effects, subscribers, batch safety, ORM identity-map clearing patterns,
+or architecture decisions — those belong to archaeologist/architect.
+
 Analyze:
 1. Existing entity relationships and constraints
 2. Required schema changes for this feature
 3. Migration requirements
 4. Index needs for new queries
 5. Data integrity considerations
+
+**Input scope:** Use discovery.json as your only context. Do NOT re-read other agents' outputs.
+
+**Maximum output: 150 lines.** Cut by removing findings already in discovery.json or outside the scope fence above.
 
 Return schema analysis and migration requirements.
 
@@ -134,11 +145,15 @@ Prompt: Provide product-specific context relevant to this feature.
 Feature: {feature_description}
 Components involved: {components_from_discovery}
 
-Research:
-1. Relevant product architecture patterns
-2. API contracts and integration points
-3. Business rules and constraints
-4. Existing patterns to follow
+**Net-new value only:** discovery.json already contains file locations, eligibility criteria, existing flags, and table schemas. Do NOT restate any of that. Your output must add knowledge the discovery phase did not surface.
 
-Return product context (~1500 tokens).
+Research:
+1. Relevant product architecture patterns NOT visible from code alone
+2. API contracts and integration points documented in the KB
+3. Business rules and constraints documented in the KB
+4. Existing patterns to follow with KB-documented rationale
+
+**Maximum output: 150 lines.** If your only net-new content is a small business-decisions table or a handful of KB pointers, output ONLY that — do not pad.
+
+Return product context.
 ```

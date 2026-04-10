@@ -60,7 +60,8 @@ For the feature's primary flow:
 
 ## Output Constraints
 
-- **Target ~1500 tokens**. Be concise. Use tables over prose.
+- **Maximum output: 150 lines.** Hard cap, not a target. Use tables over prose.
+- Cut by removing: findings already in discovery.json (`context-builder` output), analysis outside your domain (entity schemas → data-modeler, architecture decisions → architect), and context-setting preamble.
 - Only include findings **directly relevant to the feature**. Skip unrelated code.
 - Reference specific file paths and line numbers.
 - If an area is clean with no risks, say so briefly. Don't pad the output.

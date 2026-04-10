@@ -5,7 +5,7 @@ model: haiku
 userInvocable: true
 description: Merge an approved release PR into its target branch. Validates PR status and checks before merging. Step 3 of the release workflow.
 argument-hint: "[release-branch]"
-allowed-tools: "Bash(git branch:*), Bash(git checkout:*), Bash(git pull:*), Bash(git push:*), Bash(git fetch:*), Bash(git rev-parse:*), Bash(git log:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr merge:*), Bash(gh pr checks:*), AskUserQuestion"
+allowed-tools: "Bash(git branch:*), Bash(GIT_AUTHORIZED=1 git checkout:*), Bash(GIT_AUTHORIZED=1 git push:*), Bash(GIT_AUTHORIZED=1 git branch:*), Bash(git fetch:*), Bash(git rev-parse:*), Bash(git log:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr merge:*), Bash(gh pr checks:*), AskUserQuestion"
 ---
 
 # Merge Release PR Command
@@ -398,10 +398,10 @@ Choose:
 **If user says yes:**
 ```bash
 # Delete local branch
-git branch -d ${release_branch}
+GIT_AUTHORIZED=1 git branch -d ${release_branch}
 
 # Delete remote branch
-git push origin --delete ${release_branch}
+GIT_AUTHORIZED=1 git push origin --delete ${release_branch}
 ```
 
 ## Important Notes

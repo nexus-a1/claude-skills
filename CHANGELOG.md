@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.2.0] - 2026-04-10
+
+## What's New
+
+### Features
+- **`/monitor-pr`** — New skill to shepherd open PRs: polls CI, surfaces review comments, and posts status updates automatically (SKILLS-022)
+- **`/load-context` handoff** — `/resume-work` and `/implement` now hand off to `/load-context` for richer context loading on session resume (SKILLS-022)
+
+### Fixes
+- **git-operator enforcement** — `git-mutation-guard.sh` hook now blocks all mutations unless run via `git-operator` agent with `GIT_AUTHORIZED=1`. Covers `rm`, `mv`, `restore`, `clean`, long-form tag flags, and anchors bypass regex to start of command (SKILLS-024)
+- **monitor-pr hardening** — Handles stale comments, exit-8 edge cases, and orphan polls (SKILLS-025)
+- **Hook regex anchoring** — Mutation regexes now anchored to prevent false positives on `grep`/`cat` commands containing git substrings (SKILLS-027)
+- **Test exit codes** — `run-tests.sh` now correctly propagates non-zero exit codes in non-verbose mode (SKILLS-026)
+- **git-operator token efficiency** — Quiet flags added throughout to reduce verbose output (SKILLS-023)
+
+### Documentation
+- git-operator: `GIT_AUTHORIZED=1` list now includes `git rm`, `mv`, `restore`, `clean` (SKILLS-028)
+- `plugin/CLAUDE.md` delegation table updated with all mutation commands
+- `docs/agents.md`, `docs/installation.md`, `plugin/hooks/git-mutation-guard.sh` header comments synced (SKILLS-029)
+- `plugin/skills/brainstorm/README.md`: documented `--light` flag and `promote` subcommand
+
+### CI
+- Healthcheck workflow now triggers on `push: branches: [master]` — badge in README stays green after merges (SKILLS-029)
+- Added git-operator agent tests: output minimization and `GIT_AUTHORIZED=1` co-convention (SKILLS-024)
+
 ## [1.1.6] - 2026-04-08
 
 ## What's Changed

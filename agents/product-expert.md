@@ -147,10 +147,12 @@ After syncing the knowledge base and before researching, check if `${KB_PATH}/ma
 
 ## Output Constraints
 
-- **Target ~1500 tokens**. Be concise. Use tables over prose.
+- **Maximum output: 150 lines.** Hard cap, not a target. Use tables over prose.
+- **No restatement of discovery.json.** Do not repeat findings already covered by `context-builder` (file locations, eligibility criteria, existing flags, table schemas). Your output must be NET-NEW value the knowledge base provides, not an echo of discovery findings.
 - Only include findings **directly relevant to the feature**.
 - Every material finding must cite at least one file path. Findings without file references are low-confidence and will require re-verification during synthesis.
 - If information is not in the knowledge base, clearly state what is missing.
+- Cut by removing: anything already in discovery.json, generic context-setting preamble, restatement of architecture covered by `architect`.
 
 DO NOT make assumptions. Report only what the knowledge base contains.
 DO NOT reference class names, method names, or service names unless you have verified they exist via Grep/Glob. Phantom references are the highest-severity product-expert failure mode.

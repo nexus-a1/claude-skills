@@ -45,9 +45,13 @@ The following operations **MUST** always use their designated agents:
 | `git checkout <branch>`, `git switch <branch>` | ✗ | Delegate — moves HEAD |
 | `git tag`, `git branch -d`, `git branch -D` | ✗ | Delegate — mutates refs |
 | `git stash` (any subcommand) | ✗ | Delegate — modifies working tree |
+| `git rm` | ✗ | Delegate — removes tracked files |
+| `git mv` | ✗ | Delegate — renames/moves tracked files |
+| `git restore` | ✗ | Delegate — modifies working tree or index |
+| `git clean` | ✗ | Delegate — deletes untracked files |
 | `git remote add/remove/set-url` | ✗ | Delegate — config mutation |
 
-**Rule of thumb:** If a git command writes to refs, history, the working tree, or the remote → delegate. If it only reads → direct Bash is OK. **"I already know what to do" is not a reason to skip delegation** — git-operator runs the safety checks (security-auditor verification, branch protection, sensitive-file scan) that direct Bash bypasses.
+**Rule of thumb:** If a git command writes to refs, history, the working tree, or the remote → delegate. If it only reads → direct Bash is OK. **"I already know what to do" is not a reason to skip delegation** — git-operator runs the safety checks (security-auditor verification, branch protection, sensitive-file scan) that direct Bash bypasses. This rule is also **enforced by a `PreToolUse` hook** (`git-mutation-guard.sh`) that blocks mutation commands run directly via Bash; git-operator bypasses the hook internally using `GIT_AUTHORIZED=1`.
 
 ```
 Use Task tool with subagent_type: "git-operator"
@@ -60,7 +64,7 @@ Use Task tool with subagent_type: "git-operator"
 Prompt: Commit, push, and create PR to {branch}: {description}
 ```
 
-**Exception:** Haiku-tier release skills (`/nexus:create-release`, `/nexus:merge-release`, `/nexus:release`) run git/gh commands directly for speed. These are simple, deterministic operations where git-operator delegation adds latency without quality benefit. `/nexus:commit` delegates staging and commit message generation to `git-operator` (which runs `git status`/`git diff` internally) but runs `git commit` directly. `/nexus:create-release-branch` delegates branch creation and push to `git-operator`.
+**Exception:** Haiku-tier release skills (`/nexus:create-release`, `/nexus:merge-release`, `/nexus:release`) run git/gh commands directly for speed. These are simple, deterministic operations where git-operator delegation adds latency without quality benefit. When they run git mutations directly they must prefix commands with `GIT_AUTHORIZED=1` to satisfy the enforcement hook. `/nexus:commit` delegates staging and commit message generation to `git-operator` (which runs `git status`/`git diff` internally) but runs `git commit` directly. `/nexus:create-release-branch` delegates branch creation and push to `git-operator`.
 
 #### Documentation → `doc-writer`
 Every time documentation needs to be created or updated, delegate to the `doc-writer` agent via the **Task tool with `subagent_type: "doc-writer"`**.

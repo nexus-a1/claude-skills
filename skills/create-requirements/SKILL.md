@@ -871,16 +871,25 @@ Read `references/deep-dive-agent-prompts.md` for the complete prompt templates f
 While teammates are running:
 
 1. Monitor progress via TaskList
-2. When an agent finishes, use SendMessage to notify still-running agents:
+2. When an agent finishes:
+   a. **Read** `$WORK_DIR/{identifier}/context/{completed-agent}.md`
+   b. **Distill** the findings into a summary of **at most 10 lines**: the key decision(s), 2–3 evidence bullets with file:line references, and any signal that affects another agent's scope. Do NOT pass the full document.
+   c. Use SendMessage to notify still-running agents with the distilled summary:
    ```
    SendMessage(
      type="message",
      recipient="{agent-name}",
-     content="Findings from {completed-agent} are now available at $WORK_DIR/{identifier}/context/{completed-agent}.md. Check for relevant patterns and risks.",
-     summary="{completed-agent} findings available"
+     content="From {completed-agent} (treat as settled):
+   - Decision: {one line}
+   - Evidence: {file:line}, {file:line}, {file:line}
+   - Impact on you: {one line, if any}
+   Read $WORK_DIR/{identifier}/context/{completed-agent}.md ONLY if you need code references beyond the above.",
+     summary="{completed-agent} decision summary"
    )
    ```
 3. Repeat for each agent that finishes while others are still running
+
+**Why summaries, not file pointers:** Passing the full 200–300 line document causes downstream agents to re-validate settled decisions, which the business-analyst then re-reads on every synthesis pass. A 10-line decision summary preserves the cross-pollination signal without the duplication tax.
 
 #### 3.4 Verify and Save Agent Outputs
 
@@ -980,11 +989,14 @@ Agent findings are saved in the context directory. Read each file that exists:
 
 Tasks:
 1. Read all available context files above
-2. Resolve any conflicts between agent findings
-3. Prioritize requirements (MoSCoW)
-4. Identify risks (Technical, Business, Timeline)
-5. Validate against user's acceptance criteria from refinement phase
-6. Note any performance considerations (queries, caching, scalability)
+2. **Mechanism verification (mandatory pre-check before writing MUST requirements):**
+   For each implementation mechanism you intend to state as a MUST requirement, verify it appears in `discovery.json` (or another agent's findings) with a compatible API signature. If a mechanism is asserted without supporting evidence — or if the discovered signature is incompatible with the intended use (e.g., per-record accessor used as a batch query) — flag it as `BLOCKER: unverified mechanism` instead of writing it as a MUST. This prevents downstream rework from QA-gate-detected structural flaws.
+3. Resolve any conflicts between agent findings
+4. Prioritize requirements (MoSCoW)
+5. Identify risks (Technical, Business, Timeline)
+6. **Business decisions table:** For each open business decision (defaults, opt-in/out, scope, rollout), produce a table with columns `Decision | Options | Stakeholder Implications | Recommended Default`. Include this table even if `product-expert` did not run.
+7. Validate against user's acceptance criteria from refinement phase
+8. Note any performance considerations (queries, caching, scalability)
 
 Produce TWO documents, separated by the exact markers shown below.
 

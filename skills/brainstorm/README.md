@@ -43,6 +43,13 @@ The skill asks questions, presents options, gets your feedback, and refines base
 # Interactive mode
 /brainstorm
 # Then answer questions about what you want to build
+
+# Lightweight mode — uses Sonnet agents for faster, lower-cost exploration
+/brainstorm --light "Add webhook notifications when orders complete"
+
+# Promote a completed brainstorm into a requirements session
+/brainstorm promote {slug}
+/brainstorm promote {slug} JIRA-123
 ```
 
 ## What You Get
@@ -65,14 +72,14 @@ The skill asks questions, presents options, gets your feedback, and refines base
 
 ## When to Use This
 
-✅ **Use /brainstorm when:**
+Use /brainstorm when:
 - Business gives you requirements but approach is unclear
 - Want to explore options before committing
 - Need to present trade-offs to stakeholders
 - Multiple ways to implement and unsure which is best
 - Want to understand scope before creating tickets
 
-❌ **Don't use /brainstorm when:**
+Don't use /brainstorm when:
 - Already know exactly how to implement → `/create-requirements`
 - Need formal proposal with code → `/create-proposal`
 - Work is already scoped → `/epic` or `/implement`
@@ -82,25 +89,32 @@ The skill asks questions, presents options, gets your feedback, and refines base
 
 After brainstorming, you have several options:
 
-### Option 1: Create Detailed Requirements
+### Option 1: Promote to Requirements (recommended)
+```bash
+/brainstorm promote {slug}
+/brainstorm promote {slug} JIRA-123
+```
+Marks the brainstorm as promoted, updates the manifest, and launches `/create-requirements --from-brainstorm {slug}` with bidirectional linking. The requirements session will have the brainstorm's implementation picture and work breakdown loaded as prior art.
+
+### Option 2: Create Detailed Requirements
 ```bash
 /create-requirements
 ```
 Use the brainstorm output to create comprehensive technical specs.
 
-### Option 2: Break Into Epic
+### Option 3: Break Into Epic
 ```bash
 /epic "{feature description}"
 ```
 If it's a large effort, break it into multiple tickets.
 
-### Option 3: Create Formal Proposal
+### Option 4: Create Formal Proposal
 ```bash
 /create-proposal
 ```
 For significant architectural changes, create a formal proposal.
 
-### Option 4: Implement Directly
+### Option 5: Implement Directly
 If the work breakdown shows it's simple, start implementing directly.
 
 ## Real-World Example

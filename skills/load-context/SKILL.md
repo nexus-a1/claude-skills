@@ -418,6 +418,47 @@ If all phases return no matches for the slug AND the user's phrasing implies cre
 
 After phases complete, compile all findings into the output format.
 
+### Phase 4: Handoff
+
+After compiling results, if a `state.json` was found for the slug, offer to continue working.
+
+**Determine handoff options:**
+
+```bash
+STATE_FILE="${WORK_DIR}/${slug}/state.json"
+if [[ -f "$STATE_FILE" ]]; then
+  WORK_TYPE=$(jq -r '.type // "unknown"' "$STATE_FILE")
+  WORK_STATUS=$(jq -r '.status // "unknown"' "$STATE_FILE")
+fi
+```
+
+If no `state.json` exists for this slug, skip Phase 4 — no handoff offered.
+
+Build the option list based on `type` and `status`. Always append "No, just reviewing" as the last option.
+
+| `type` | `status` | Options to offer |
+|--------|----------|-----------------|
+| `implementation` | `in_progress` | "Resume implementation" → `/resume-work {slug}` |
+| `implementation` | `completed` | "Extend implementation" → `/resume-work {slug}` |
+| `requirements` | `in_progress` | "Resume requirements" → `/resume-work {slug}` |
+| `requirements` | `completed` | "Start implementing" → `/implement {slug}`, "Extend requirements" → `/resume-work {slug}` |
+| `brainstorm` | `in_progress` | "Resume brainstorm" → `/resume-work {slug}` |
+| `brainstorm` | `completed` | "Create requirements from brainstorm" → `/resume-work {slug}` |
+| `proposal` | any | "Resume proposal" → `/resume-work {slug}` |
+| `epic` | any | "Resume epic" → `/resume-work {slug}` |
+
+**Ask via AskUserQuestion:**
+
+```
+header: "Start working"
+question: "Ready to start working on {slug}?"
+options: [{options from table above}, "No, just reviewing"]
+```
+
+If user selects a work option, invoke the target skill with the slug as the argument:
+- `/resume-work {slug}` → execute the resume-work skill passing `{slug}` as `$ARGUMENTS`
+- `/implement {slug}` → execute the implement skill passing `{slug}` as `$ARGUMENTS`
+
 ---
 
 ## Workflow: `/load-context` (No Argument)

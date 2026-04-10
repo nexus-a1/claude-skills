@@ -5,7 +5,7 @@ model: haiku
 userInvocable: true
 description: Stage and commit changes with a conventional commit message. Runs pre-commit checks automatically. Optionally prefixes with a ticket number.
 argument-hint: "[ticket-number]"
-allowed-tools: "Bash(git commit:*), Bash(git branch:*), Bash(git checkout:*), Bash(git log:*), Bash(./vendor/bin/php-cs-fixer:*), Bash(php-cs-fixer:*), Bash(test:*), Bash(which:*), Task, AskUserQuestion"
+allowed-tools: "Bash(GIT_AUTHORIZED=1 git commit:*), Bash(GIT_AUTHORIZED=1 git checkout:*), Bash(git branch:*), Bash(git log:*), Bash(./vendor/bin/php-cs-fixer:*), Bash(php-cs-fixer:*), Bash(test:*), Bash(which:*), Task, AskUserQuestion"
 ---
 
 # Git Commit Command
@@ -46,7 +46,7 @@ echo "Ticket: ${ticket:-none}"
 
 If on `main` or `master`:
 - Create a new feature branch: `feature/[ticket]-description` or `feature/[description]`
-- Use `git checkout -b [branch-name]`
+- Use `GIT_AUTHORIZED=1 git checkout -b [branch-name]`
 
 ### 3. Run PHP CS Fixer (if available)
 
@@ -85,7 +85,7 @@ Return ONLY the commit message, nothing else.
 ### 5. Create the Commit
 
 ```bash
-git commit -m "[TICKET] type(scope): description"
+GIT_AUTHORIZED=1 git commit -m "[TICKET] type(scope): description"
 ```
 
 **Rules:**

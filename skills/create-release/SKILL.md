@@ -5,7 +5,7 @@ model: haiku
 userInvocable: true
 description: Push a release branch and open a PR to the target branch. Step 2 of the release workflow — runs after branching, before merging.
 argument-hint: "[target-branch] [version]"
-allowed-tools: "Bash(git push:*), Bash(git ls-remote:*), Bash(git branch:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-parse:*), Bash(git checkout:*), Bash(git fetch:*), Bash(git remote:*), Bash(gh pr create:*), Bash(gh pr list:*), Bash(gh pr edit:*), Bash(gh pr comment:*), AskUserQuestion"
+allowed-tools: "Bash(GIT_AUTHORIZED=1 git push:*), Bash(GIT_AUTHORIZED=1 git checkout:*), Bash(git ls-remote:*), Bash(git branch:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-parse:*), Bash(git fetch:*), Bash(git remote:*), Bash(gh pr create:*), Bash(gh pr list:*), Bash(gh pr edit:*), Bash(gh pr comment:*), AskUserQuestion"
 ---
 
 # Create Release PR Command
@@ -135,12 +135,12 @@ git rev-parse --verify origin/${release_branch} 2>/dev/null
 
 **If branch exists locally:**
 ```bash
-git checkout ${release_branch}
+GIT_AUTHORIZED=1 git checkout ${release_branch}
 ```
 
 **If branch exists on remote only:**
 ```bash
-git checkout -b ${release_branch} origin/${release_branch}
+GIT_AUTHORIZED=1 git checkout -b ${release_branch} origin/${release_branch}
 ```
 
 **If branch doesn't exist anywhere:**
@@ -158,7 +158,7 @@ Would you like to:
 
 - **'c' or 'create'**:
   ```bash
-  git checkout -b ${release_branch} ${target_branch}
+  GIT_AUTHORIZED=1 git checkout -b ${release_branch} ${target_branch}
   ```
   Show:
   ```
@@ -183,12 +183,12 @@ git ls-remote --heads origin ${release_branch}
 
 **If remote branch doesn't exist:**
 ```bash
-git push -u origin ${release_branch}
+GIT_AUTHORIZED=1 git push -u origin ${release_branch}
 ```
 
 **If remote branch exists but is behind:**
 ```bash
-git push origin ${release_branch}
+GIT_AUTHORIZED=1 git push origin ${release_branch}
 ```
 
 ### 7. Analyze Changes
