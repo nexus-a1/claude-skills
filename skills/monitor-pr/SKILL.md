@@ -81,18 +81,20 @@ URL:    {html_url}
 
 ## Step 2: Checkout PR Branch
 
-Delegate to `git-operator` so the working tree matches the PR:
+Align the working tree with the PR using direct Bash. This is a read-heavy operation (fetch + checkout + pull with no divergent local history) where a `git-operator` subagent spin-up costs ~17k tokens for ~3 commands; the `GIT_AUTHORIZED=1` prefix satisfies the `git-mutation-guard.sh` hook and matches the exception pattern already used by the Haiku-tier release skills.
 
-```
-subagent_type: git-operator
-prompt: |
-  Fetch origin, then checkout branch {BRANCH} and pull latest from origin/{BRANCH}.
-  The branch should already exist on origin (PR #{PR_NUMBER}). If a local branch
-  with the same name exists, switch to it first before pulling. Confirm HEAD matches
-  origin/{BRANCH} after the pull.
+```bash
+git fetch origin "$BRANCH"
+GIT_AUTHORIZED=1 git checkout "$BRANCH"
+GIT_AUTHORIZED=1 git pull --ff-only origin "$BRANCH"
+
+# Confirm HEAD matches origin
+LOCAL_SHA=$(git rev-parse HEAD)
+REMOTE_SHA=$(git rev-parse "origin/$BRANCH")
+[ "$LOCAL_SHA" = "$REMOTE_SHA" ] || { echo "HEAD ($LOCAL_SHA) != origin/$BRANCH ($REMOTE_SHA)"; exit 1; }
 ```
 
-If the checkout or pull fails, stop and surface the error.
+`--ff-only` prevents an implicit merge if local history has diverged — in that case surface the error to the user rather than attempting recovery here; monitor-pr assumes the PR branch is a clean mirror of origin. If fetch, checkout, or pull fails, stop and surface the error. All subsequent **mutations** (commits, pushes in Step 3.3) still delegate to `git-operator` per repo convention.
 
 ---
 
@@ -370,6 +372,6 @@ Invoke `/monitor-pr` to shepherd it through CI and review without manually polli
   referenced line is still present.
 - **One loop iteration ≠ one minute.** Iterations advance when state changes (CI finishes, comments arrive, a push lands). Between state changes the loop sleeps briefly (10s) and re-polls.
 - **Iteration cap protects from runaway token spend.** 10 iterations is enough for most PRs; escalate to the user beyond that.
-- **All git mutations delegate to `git-operator`.** This preserves the plugin's mandatory security-auditor / branch-protection checks before every push.
+- **Mutating git operations that are visible to others (commit, push) delegate to `git-operator`.** This preserves the plugin's mandatory security-auditor / branch-protection checks before every push. Local-only alignment operations (fetch, checkout, `--ff-only` pull) in Step 2 run inline with `GIT_AUTHORIZED=1` to avoid the ~17k-token cost of a subagent spin-up for a trivial read-through operation.
 - **No destructive actions.** The skill never force-pushes, never amends, never resets, never closes the PR.
 - **Conservative comment handling.** When in doubt about a comment, the skill flags it for the user rather than guessing. Silent wrong fixes are worse than skipped comments.

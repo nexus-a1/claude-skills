@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.4.0] - 2026-04-15
+
+## What's Changed
+
+### Features
+- **New skill `/review-plan`** — pre-implementation design review via architect + quality-guard (and optionally security-auditor with `--security` or keyword heuristic). Produces findings report + revised plan for paste into `/implement`. ([#161](https://github.com/traczewskim/claude/pull/161))
+- **New skill `/todo-work`** — companion to `/todo`: lists pending items from `TODO.md`, lets you pick one, flips it to `In progress`, and prints a ready-to-paste `/review-plan` or `/implement` invocation (clipboard copy when available). ([#162](https://github.com/traczewskim/claude/pull/162))
+
+### Bug Fixes
+- **`/monitor-pr` Step 2** — inlined local checkout alignment to avoid unnecessary subagent spin-up (~17k tokens saved per invocation) while preserving `--ff-only` safety. ([#160](https://github.com/traczewskim/claude/pull/160))
+
+### Plugin surface
+- Skill count: 30 → 31 active (project-local stays at 3)
+- Agent count unchanged (20)
+
+**Full Changelog**: https://github.com/traczewskim/claude/compare/v1.3.0...v1.4.0
+
 ## [1.3.0] - 2026-04-15
 
 ## What's Changed

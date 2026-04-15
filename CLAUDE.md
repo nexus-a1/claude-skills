@@ -64,7 +64,14 @@ Use Task tool with subagent_type: "git-operator"
 Prompt: Commit, push, and create PR to {branch}: {description}
 ```
 
-**Exception:** Haiku-tier release skills (`/nexus:create-release`, `/nexus:merge-release`, `/nexus:release`) run git/gh commands directly for speed. These are simple, deterministic operations where git-operator delegation adds latency without quality benefit. When they run git mutations directly they must prefix commands with `GIT_AUTHORIZED=1` to satisfy the enforcement hook. `/nexus:commit` delegates staging and commit message generation to `git-operator` (which runs `git status`/`git diff` internally) but runs `git commit` directly. `/nexus:create-release-branch` delegates branch creation and push to `git-operator`.
+**Exceptions** — skills that run git mutations inline with a `GIT_AUTHORIZED=1` prefix instead of delegating to `git-operator`:
+
+- **Haiku-tier release skills** (`/nexus:create-release`, `/nexus:merge-release`, `/nexus:release`) — simple, deterministic operations where git-operator delegation adds latency without quality benefit.
+- **`/nexus:commit`** — delegates staging and commit-message generation to `git-operator` (which runs `git status`/`git diff` internally) but runs `git commit` directly.
+- **`/nexus:create-release-branch`** — delegates branch creation and push to `git-operator`.
+- **`/nexus:monitor-pr` Step 2** — local-only alignment (`git fetch` + `git checkout` + `git pull --ff-only`) of a PR branch that already exists on origin. No commits, no pushes, no rewrites of shared history; `--ff-only` guards against divergence. Inlining avoids the ~17k-token cost of a subagent spin-up for a read-through operation.
+
+All other git mutations (any commit, push, merge, rebase, reset, revert, history rewrite, or push-visible operation) must go through `git-operator` — including in the skills listed above where the exception is scoped only to the operations named.
 
 #### Documentation → `doc-writer`
 Every time documentation needs to be created or updated, delegate to the `doc-writer` agent via the **Task tool with `subagent_type: "doc-writer"`**.
@@ -240,6 +247,7 @@ execution_mode:
 | `troubleshoot` | `/troubleshoot` | Phase 6 verification (security-auditor, quality-guard) |
 | `local_pr_review` | `/local-pr-review` | Step 4 review agents (code-reviewer, security-auditor, quality-guard) |
 | `pr_review` | `/pr-review` | Step 4 review agents (code-reviewer, security-auditor, quality-guard) |
+| `review_plan` | `/review-plan` | Step 3 review agents (architect, quality-guard, optionally security-auditor) |
 
 All skills that use multiple agents support configurable execution mode (`"subagent"` or `"team"`).
 
