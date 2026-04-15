@@ -336,7 +336,9 @@ When reviewing AWS infrastructure code:
 
 ## Output Guidelines
 
-Your response to the caller must be **focused and concise** (~1500 tokens). The caller needs actionable guidance, not a textbook.
+Your response to the caller must be **focused and concise**. The caller needs actionable guidance, not a textbook.
+
+**Maximum output: 200 lines.** Hard cap, not a target. Tables over prose where possible.
 
 ### RETURN only:
 

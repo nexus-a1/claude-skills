@@ -21,64 +21,17 @@ Arguments (if provided): $ARGUMENTS
 ## Configuration
 
 ```bash
-# BEGIN_SHARED: resolve-config
-CONFIG=""
-_d="$PWD"
-while [[ "$_d" != "/" ]]; do
-  if [[ -f "$_d/.claude/configuration.yml" ]]; then
-    CONFIG="$_d/.claude/configuration.yml"
-    break
-  fi
-  _d="$(dirname "$_d")"
-done
-WORKSPACE_ROOT=""
-if [[ -n "$CONFIG" ]]; then
-  WORKSPACE_ROOT="$(cd "$(dirname "$CONFIG")/.." && pwd)"
-fi
-WORKSPACE_ROOT="${WORKSPACE_ROOT:-$PWD}"
-WORKSPACE_MODE="single"
-DISCOVERED_SERVICES=()
-if git -C "$WORKSPACE_ROOT" rev-parse --is-inside-work-tree &>/dev/null; then
-  WORKSPACE_MODE="single"
+# Source resolve-config: marketplace installs get ${CLAUDE_PLUGIN_ROOT} substituted
+# inline before bash runs; ./install.sh users fall back to ~/.claude. If neither
+# path resolves, fail loudly rather than letting resolve_artifact be undefined.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
 else
-  for dir in "${WORKSPACE_ROOT}"/*/; do
-    if [[ -d "${dir}.git" ]]; then
-      DISCOVERED_SERVICES+=("$(basename "$dir")")
-    fi
-  done
-  [[ ${#DISCOVERED_SERVICES[@]} -gt 0 ]] && WORKSPACE_MODE="multi"
+  echo "ERROR: resolve-config.sh not found. Install via marketplace or run ./install.sh" >&2
+  exit 1
 fi
-if [[ -f "$CONFIG" ]]; then
-  _svc_count=$(yq -r '.workspace.services | length // 0' "$CONFIG" 2>/dev/null)
-  if [[ "$_svc_count" -gt 0 ]]; then
-    WORKSPACE_MODE="multi"
-    DISCOVERED_SERVICES=()
-  fi
-fi
-resolve_exec_mode() {
-  local phase="$1"
-  local default="${2:-team}"
-  if [[ -f "$CONFIG" ]]; then
-    local _raw=$(yq -r '.execution_mode' "$CONFIG" 2>/dev/null)
-    if [[ "$_raw" == "subagent" || "$_raw" == "team" ]]; then
-      echo "$_raw"
-    elif [[ "$_raw" != "null" && -n "$_raw" ]]; then
-      yq -r ".execution_mode.overrides.${phase} // .execution_mode.default // \"${default}\"" "$CONFIG"
-    else
-      echo "$default"
-    fi
-  else
-    echo "$default"
-  fi
-}
-resolve_worktree_enabled() {
-  if [[ -f "$CONFIG" ]]; then
-    yq -r '.worktree.enabled // "false"' "$CONFIG"
-  else
-    echo "false"
-  fi
-}
-# END_SHARED: resolve-config
 REVIEW_EXEC_MODE=$(resolve_exec_mode local_pr_review team)
 ```
 

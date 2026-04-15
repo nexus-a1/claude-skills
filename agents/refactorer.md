@@ -445,3 +445,9 @@ Your final response to the caller must be **minimal**. The caller has limited co
 - File diffs or line-by-line change descriptions
 - Step-by-step narration of the refactoring process
 - Full session state dumps (just progress fraction)
+
+## Output Constraints
+
+- **Maximum output: 80 lines.** Hard cap, not a target. Structural changes are committed to files — the response to the caller is a short report, not a walkthrough.
+- Cut by removing: anything listed under "DO NOT return" above, restated refactoring theory, before/after code blocks (the commit diff has them).
+- If a single refactoring succeeded, keep the response to ~10 lines (technique, files, tests pass, commit hash).

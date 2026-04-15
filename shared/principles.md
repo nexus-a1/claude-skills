@@ -20,22 +20,24 @@ These principles apply to all multi-agent skills and their spawned agents. Skill
 
 7. **Structured status reporting.** Use consistent format: `[TYPE]: [SUBJECT] | Details: [1-3 sentences] | Action needed: [yes/no]`
 
-8. **Report blockers immediately.** If blocked, message the lead or responsible agent without delay. Never wait silently.
+8. **SendMessage payload cap: 5 lines / ~80 words.** Hard cap, not a target. Every message must cite `file:line` (or task ID) when referring to findings. Do NOT paste full reports, full diffs, or full agent outputs into SendMessage — if a teammate needs the full context, point them at the shared file path. Share extracts, not dumps.
+
+9. **Report blockers immediately.** If blocked, message the lead or responsible agent without delay. Never wait silently.
 
 ## Execution Standards
 
-9. **Delegate mode for leads.** Team leads coordinate, review, and synthesize. They do not implement. If you are a team lead, your job is orchestration, not execution.
+10. **Delegate mode for leads.** Team leads coordinate, review, and synthesize. They do not implement. If you are a team lead, your job is orchestration, not execution.
 
-10. **Use Sonnet for execution agents, Opus for reasoning agents.** Researchers, architects, and skeptics benefit from deeper reasoning (Opus). Engineers executing well-defined specs can use Sonnet for cost efficiency.
+11. **Use Sonnet for execution agents, Opus for reasoning agents.** Researchers, architects, and skeptics benefit from deeper reasoning (Opus). Engineers executing well-defined specs can use Sonnet for cost efficiency.
 
 ## Write Safety
 
-11. **No concurrent writes to the same file.** When agents run in parallel (team mode), each agent writes ONLY to files scoped to its role. Only the lead writes to shared/aggregated output files, and only after parallel work completes.
+12. **No concurrent writes to the same file.** When agents run in parallel (team mode), each agent writes ONLY to files scoped to its role. Only the lead writes to shared/aggregated output files, and only after parallel work completes.
 
-12. **Role-scoped file naming.** Agents save their work to `{feature}-{agent-role}.md` or similar role-scoped paths. This prevents write collisions and makes it clear who produced what.
+13. **Role-scoped file naming.** Agents save their work to `{feature}-{agent-role}.md` or similar role-scoped paths. This prevents write collisions and makes it clear who produced what.
 
 ## Deadlock Protocol
 
-13. **Max 3 rejection cycles.** If a skeptic or reviewer rejects the same deliverable 3 times, STOP iterating. Escalate to the user with: (a) summary of all submissions, (b) reviewer's objections across all rounds, (c) agent's attempts to address them. The user decides: override, provide guidance, or abort.
+14. **Max 3 rejection cycles.** If a skeptic or reviewer rejects the same deliverable 3 times, STOP iterating. Escalate to the user with: (a) summary of all submissions, (b) reviewer's objections across all rounds, (c) agent's attempts to address them. The user decides: override, provide guidance, or abort.
 
-14. **Max 2 auto-fix attempts per issue.** When auto-fixing critical findings, attempt at most 2 fixes per issue. The second attempt includes failure context from the first. If both fail, escalate to the user.
+15. **Max 2 auto-fix attempts per issue.** When auto-fixing critical findings, attempt at most 2 fixes per issue. The second attempt includes failure context from the first. If both fail, escalate to the user.

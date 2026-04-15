@@ -120,17 +120,45 @@ Go:      *_test.go → go test
 
 ## Output
 
-1. Write test files following project conventions
-2. Run tests to verify they pass
-3. Report coverage summary:
-   ```
-   Tests written: 12
-   - Unit tests: 8
-   - Integration tests: 4
-   Coverage: 85% (target: 80%)
-   ```
+> Follow the agent output contract in [`plugin/shared/output-minimization.md`](../shared/output-minimization.md#agent-output-contracts). For test runner output, prefer `npm test -- --silent`, `pytest -q`, `phpunit --no-progress` etc. — surface only failures and the final summary.
+
+### RETURN only:
+
+| Item | Example |
+|------|---------|
+| Test count by type | `Unit: 8, Integration: 4` |
+| Coverage line | `Coverage: 85% (target: 80%)` |
+| Pass/fail status | `All passing` or list failed test names |
+| File paths created/modified | `tests/PricingServiceTest.php` (one line per file) |
+
+**Format:** Compact summary block ≤ 8 lines. List file paths inline if ≤ 5; otherwise group by directory.
+
+### DO NOT return:
+
+- Full test bodies (the files are on disk; the caller can read them)
+- Pasted test-runner output (raw `phpunit`/`jest`/`pytest` stdout)
+- Narration of which patterns you followed
+- Restatement of the test strategy section above
+
+### Coverage report template
+
+```
+Tests written: 12
+- Unit tests: 8
+- Integration tests: 4
+Coverage: 85% (target: 80%)
+Status: all passing
+Files: tests/PricingServiceTest.php, tests/OrderServiceTest.php
+```
 
 Run tests after writing. Fix failures before completing.
+
+## Output Constraints
+
+- **Maximum output: 100 lines.** Hard cap, not a target. Tests are saved to files — the response to the caller is a short summary, not the test code.
+- Cut by removing: test code (lives in files), framework boilerplate, restated AAA/coverage theory, per-test narration.
+- Return only: test file paths created/modified, counts by type (unit/integration), pass/fail summary, coverage number, and any untestable code you flagged for the caller.
+- If coverage gaps exist, list them as one-line bullets with file:reason. No long explanations.
 
 ## Team Mode
 
@@ -140,5 +168,6 @@ When running as part of a team (spawned with `team_name` parameter), you have ac
 - **Request context** from security-auditor: Ask about security-critical paths that need negative test cases
 - **Respond to challenges** from quality-guard: When skeptic says your tests are trivial or miss critical paths, provide coverage evidence or write the missing tests
 - **Share coverage gaps**: Notify teammates about areas where tests couldn't be written (missing interfaces, tightly coupled code)
+- **Message size discipline**: Every SendMessage payload capped at **5 lines / ~80 words** (see `shared/principles.md` #8). Cite `file:line` for every reference. Do NOT paste full test bodies, full failure output, or full coverage reports — tests are written to files; reference the path instead.
 
 When NOT in a team, operate independently as usual.

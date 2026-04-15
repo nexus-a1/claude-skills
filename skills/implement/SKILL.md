@@ -34,181 +34,17 @@ Read `.claude/configuration.yml` for project-specific paths. If the file doesn't
 | `execution_mode` | `"team"` | QA phase execution mode (reads `qa_review` phase override) |
 
 ```bash
-# BEGIN_SHARED: resolve-config
-# Shared configuration resolution for Claude Code skills.
-# Source this script to get config discovery and artifact resolution functions.
-#
-# Usage in SKILL.md bash blocks:
-#   source ~/.claude/shared/resolve-config.sh
-#   WORK_DIR=$(resolve_artifact work work)
-#   EXEC_MODE=$(resolve_exec_mode qa_review team)
-
-# --- Config discovery ---
-# Walks up from CWD to find .claude/configuration.yml
-CONFIG=""
-_d="$PWD"
-while [[ "$_d" != "/" ]]; do
-  if [[ -f "$_d/.claude/configuration.yml" ]]; then
-    CONFIG="$_d/.claude/configuration.yml"
-    break
-  fi
-  _d="$(dirname "$_d")"
-done
-
-# --- Workspace root ---
-# The directory where .claude/configuration.yml lives.
-# All relative paths anchor here. Works from worktrees, subdirs, anywhere.
-WORKSPACE_ROOT=""
-if [[ -n "$CONFIG" ]]; then
-  WORKSPACE_ROOT="$(cd "$(dirname "$CONFIG")/.." && pwd)"
-fi
-WORKSPACE_ROOT="${WORKSPACE_ROOT:-$PWD}"
-
-# --- Workspace mode (auto-detect) ---
-# "single" = inside a git repo; "multi" = aggregate directory with git repos as subdirs
-WORKSPACE_MODE="single"
-DISCOVERED_SERVICES=()
-
-if git -C "$WORKSPACE_ROOT" rev-parse --is-inside-work-tree &>/dev/null; then
-  WORKSPACE_MODE="single"
+# Source resolve-config: marketplace installs get ${CLAUDE_PLUGIN_ROOT} substituted
+# inline before bash runs; ./install.sh users fall back to ~/.claude. If neither
+# path resolves, fail loudly rather than letting resolve_artifact be undefined.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
 else
-  for dir in "${WORKSPACE_ROOT}"/*/; do
-    if [[ -d "${dir}.git" ]]; then
-      DISCOVERED_SERVICES+=("$(basename "$dir")")
-    fi
-  done
-  [[ ${#DISCOVERED_SERVICES[@]} -gt 0 ]] && WORKSPACE_MODE="multi"
+  echo "ERROR: resolve-config.sh not found. Install via marketplace or run ./install.sh" >&2
+  exit 1
 fi
-
-# Config override: if workspace.services defined, use that instead of auto-discovery
-if [[ -f "$CONFIG" ]]; then
-  _svc_count=$(yq -r '.workspace.services | length // 0' "$CONFIG" 2>/dev/null)
-  if [[ "$_svc_count" -gt 0 ]]; then
-    WORKSPACE_MODE="multi"
-    DISCOVERED_SERVICES=()
-  fi
-fi
-
-# --- Artifact resolution ---
-# Resolves an artifact path from configuration, with fallback defaults.
-# Usage: resolve_artifact <artifact_name> <default_subdir> [default_base]
-# Returns: absolute path anchored to WORKSPACE_ROOT
-resolve_artifact() {
-  local artifact="$1"
-  local default_subdir="$2"
-  local default_base="${3:-.claude}"
-
-  local result_path
-  if [[ -f "$CONFIG" ]]; then
-    local _LOC=$(yq -r ".storage.artifacts.${artifact}.location // \"local\"" "$CONFIG")
-    local _BASE=$(yq -r ".storage.locations.${_LOC}.path // \"${default_base}\"" "$CONFIG")
-    local _SUB=$(yq -r ".storage.artifacts.${artifact}.subdir // \"${default_subdir}\"" "$CONFIG")
-    result_path="${_BASE}/${_SUB}"
-  else
-    result_path="${default_base}/${default_subdir}"
-  fi
-
-  if [[ "$result_path" != /* ]]; then
-    echo "${WORKSPACE_ROOT}/${result_path}"
-  else
-    echo "$result_path"
-  fi
-}
-
-# --- Artifact resolution with type ---
-# Like resolve_artifact but also returns the storage type (git|directory).
-# Usage: IFS='|' read -r PATH TYPE <<< "$(resolve_artifact_typed work work)"
-resolve_artifact_typed() {
-  local artifact="$1"
-  local default_subdir="$2"
-  local default_base="${3:-.claude}"
-
-  local result_path _TYPE
-  if [[ -f "$CONFIG" ]]; then
-    local _LOC=$(yq -r ".storage.artifacts.${artifact}.location // \"local\"" "$CONFIG")
-    local _BASE=$(yq -r ".storage.locations.${_LOC}.path // \"${default_base}\"" "$CONFIG")
-    local _SUB=$(yq -r ".storage.artifacts.${artifact}.subdir // \"${default_subdir}\"" "$CONFIG")
-    _TYPE=$(yq -r ".storage.locations.${_LOC}.type // \"directory\"" "$CONFIG")
-    result_path="${_BASE}/${_SUB}"
-  else
-    result_path="${default_base}/${default_subdir}"
-    _TYPE="directory"
-  fi
-
-  if [[ "$result_path" != /* ]]; then
-    echo "${WORKSPACE_ROOT}/${result_path}|${_TYPE}"
-  else
-    echo "${result_path}|${_TYPE}"
-  fi
-}
-
-# --- Execution mode resolution ---
-# Resolves execution mode for a specific phase from configuration.
-# Usage: resolve_exec_mode <phase_name> [default_mode]
-# Returns: "team" or "subagent"
-resolve_exec_mode() {
-  local phase="$1"
-  local default="${2:-team}"
-
-  if [[ -f "$CONFIG" ]]; then
-    local _raw=$(yq -r '.execution_mode' "$CONFIG" 2>/dev/null)
-    if [[ "$_raw" == "subagent" || "$_raw" == "team" ]]; then
-      echo "$_raw"
-    elif [[ "$_raw" != "null" && -n "$_raw" ]]; then
-      yq -r ".execution_mode.overrides.${phase} // .execution_mode.default // \"${default}\"" "$CONFIG"
-    else
-      echo "$default"
-    fi
-  else
-    echo "$default"
-  fi
-}
-
-# --- Worktree helpers ---
-resolve_worktree_enabled() {
-  if [[ -f "$CONFIG" ]]; then
-    yq -r '.worktree.enabled // "false"' "$CONFIG"
-  else
-    echo "false"
-  fi
-}
-
-resolve_worktree_root() {
-  local default=".worktrees"
-  local root
-  if [[ -f "$CONFIG" ]]; then
-    root=$(yq -r ".worktree.root // \"${default}\"" "$CONFIG")
-  else
-    root="$default"
-  fi
-  [[ "$root" != /* ]] && echo "${WORKSPACE_ROOT}/${root}" || echo "$root"
-}
-
-# --- Service helpers (multi-mode) ---
-resolve_services() {
-  if [[ -f "$CONFIG" ]]; then
-    local _count=$(yq -r '.workspace.services | length // 0' "$CONFIG" 2>/dev/null)
-    if [[ "$_count" -gt 0 ]]; then
-      yq -r '.workspace.services[].name' "$CONFIG"
-      return
-    fi
-  fi
-  printf '%s\n' "${DISCOVERED_SERVICES[@]}"
-}
-
-resolve_service_path() {
-  local svc="$1"
-  if [[ -f "$CONFIG" ]]; then
-    local rel
-    rel=$(yq -r ".workspace.services[] | select(.name == \"${svc}\") | .path // empty" "$CONFIG" 2>/dev/null)
-    if [[ -n "$rel" ]]; then
-      [[ "$rel" != /* ]] && echo "${WORKSPACE_ROOT}/${rel}" || echo "$rel"
-      return
-    fi
-  fi
-  echo "${WORKSPACE_ROOT}/${svc}"
-}
-# END_SHARED: resolve-config
 WORK_DIR=$(resolve_artifact work work)
 QA_EXEC_MODE=$(resolve_exec_mode qa_review team)
 ```
@@ -818,6 +654,20 @@ Proceed with implementation? [y/n]
 
 ---
 
+### Phase 2 exit: Distill before proceeding
+
+Before moving on to Phase 3, produce a **≤10-line phase summary** of Phase 2 and carry ONLY this summary forward in the orchestration context. Drop the verbose archaeologist / data-modeler / discovery outputs from working memory — they remain on disk at `$WORK_DIR/{identifier}/context/` for re-loading on demand.
+
+The summary should cover:
+- **Patterns found** (1–2 lines): the specific existing patterns the plan will follow
+- **Plan shape** (2–3 lines): chunks, file boundaries, what each chunk commits
+- **Open questions** (1–2 lines): anything explicitly deferred to a later phase
+- **Context file paths** (1 line): `context/archaeologist.md`, `context/data-modeler.md`, etc. — for Read()-back if needed
+
+From here on, Phase 3/4/5/6 prompts use this summary. Re-`Read()` a Phase 2 context file **only** when a later phase surfaces a specific question the summary does not answer. Do NOT re-include the full outputs by default.
+
+---
+
 ### Phase 3: Implement with Chunk Commits
 
 **Goal**: Execute the implementation plan, committing each chunk.
@@ -1100,6 +950,21 @@ Issue final verdict.
 Read `references/qa-team-mode.md` for team mode QA execution details (TeamCreate, task assignment, cross-pollination, shutdown). In team mode, the quality-guard joins as a teammate and challenges findings via SendMessage in real-time rather than in sequential steps.
 
 **IMPORTANT**: Regardless of mode, the output of Phase 4.1 is the same — a set of QA findings categorized by severity, plus test files written, PLUS a skeptic validation report. Subsequent phases (4.2 onward) process these findings identically.
+
+#### 4.1.5 Distill QA Outputs to Disk
+
+After Phase 4.1 converges (both modes have produced the four QA files, and any agent-resolution rounds are complete), write a distilled `-summary.md` sibling for each full output. This keeps `/resume-work` and `/load-context` cheap on resume — they prefer the summary variant by default.
+
+For each file at `$WORK_DIR/{identifier}/context/qa-{agent}.md` that exists (`qa-test-writer.md`, `qa-code-reviewer.md`, `qa-security-auditor.md`, `qa-quality-guard.md`):
+
+1. `Read()` the full file
+2. Distill to **≤10 lines**, concrete only:
+   - Verdict line (e.g., `APPROVED`, `CRITICAL: 2 / IMPORTANT: 3 / MINOR: 1`, `PASSED`)
+   - Top 3–5 findings with `file:line` references — actionable items only, no prose
+   - Outstanding blockers or deferred items (if any)
+3. `Write()` to `$WORK_DIR/{identifier}/context/qa-{agent}-summary.md`
+
+The full `.md` files remain authoritative and are retained for audit and for on-demand `Read()` when a downstream step needs detail. Consumers (`/resume-work`, `/load-context`) fall back to the full file when the summary is absent (e.g., legacy work dirs).
 
 #### 4.2 Run Tests
 
@@ -1454,6 +1319,21 @@ Update work manifest:
   "updated_at": "{ISO_TIMESTAMP}"
 }
 ```
+
+---
+
+### Phase 4 exit: Distill before proceeding
+
+Before moving on to Phase 5, produce a **≤10-line phase summary** of the Phase 4 QA outcome and carry ONLY this summary forward. Drop the verbose per-agent findings (`context/qa-test-writer.md`, `context/qa-code-reviewer.md`, `context/qa-security-auditor.md`, `context/qa-quality-guard.md`) and the aggregated `$WORK_DIR/{identifier}/qa-gate-report.md` from working memory — they remain on disk.
+
+The summary should cover:
+- **Gate verdict** (1 line): APPROVED / CONDITIONAL / REJECTED from quality-guard
+- **What was fixed and what was accepted** (2–3 lines): auto-fix outcomes, accepted-with-rationale items
+- **Test results** (1–2 lines): count by type, coverage, any known skips
+- **Outstanding risks** (1–2 lines): items the PR description should mention explicitly
+- **Context file paths** (1 line): the four per-agent QA files under `context/` plus the aggregated `qa-gate-report.md` at `$WORK_DIR/{identifier}/` — for Read()-back if needed
+
+Phase 5 (PR creation) and Phase 6 (final report) prompts use this summary. Re-`Read()` a QA file **only** when the PR description genuinely needs a verbatim finding or line reference the summary does not provide.
 
 ---
 

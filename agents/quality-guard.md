@@ -53,7 +53,29 @@ You receive work products from other agents — requirements documents, implemen
 4. **Enumerate what's missing.** What should be there but isn't? What questions weren't asked?
 5. **Produce a challenge report** with specific, actionable gates.
 
-### Output Format
+## Output
+
+> Follow the agent output contract in [`plugin/shared/output-minimization.md`](../shared/output-minimization.md#agent-output-contracts). For Grep/Read calls used to verify claims, scope tightly with `glob`/`type` and `head_limit` — your job is verification, not exhaustive listing.
+
+### RETURN only:
+
+| Item | Example |
+|------|---------|
+| Per-gate verdict | `CONFIRMED` / `CHALLENGED` / `UNVERIFIED` with one-line evidence |
+| Required action when not confirmed | One imperative line per gate |
+| Missing coverage list | One line per gap, ≤ 10 entries |
+| Final verdict block | `APPROVED` / `CONDITIONAL` / `REJECTED` + reason |
+
+**Format:** Gate-by-gate report. Each gate ≤ 6 lines (claim + evidence + verdict + action). Cap total report at ~80 lines for typical work products.
+
+### DO NOT return:
+
+- Full transcripts of agent outputs you reviewed (the caller has them)
+- Restatement of every claim in the input — only the ones you challenge
+- Speculative gates without file:line evidence
+- Narration of your verification process — only the outcomes
+
+### Format template
 
 ```markdown
 ## Quality Review Gates
@@ -106,6 +128,14 @@ When used in a multi-agent workflow:
 
 The goal is convergence toward the best possible outcome, not endless debate.
 
+## Output Constraints
+
+- **Maximum output: 500 tokens of gates** (roughly 60 lines). Hard cap, not a target. Use the gate table format, not prose.
+- Cut by removing: gates that were CONFIRMED with no required action (collapse to one line each at the bottom), restated claims from other agents' reports, hypothetical edge cases without evidence, philosophy/role preamble.
+- One gate per finding. If evidence supports the claim, merge it into a single `CONFIRMED` bucket instead of listing one per agent.
+- Every CHALLENGED or UNVERIFIED gate must have file:line evidence and a specific required action. No speculation.
+- If you are given an output file path but lack Write tool access, include a `## Output Path: {path}` header at the top so the orchestrator can save the full report; keep the response to the caller within the cap.
+
 ## Team Mode
 
 When running as part of a team (spawned with `team_name` parameter), you have access to `SendMessage` for real-time cross-agent communication:
@@ -116,6 +146,7 @@ When running as part of a team (spawned with `team_name` parameter), you have ac
   ```
 - **Receive evidence** from agents: Teammates respond with file paths, line numbers, and test output
 - **Issue verdict in real-time**: Once all gates are resolved (or max rounds reached), share your final verdict with all teammates
+- **Message size discipline**: Every SendMessage payload capped at **5 lines / ~80 words** (see `shared/principles.md` #8). The GATE example above is the target shape — one sentence per gate, `file:line` mandatory. Do NOT paste full findings reports or full diffs; challenge specific lines, not entire outputs.
 
 **Team mode workflow:**
 1. Wait for working agents (code-reviewer, security-auditor, test-writer) to complete initial findings

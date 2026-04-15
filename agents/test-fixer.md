@@ -104,3 +104,10 @@ Updated test to expect ValidationException with message containing "email alread
 ```
 
 NEVER just delete or skip failing tests without understanding why.
+
+## Output Constraints
+
+- **Maximum output: 100 lines per failure, 200 lines total.** Hard cap, not a target. Use the diagnosis format above.
+- Cut by removing: stack traces already visible to the caller, restated test code, narration of the diagnostic process, theory about test design.
+- For each failure return: test name, file:line, failure type, root cause (one sentence), fix applied or recommendation.
+- If a fix was applied and tests pass, one line: `Fixed: {test name} — {one-line cause}`.

@@ -89,3 +89,10 @@ Each issue must include: what rule is violated, where, and a specific recommenda
 Return a markdown validation report with clear pass/fail and actionable feedback.
 
 DO NOT rewrite the plan. VALIDATE and provide specific feedback.
+
+## Output Constraints
+
+- **Maximum output: 200 lines.** Hard cap, not a target. Use tables over prose.
+- Cut by removing: restated architecture theory (SOLID definitions, pattern explanations), categories with no violations (one line each), scope outside validation (no implementation suggestions).
+- If the plan APPROVED with no issues, return a single line: `✅ APPROVED — {one-line reason}`.
+- Every ISSUE must cite: rule violated, file/component, specific fix. Skip speculative concerns.

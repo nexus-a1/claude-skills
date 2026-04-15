@@ -44,181 +44,17 @@ Read `.claude/configuration.yml` for project-specific paths. If the file doesn't
 | `storage.artifacts.work` | `location: local, subdir: work` | Work sessions |
 
 ```bash
-# BEGIN_SHARED: resolve-config
-# Shared configuration resolution for Claude Code skills.
-# Source this script to get config discovery and artifact resolution functions.
-#
-# Usage in SKILL.md bash blocks:
-#   source ~/.claude/shared/resolve-config.sh
-#   WORK_DIR=$(resolve_artifact work work)
-#   EXEC_MODE=$(resolve_exec_mode qa_review team)
-
-# --- Config discovery ---
-# Walks up from CWD to find .claude/configuration.yml
-CONFIG=""
-_d="$PWD"
-while [[ "$_d" != "/" ]]; do
-  if [[ -f "$_d/.claude/configuration.yml" ]]; then
-    CONFIG="$_d/.claude/configuration.yml"
-    break
-  fi
-  _d="$(dirname "$_d")"
-done
-
-# --- Workspace root ---
-# The directory where .claude/configuration.yml lives.
-# All relative paths anchor here. Works from worktrees, subdirs, anywhere.
-WORKSPACE_ROOT=""
-if [[ -n "$CONFIG" ]]; then
-  WORKSPACE_ROOT="$(cd "$(dirname "$CONFIG")/.." && pwd)"
-fi
-WORKSPACE_ROOT="${WORKSPACE_ROOT:-$PWD}"
-
-# --- Workspace mode (auto-detect) ---
-# "single" = inside a git repo; "multi" = aggregate directory with git repos as subdirs
-WORKSPACE_MODE="single"
-DISCOVERED_SERVICES=()
-
-if git -C "$WORKSPACE_ROOT" rev-parse --is-inside-work-tree &>/dev/null; then
-  WORKSPACE_MODE="single"
+# Source resolve-config: marketplace installs get ${CLAUDE_PLUGIN_ROOT} substituted
+# inline before bash runs; ./install.sh users fall back to ~/.claude. If neither
+# path resolves, fail loudly rather than letting resolve_artifact be undefined.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
 else
-  for dir in "${WORKSPACE_ROOT}"/*/; do
-    if [[ -d "${dir}.git" ]]; then
-      DISCOVERED_SERVICES+=("$(basename "$dir")")
-    fi
-  done
-  [[ ${#DISCOVERED_SERVICES[@]} -gt 0 ]] && WORKSPACE_MODE="multi"
+  echo "ERROR: resolve-config.sh not found. Install via marketplace or run ./install.sh" >&2
+  exit 1
 fi
-
-# Config override: if workspace.services defined, use that instead of auto-discovery
-if [[ -f "$CONFIG" ]]; then
-  _svc_count=$(yq -r '.workspace.services | length // 0' "$CONFIG" 2>/dev/null)
-  if [[ "$_svc_count" -gt 0 ]]; then
-    WORKSPACE_MODE="multi"
-    DISCOVERED_SERVICES=()
-  fi
-fi
-
-# --- Artifact resolution ---
-# Resolves an artifact path from configuration, with fallback defaults.
-# Usage: resolve_artifact <artifact_name> <default_subdir> [default_base]
-# Returns: absolute path anchored to WORKSPACE_ROOT
-resolve_artifact() {
-  local artifact="$1"
-  local default_subdir="$2"
-  local default_base="${3:-.claude}"
-
-  local result_path
-  if [[ -f "$CONFIG" ]]; then
-    local _LOC=$(yq -r ".storage.artifacts.${artifact}.location // \"local\"" "$CONFIG")
-    local _BASE=$(yq -r ".storage.locations.${_LOC}.path // \"${default_base}\"" "$CONFIG")
-    local _SUB=$(yq -r ".storage.artifacts.${artifact}.subdir // \"${default_subdir}\"" "$CONFIG")
-    result_path="${_BASE}/${_SUB}"
-  else
-    result_path="${default_base}/${default_subdir}"
-  fi
-
-  if [[ "$result_path" != /* ]]; then
-    echo "${WORKSPACE_ROOT}/${result_path}"
-  else
-    echo "$result_path"
-  fi
-}
-
-# --- Artifact resolution with type ---
-# Like resolve_artifact but also returns the storage type (git|directory).
-# Usage: IFS='|' read -r PATH TYPE <<< "$(resolve_artifact_typed work work)"
-resolve_artifact_typed() {
-  local artifact="$1"
-  local default_subdir="$2"
-  local default_base="${3:-.claude}"
-
-  local result_path _TYPE
-  if [[ -f "$CONFIG" ]]; then
-    local _LOC=$(yq -r ".storage.artifacts.${artifact}.location // \"local\"" "$CONFIG")
-    local _BASE=$(yq -r ".storage.locations.${_LOC}.path // \"${default_base}\"" "$CONFIG")
-    local _SUB=$(yq -r ".storage.artifacts.${artifact}.subdir // \"${default_subdir}\"" "$CONFIG")
-    _TYPE=$(yq -r ".storage.locations.${_LOC}.type // \"directory\"" "$CONFIG")
-    result_path="${_BASE}/${_SUB}"
-  else
-    result_path="${default_base}/${default_subdir}"
-    _TYPE="directory"
-  fi
-
-  if [[ "$result_path" != /* ]]; then
-    echo "${WORKSPACE_ROOT}/${result_path}|${_TYPE}"
-  else
-    echo "${result_path}|${_TYPE}"
-  fi
-}
-
-# --- Execution mode resolution ---
-# Resolves execution mode for a specific phase from configuration.
-# Usage: resolve_exec_mode <phase_name> [default_mode]
-# Returns: "team" or "subagent"
-resolve_exec_mode() {
-  local phase="$1"
-  local default="${2:-team}"
-
-  if [[ -f "$CONFIG" ]]; then
-    local _raw=$(yq -r '.execution_mode' "$CONFIG" 2>/dev/null)
-    if [[ "$_raw" == "subagent" || "$_raw" == "team" ]]; then
-      echo "$_raw"
-    elif [[ "$_raw" != "null" && -n "$_raw" ]]; then
-      yq -r ".execution_mode.overrides.${phase} // .execution_mode.default // \"${default}\"" "$CONFIG"
-    else
-      echo "$default"
-    fi
-  else
-    echo "$default"
-  fi
-}
-
-# --- Worktree helpers ---
-resolve_worktree_enabled() {
-  if [[ -f "$CONFIG" ]]; then
-    yq -r '.worktree.enabled // "false"' "$CONFIG"
-  else
-    echo "false"
-  fi
-}
-
-resolve_worktree_root() {
-  local default=".worktrees"
-  local root
-  if [[ -f "$CONFIG" ]]; then
-    root=$(yq -r ".worktree.root // \"${default}\"" "$CONFIG")
-  else
-    root="$default"
-  fi
-  [[ "$root" != /* ]] && echo "${WORKSPACE_ROOT}/${root}" || echo "$root"
-}
-
-# --- Service helpers (multi-mode) ---
-resolve_services() {
-  if [[ -f "$CONFIG" ]]; then
-    local _count=$(yq -r '.workspace.services | length // 0' "$CONFIG" 2>/dev/null)
-    if [[ "$_count" -gt 0 ]]; then
-      yq -r '.workspace.services[].name' "$CONFIG"
-      return
-    fi
-  fi
-  printf '%s\n' "${DISCOVERED_SERVICES[@]}"
-}
-
-resolve_service_path() {
-  local svc="$1"
-  if [[ -f "$CONFIG" ]]; then
-    local rel
-    rel=$(yq -r ".workspace.services[] | select(.name == \"${svc}\") | .path // empty" "$CONFIG" 2>/dev/null)
-    if [[ -n "$rel" ]]; then
-      [[ "$rel" != /* ]] && echo "${WORKSPACE_ROOT}/${rel}" || echo "$rel"
-      return
-    fi
-  fi
-  echo "${WORKSPACE_ROOT}/${svc}"
-}
-# END_SHARED: resolve-config
 WORK_DIR=$(resolve_artifact work work)
 ```
 
@@ -432,46 +268,13 @@ Initialize state file `$WORK_DIR/{slug}/state.json`:
 
 #### 2.1 Explore Codebase
 
-Use Task tool with `subagent_type: "Explore"`:
-
-```
-Prompt: Explore the codebase to understand existing patterns for this feature.
-
-Feature: {feature_description}
-
-Find:
-1. Similar features already implemented
-2. Existing patterns we should follow
-3. Related entities, services, controllers
-4. External integrations or APIs involved
-5. Existing infrastructure that could be leveraged
-
-**Depth limit:** Describe interfaces and patterns — method signatures, key properties, how the system works conceptually. Do not reproduce full method implementations or dump complete file contents. One example of an existing pattern is sufficient. Full code reads are for implementation phases.
-
-Provide file paths and interface descriptions of relevant existing implementations.
-```
+Use Task tool with `subagent_type: "Explore"`. Read `references/agent-prompts.md` (Phase 2.1 section) for the prompt template.
 
 Save output to `$WORK_DIR/{slug}/context/exploration.md`. Update state: `phases.exploration = completed`.
 
 #### 2.2 Understand Business Requirements
 
-Use Task tool with `subagent_type: "business-analyst"`:
-
-```
-Prompt: Analyze business requirements for this feature.
-
-Feature: {feature_description}
-Business Context: {from_phase_1}
-
-Analyze:
-1. Core problem being solved
-2. User personas affected
-3. Success metrics
-4. Edge cases to consider
-5. Assumptions to validate
-
-Provide a structured business context summary.
-```
+Use Task tool with `subagent_type: "business-analyst"`. Read `references/agent-prompts.md` (Phase 2.2 section) for the prompt template.
 
 Save output to `$WORK_DIR/{slug}/context/business-context.md`. Update state: `phases.exploration = completed` (covers both exploration agents).
 
@@ -491,34 +294,7 @@ Do NOT include supporting context from one agent's domain in the other's prompt.
 
 #### 3.1 Brainstorm Implementation Options
 
-Use Task tool with `subagent_type: "Plan"`:
-
-```
-Prompt: Design 2-3 different implementation approaches for this feature.
-
-Feature: {feature_description}
-Codebase patterns: {from_exploration}
-Business requirements: {from_business_analyst}
-
-For each approach, document:
-1. **Name** - Short descriptive name
-2. **Architecture** - How it's structured (components, layers)
-3. **Technology choices** - Libraries, frameworks, services
-4. **Pros** - Benefits of this approach
-5. **Cons** - Drawbacks and risks
-6. **Complexity** - Estimated complexity (Simple | Moderate | Complex)
-7. **Timeline** - Rough estimate (Days | Weeks | Months)
-
-Approaches must differ architecturally — in where logic lives, which layer enforces it, what triggers the check, or what system boundary it crosses. Do not present parameter-count or flag-count variants of the same architecture as separate approaches. If two approaches share the same component placement, migration path, and check points, merge them into one approach with a granularity sub-option.
-
-Trade-off dimensions:
-- Where the logic lives (service layer vs middleware vs database)
-- Extension point (existing component vs new component)
-- Synchronous vs asynchronous
-- Configuration-driven vs code-driven
-
-Provide 2-3 distinct, viable approaches.
-```
+Use Task tool with `subagent_type: "Plan"`. Read `references/agent-prompts.md` (Phase 3.1 section) for the prompt template, including the architectural-distinction and trade-off rules.
 
 Save output to `$WORK_DIR/{slug}/context/approaches.md`. Update state: `phases.approaches = in_progress`.
 
@@ -554,41 +330,7 @@ Save output to `$WORK_DIR/{slug}/context/architecture-validation.md`.
 
 #### 3.2 Present Approaches to User
 
-Display the approaches in a clear format:
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Implementation Approaches: {feature}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-### Approach 1: {Name}
-Complexity: {Simple|Moderate|Complex} | Timeline: {estimate}
-
-**Architecture:**
-{high-level description}
-
-**Pros:**
-✓ {benefit 1}
-✓ {benefit 2}
-
-**Cons:**
-✗ {drawback 1}
-✗ {drawback 2}
-
-**Best for:** {when to choose this approach}
-
----
-
-### Approach 2: {Name}
-...
-
----
-
-### Approach 3: {Name}
-...
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+Display the approaches using the format in `references/display-templates.md` (Phase 3.2 section).
 
 #### 3.3 Get User Feedback
 
@@ -616,135 +358,19 @@ Update state with selected approach: `"selected_approach": "{approach_name}", "p
 
 #### 4.1 Deep Dive on Selected Approach
 
-Based on user selection, use Task tool with `subagent_type: "Plan"`:
-
-```
-Prompt: Refine and detail the selected approach.
-
-Feature: {feature_description}
-Selected Approach: {approach_name}
-User Feedback: {feedback_from_user}
-
-Create a detailed implementation picture:
-
-1. **Component Breakdown**
-   - Controllers (which endpoints)
-   - Services (what business logic)
-   - Entities (database tables)
-   - Models (request/response objects)
-   - External integrations
-
-2. **Data Flow**
-   - Step-by-step request/response flow
-   - Data transformations
-   - State changes
-
-3. **Database Changes**
-   - New tables needed
-   - Migrations required
-   - Indexes for performance
-
-4. **API Design** (if applicable)
-   - Endpoints
-   - Request/response formats
-   - Error cases
-
-5. **Security Considerations**
-   - Authentication/authorization
-   - Data validation
-   - Sensitive data handling
-
-6. **Testing Strategy**
-   - Unit tests
-   - Integration tests
-   - Manual testing steps
-
-Provide a clear, detailed implementation picture.
-```
+Based on user selection, use Task tool with `subagent_type: "Plan"`. Read `references/agent-prompts.md` (Phase 4.1 section) for the refinement prompt covering component breakdown, data flow, database changes, API design, security, and testing strategy.
 
 Save to `$WORK_DIR/{slug}/implementation-picture.md`. Update state: `phases.refinement = completed`.
 
 #### 4.2 Validate Architecture
 
-Use Task tool with `subagent_type: "architect"`:
-
-```
-Prompt: Validate this implementation approach against architecture rules.
-
-Implementation plan: {from_phase_4.1}
-
-Check:
-1. Follows project architectural patterns
-2. Proper layer separation
-3. Appropriate file structure
-4. Integration points are sound
-5. Scalability concerns addressed
-
-Identify any architectural risks or violations.
-Suggest improvements if needed.
-```
+Use Task tool with `subagent_type: "architect"`. Read `references/agent-prompts.md` (Phase 4.2 section) for the architecture-validation prompt.
 
 **Run architect AFTER Plan refinement completes** — architect needs the refined implementation picture from 4.1 to validate effectively.
 
 #### 4.3 Present Refined Approach
 
-Show the detailed implementation picture:
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Implementation Picture: {approach_name}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-## Components
-
-**Controllers:**
-- {Controller1} - {purpose}
-- {Controller2} - {purpose}
-
-**Services:**
-- {Service1} - {business logic}
-- {Service2} - {business logic}
-
-**Entities:**
-- {Entity1} - {table/fields}
-- {Entity2} - {table/fields}
-
-**External APIs:**
-- {API1} - {integration points}
-
-## Data Flow
-
-1. {Step 1}
-2. {Step 2}
-3. {Step 3}
-...
-
-## Database Changes
-
-- Migration: Create {table_name}
-  - field1: type
-  - field2: type
-  - index on (field1, field2)
-
-## API Endpoints
-
-### POST /api/path
-Request: {...}
-Response: {...}
-Errors: {...}
-
-## Security
-
-- {Security consideration 1}
-- {Security consideration 2}
-
-## Testing
-
-- Unit: {what to test}
-- Integration: {what to test}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+Show the detailed implementation picture using the format in `references/display-templates.md` (Phase 4.3 section).
 
 #### 4.4 Ask if More Refinement Needed
 
@@ -767,30 +393,7 @@ If user wants more detail, repeat refinement on specific areas.
 
 **Goal**: Independently challenge the implementation picture before committing to the work breakdown.
 
-Use Task tool with `subagent_type: "quality-guard"`:
-
-```
-Prompt: Challenge this implementation picture for '{feature_description}'.
-
-Read these files:
-- $WORK_DIR/{slug}/implementation-picture.md
-- $WORK_DIR/{slug}/context/architecture-validation.md
-- $WORK_DIR/{slug}/context/approaches.md
-- $WORK_DIR/{slug}/context/exploration.md (if exists)
-
-Review:
-1. Is the selected approach architecturally sound? Does it match the architectural constraints found in the codebase?
-2. Are all component boundaries clearly defined with no hidden overlap or missing pieces?
-3. What assumptions were made that weren't verified against actual code?
-4. Are there missing components, edge cases, or failure modes not captured?
-5. Is the scope realistic, or does it need further decomposition?
-6. Are any stated trade-offs real, or are they assumptions?
-
-Return: APPROVED / CONDITIONAL / REJECTED
-- APPROVED: No blocking concerns.
-- CONDITIONAL: List specific concerns that should be noted in work breakdown.
-- REJECTED: Fundamental issue — describe what must change before proceeding.
-```
+Use Task tool with `subagent_type: "quality-guard"`. Read `references/agent-prompts.md` (Phase 4.5 section) for the challenge prompt, which lists the context files to read and the 6 review questions. The verdict is APPROVED / CONDITIONAL / REJECTED.
 
 **Process the verdict:**
 
@@ -1067,32 +670,7 @@ Update state: `"status": "completed", "updated_at": "{ISO_TIMESTAMP}"`.
 
 ## Error Handling
 
-**No feature description:**
-```
-Error: Feature description required.
-
-Usage:
-  /brainstorm "Add user data export to Excel"
-  /brainstorm "Integrate Azure AD SSO"
-
-Or run /brainstorm and I'll ask you interactively.
-```
-
-**Feature too vague:**
-```
-The description is quite vague. Let me ask some questions to clarify...
-
-[Proceed to Phase 1.2 for detailed questions]
-```
-
-**All approaches rejected:**
-```
-It seems none of these approaches fit your needs.
-
-Let me ask a few questions to better understand what you're looking for...
-
-[Return to exploration with new constraints]
-```
+Read `references/error-handling.md` for error-scenario message templates (no feature description, feature too vague, all approaches rejected).
 
 ---
 

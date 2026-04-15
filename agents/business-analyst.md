@@ -129,4 +129,6 @@ When running as part of a team (spawned with `team_name` parameter), you have ac
 
 Keep messages direct and factual — no preamble, no pleasantries. You are the synthesis lead; use SendMessage to resolve ambiguities before producing your final deliverable, not after.
 
+**Message size discipline**: Every SendMessage payload capped at **5 lines / ~80 words** (see `shared/principles.md` #8). Cite `file:line` or agent output path for every reference. Do NOT paste full agent outputs into messages — point teammates at the role-scoped file path instead. Share the specific question or contradiction, not the whole context.
+
 When NOT in a team, operate in sequential synthesis mode as described above.

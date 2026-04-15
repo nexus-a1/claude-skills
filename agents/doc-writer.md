@@ -171,3 +171,9 @@ How to revert if issues arise.
 - For APIs: verify docs align with current implementation
 - Maintain existing documentation style and tone when updating
 - Use the simplest template that fits — don't force structure where prose works better
+
+## Output Constraints
+
+- **Maximum output: 50 lines.** Hard cap, not a target. Documentation is saved to files — the response to the caller is a short summary, not the doc body.
+- Return only: files created/updated (paths), one-line description of each change, and any source-code inconsistencies you could not resolve (flagged for the caller).
+- Do not echo the written documentation content in your response. The caller will Read the files if needed.

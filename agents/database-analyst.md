@@ -270,3 +270,10 @@ ORDER BY count DESC;
 ```
 
 This concise summary (not 10,000 rows of raw data) is what you return to the main conversation.
+
+## Output Constraints
+
+- **Maximum output: 200 lines.** Hard cap, not a target. Use tables over prose.
+- Cut by removing: raw rows (summarize in tables), SQL theory, restated schema info, narration of the analysis process.
+- Sample data is optional — include only when it illustrates a specific finding, capped at 5 rows.
+- If a metric is clean/normal, one line suffices. Do not pad with "no issues found in X, Y, Z".

@@ -18,9 +18,9 @@ Current branch: !`git branch --show-current`
 
 Arguments provided: $ARGUMENTS
 
-Available tags: !`git fetch --tags origin 2>/dev/null && git tag --sort=-version:refname | head -10`
+Available tags: !`git tag --sort=-version:refname`
 
-Available branches: !`git branch -a | grep -E '(master|main|develop|release/)' | head -20`
+Available branches: !`git branch -a --list 'master' 'main' 'develop' 'release/*' 'origin/master' 'origin/main' 'origin/develop' 'origin/release/*'`
 
 ## Your Task
 

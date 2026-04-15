@@ -56,7 +56,7 @@ If on `main` or `master`:
 
 ### 4. Stage Changes and Generate Commit Message
 
-Delegate staging and commit message generation to `git-operator` in a single call. The agent will run `git status` and `git diff` internally to understand the changes, stage appropriate files (avoiding sensitive files), and return a formatted commit message.
+Delegate staging and commit message generation to `git-operator` in a single call. The agent will run `git status` and `git diff` internally to understand the changes, run a **mandatory credential content scan** on the files about to be staged (filename exclusion is not enough — embedded tokens in otherwise-innocuous files are the usual leak vector), stage appropriate files, and return a formatted commit message.
 
 **Use Task tool with `subagent_type: "git-operator"`:**
 
@@ -81,6 +81,8 @@ Return ONLY the commit message, nothing else.
 ```
 
 **The agent will stage the files and return** the formatted commit message ready to use.
+
+**If git-operator reports credential-scan findings:** staging is refused. Show the findings to the user verbatim (file:line:label — never echo the matched secret). Ask the user whether each finding is a true leak or a false positive. If confirmed false positive, re-invoke git-operator with an explicit override clause: `override credential scan: <reason>`. The override reason is recorded in the commit message body so the decision is traceable. Never override silently, and never override without an explicit user confirmation.
 
 ### 5. Create the Commit
 

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../docs/assets/logo.svg" alt="claude-skills" width="240">
+</p>
+
 # Claude Nexus Plugin
 
 A Claude Code plugin covering the full development lifecycle — from requirements through release — with **28 skills**, **20 agents**, **16 rules**, and **4 hooks**.

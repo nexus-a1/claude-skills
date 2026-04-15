@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.3.0] - 2026-04-15
+
+## What's Changed
+
+### Features
+- **Output Discipline**: Enforce output size caps across 12 agents with dual-save state files containing distilled summaries
+- **Phase-Boundary Summarization**: Implement automatic summarization in /implement and /create-requirements pipelines
+- **Credential Scanning**: Add content scan for credentials before staging changes
+- **--light Mode**: Add --light mode to create-proposal for reduced token usage
+- **Plugin Distribution**: Source resolve-config.sh from ${CLAUDE_PLUGIN_ROOT} for marketplace compatibility
+- **Visual Branding**: Add claude-skills logo to README header
+
+### Bug Fixes
+- Fix compound shell patterns in release skill and create-release-branch
+- Sharpen git-operator task discipline to prevent off-task drift
+- Remove unsupported push trigger from healthcheck workflow
+- Fix README logo visibility and relative paths
+- Expand git-operator allow list with explicit per-command entries
+
+### Other Changes
+- Add .claude/worktrees artifacts to gitignore
+- Add direction log for tracking ongoing initiatives
+- Improve README styling and professional presentation
+
+**Full Changelog**: https://github.com/traczewskim/claude-skills/compare/v1.2.0...v1.3.0
+
 ## [1.2.0] - 2026-04-10
 
 ## What's New

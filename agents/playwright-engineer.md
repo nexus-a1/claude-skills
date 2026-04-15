@@ -510,3 +510,10 @@ When tests fail:
    ```
 
 Run tests after writing. Fix failures before completing.
+
+## Output Constraints
+
+- **Maximum output: 100 lines.** Hard cap, not a target. Tests and page objects are saved to files — the response to the caller is a short summary.
+- Cut by removing: test code (lives in files), Playwright API reminders, restated locator hierarchy, config snippets already in the repo.
+- Return only: spec files and page objects created (paths), fixture/config changes, pass/fail summary, and any locator or auth issues you could not resolve.
+- Do not echo test bodies. The caller will Read the files if needed.
