@@ -14,19 +14,46 @@ allowed-tools: "Bash(git fetch:*), Bash(git branch:*), Bash(git rev-parse:*), Ba
 
 ## Context
 
-Current branch: !`git branch --show-current`
+Current branch: !`git branch --show-current 2>/dev/null || echo "(not in a git repository)"`
 
 Arguments provided: $ARGUMENTS
 
-Available tags: !`git tag --sort=-version:refname`
+Available tags: !`git tag --sort=-version:refname 2>/dev/null`
 
-Available branches: !`git branch -a --list 'master' 'main' 'develop' 'release/*' 'origin/master' 'origin/main' 'origin/develop' 'origin/release/*'`
+Available branches: !`git branch -a --list 'master' 'main' 'develop' 'release/*' 'origin/master' 'origin/main' 'origin/develop' 'origin/release/*' 2>/dev/null`
 
 ## Your Task
 
 **IMPORTANT**: You MUST complete all steps in a single message using parallel tool calls where possible. Do not send multiple messages.
 
 This command creates a release branch (`release/vX.Y.Z`) from a given source. The source defaults to `origin/master` but can be any branch or a specific tag.
+
+### 0. Pre-flight: Verify Git Repository
+
+Before doing anything else, verify the current directory is inside a git working tree:
+
+```bash
+git rev-parse --is-inside-work-tree 2>/dev/null
+```
+
+**If this returns non-zero or empty** (CWD is not a git repository — e.g., a monorepo root that only contains service repos as subdirectories), stop immediately with:
+
+```
+✗ Not in a git repository
+
+/create-release-branch must be run from inside a git repository.
+
+If you're in a monorepo root with service repos as subdirectories,
+cd into a specific service repo first:
+
+    cd <service-name>
+    /create-release-branch v1.2.0
+
+To create release branches across multiple services, run the skill
+individually in each service directory.
+```
+
+Do NOT proceed to any other step.
 
 ### 1. Parse Arguments
 

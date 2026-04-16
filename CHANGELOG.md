@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.4.1] - 2026-04-16
+
+## Bug Fixes
+
+- **[SKILLS-038]** fix(skills): handle non-git CWD in create-release-branch — frontmatter git commands now gracefully fall back when invoked from a non-git directory (e.g., monorepo root), with a pre-flight check guiding users to cd into the service repo
+- **[SKILLS-039]** fix(skills): handle non-git CWD in create-release — same fix applied to /create-release skill for consistency with sibling release workflow skills
+
+## What's Changed
+
+Both skills now detect when the current working directory is not a git repository and provide actionable error messages instead of crashing with `fatal: not a git repository`. This enables running skills in monorepo environments where the user may be in a non-git parent directory.
+
+**Full Changelog**: https://github.com/traczewskim/claude/compare/v1.4.0...v1.4.1
+
 ## [1.4.0] - 2026-04-15
 
 ## What's Changed
