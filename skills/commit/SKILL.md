@@ -14,7 +14,7 @@ allowed-tools: "Bash(GIT_AUTHORIZED=1 git commit:*), Bash(GIT_AUTHORIZED=1 git c
 
 Recent commits for reference: !`git log --oneline -5 2>/dev/null || echo "No previous commits (this will be the first commit)"`
 
-Current branch: !`git branch --show-current`
+Current branch: !`git branch --show-current 2>/dev/null || echo "(not in a git repository)"`
 
 ## Your Task
 

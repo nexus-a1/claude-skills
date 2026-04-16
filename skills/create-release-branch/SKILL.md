@@ -18,9 +18,9 @@ Current branch: !`git branch --show-current 2>/dev/null || echo "(not in a git r
 
 Arguments provided: $ARGUMENTS
 
-Available tags: !`git tag --sort=-version:refname 2>/dev/null`
+Available tags: !`git tag --sort=-version:refname 2>/dev/null || echo "(no tags)"`
 
-Available branches: !`git branch -a --list 'master' 'main' 'develop' 'release/*' 'origin/master' 'origin/main' 'origin/develop' 'origin/release/*' 2>/dev/null`
+Available branches: !`git branch -a --list 'master' 'main' 'develop' 'release/*' 'origin/master' 'origin/main' 'origin/develop' 'origin/release/*' 2>/dev/null || echo "(no branches listed)"`
 
 ## Your Task
 

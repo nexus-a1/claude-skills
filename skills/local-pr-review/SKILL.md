@@ -12,9 +12,9 @@ allowed-tools: "Read, Glob, Grep, Bash(git diff:*), Bash(git log:*), Bash(git br
 
 ## Context
 
-Current branch: !`git branch --show-current`
-Available local branches: !`git branch --format='%(refname:short)' | head -20`
-Uncommitted changes: !`git status --short | head -10`
+Current branch: !`git branch --show-current 2>/dev/null || echo "(not in a git repository)"`
+Available local branches: !`git branch --format='%(refname:short)' 2>/dev/null || echo "(no branches)"`
+Uncommitted changes: !`git status --short 2>/dev/null || echo "(no uncommitted changes)"`
 
 Arguments (if provided): $ARGUMENTS
 
@@ -40,6 +40,33 @@ Use `$REVIEW_EXEC_MODE` to determine team vs sub-agent behavior in Step 4.
 ## Your Task
 
 Review all changes on the current branch compared to a base branch **before** creating a pull request. This is a pre-flight check — catch issues early, fix them locally, then optionally create the PR.
+
+---
+
+### 0. Pre-flight: Verify Git Repository
+
+Before doing anything else, verify the current directory is inside a git working tree:
+
+```bash
+git rev-parse --is-inside-work-tree 2>/dev/null
+```
+
+**If this returns non-zero or empty** (CWD is not a git repository — e.g., a monorepo root that only contains service repos as subdirectories), stop immediately with:
+
+```
+✗ Not in a git repository
+
+/local-pr-review must be run from inside a git repository so it can diff
+the current branch against its base branch.
+
+If you're in a monorepo root with service repos as subdirectories,
+cd into a specific service repo first:
+
+    cd <service-name>
+    /local-pr-review
+```
+
+Do NOT proceed to any other step.
 
 ---
 

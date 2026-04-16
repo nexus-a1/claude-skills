@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.4.3] - 2026-04-16
+
+## What's Changed
+
+### Features
+- Add A5/context-bash-safety validator check to skill-structure — catches compound operators and bare git commands in !`...` Context patterns before they reach users
+
+### Bug Fixes
+- Harden Context bash in 4 remaining skills against non-git CWD and compound operators (local-pr-review, release, commit, create-release-branch)
+- Complete hardening of merge-release skill with pre-flight check
+
+## Scope
+
+This release completes the proactive hardening sweep following issues #32, #34, #38, #39, #41, and #42. Added A5 validator prevents recurrence.
+
+**Full Changelog**: https://github.com/traczewskim/claude/compare/v1.4.2...v1.4.3
+
 ## [1.4.2] - 2026-04-16
 
 ## What's Changed

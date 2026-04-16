@@ -12,15 +12,15 @@ allowed-tools: "Bash(git tag:*), Bash(git fetch:*), Bash(git log:*), Bash(git re
 
 ## Context
 
-Current branch: !`git branch --show-current`
+Current branch: !`git branch --show-current 2>/dev/null || echo "(not in a git repository)"`
 
-Git status: !`git status -sb`
+Git status: !`git status -sb 2>/dev/null || echo "(not in a git repository)"`
 
 Arguments provided: $ARGUMENTS
 
-Available tags: !`git tag --sort=-version:refname`
+Available tags: !`git tag --sort=-version:refname 2>/dev/null || echo "(no tags)"`
 
-Available branches: !`git branch -a --list 'master' 'main' 'release/*' 'origin/master' 'origin/main' 'origin/release/*'`
+Available branches: !`git branch -a --list 'master' 'main' 'release/*' 'origin/master' 'origin/main' 'origin/release/*' 2>/dev/null || echo "(no branches listed)"`
 
 ## Your Task
 
@@ -41,6 +41,33 @@ There are two release workflows:
    - Extract version from branch name
    - Append `-rc.N` suffix (increment N if previous RCs exist)
    - Create a GitHub pre-release
+
+### Step 0: Pre-flight: Verify Git Repository
+
+Before doing anything else, verify the current directory is inside a git working tree:
+
+```bash
+git rev-parse --is-inside-work-tree 2>/dev/null
+```
+
+**If this returns non-zero or empty** (CWD is not a git repository — e.g., a monorepo root that only contains service repos as subdirectories), stop immediately with:
+
+```
+✗ Not in a git repository
+
+/release must be run from inside a git repository.
+
+If you're in a monorepo root with service repos as subdirectories,
+cd into a specific service repo first:
+
+    cd <service-name>
+    /release v1.2.0
+
+To create releases across multiple services, run the skill
+individually in each service directory.
+```
+
+Do NOT proceed to any other step.
 
 ### Step 1: Parse Arguments and Understand Intent
 

@@ -12,17 +12,44 @@ allowed-tools: "Bash(git branch:*), Bash(GIT_AUTHORIZED=1 git checkout:*), Bash(
 
 ## Context
 
-Current branch: !`git branch --show-current`
+Current branch: !`git branch --show-current 2>/dev/null || echo "(not in a git repository)"`
 
 Arguments provided: $ARGUMENTS
 
-Available release branches: !`git branch -a | grep 'release/'`
+Available release branches: !`git branch -a --list 'release/*' 'origin/release/*' 2>/dev/null || echo "(no release branches)"`
 
 ## Your Task
 
 **IMPORTANT**: You MUST complete all steps in a single message using parallel tool calls where possible. Do not send multiple messages.
 
 This command merges an approved release PR from a release branch (e.g., `release/v1.0.2`) into the target branch (usually master). It verifies the PR is approved and all checks pass before merging.
+
+### 0. Pre-flight: Verify Git Repository
+
+Before doing anything else, verify the current directory is inside a git working tree:
+
+```bash
+git rev-parse --is-inside-work-tree 2>/dev/null
+```
+
+**If this returns non-zero or empty** (CWD is not a git repository — e.g., a monorepo root that only contains service repos as subdirectories), stop immediately with:
+
+```
+✗ Not in a git repository
+
+/merge-release must be run from inside a git repository.
+
+If you're in a monorepo root with service repos as subdirectories,
+cd into a specific service repo first:
+
+    cd <service-name>
+    /merge-release release/v1.2.0
+
+To merge release PRs across multiple services, run the skill
+individually in each service directory.
+```
+
+Do NOT proceed to any other step.
 
 ### 1. Parse Arguments
 
