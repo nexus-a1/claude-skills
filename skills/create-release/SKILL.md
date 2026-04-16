@@ -16,11 +16,11 @@ Current branch: !`git branch --show-current 2>/dev/null || echo "(not in a git r
 
 Arguments provided: $ARGUMENTS
 
-Remote status: !`git remote -v 2>/dev/null`
+Remote status: !`git remote -v 2>/dev/null || echo "(no remotes configured)"`
 
-Available branches: !`git branch -a --list 'master' 'main' 'develop' 'release/*' 'origin/master' 'origin/main' 'origin/develop' 'origin/release/*' 2>/dev/null`
+Available branches: !`git branch -a --list 'master' 'main' 'develop' 'release/*' 'origin/master' 'origin/main' 'origin/develop' 'origin/release/*' 2>/dev/null || echo "(no branches listed)"`
 
-Recent commits: !`git log --oneline -10 2>/dev/null`
+Recent commits: !`git log --oneline -10 2>/dev/null || echo "(no commits)"`
 
 ## Your Task
 

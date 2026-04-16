@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.2] - 2026-04-16
+
+## What's Changed
+
+### Bug Fixes
+- **fix(skills):** Add exit-0 fallbacks to create-release Context commands (#165) — Completes SKILLS-039 by adding `|| echo "..."` fallbacks to all Context bash commands in `/create-release`, ensuring the skill loads even when git commands exit non-zero in certain environments (e.g., monorepo subdirectories).
+
+**Full Changelog**: https://github.com/traczewskim/claude/compare/v1.4.1...v1.4.2
+
 ## [1.4.1] - 2026-04-16
 
 ## Bug Fixes
