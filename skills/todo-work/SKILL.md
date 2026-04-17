@@ -2,15 +2,15 @@
 name: todo-work
 model: haiku
 category: project-setup
-description: List pending items from TODO.md, pick one, mark it In progress, and hand off to /review-plan or /implement with a ready-to-paste invocation.
+description: List pending items from TODO.md, pick one, mark it In progress, and propose a hand-off to /review-plan or /implement.
 argument-hint: "[item number]"
 userInvocable: true
-allowed-tools: Read, Edit, Bash, AskUserQuestion
+allowed-tools: Read, Edit, AskUserQuestion
 ---
 
 # Work on a TODO Item
 
-Companion to `/todo`. Surfaces pending items from `TODO.md`, lets the user pick one, optionally marks it as `In progress`, and hands off to the downstream skill (`/review-plan` or `/implement`) with a ready-to-paste invocation.
+Companion to `/todo`. Surfaces pending items from `TODO.md`, lets the user pick one, optionally marks it as `In progress`, and proposes a hand-off to the downstream skill (`/review-plan` or `/implement`) by printing the exact command to run next.
 
 ## Purpose
 
@@ -160,89 +160,45 @@ If the Edit fails (e.g., because `{title}` or `{current_status}` is not unique i
     Handoff will proceed; update the status manually if needed.
 ```
 
-### Step 8: Build Handoff Invocation
+### Step 8: Propose Hand-off
 
-Compose the ready-to-paste invocation based on the chosen action.
+Print a hand-off block that shows the user the exact command to run next. Do not invoke another skill — slash commands are user-invoked; `/todo-work` stops after printing.
 
-**Validate plan first** → `/review-plan` invocation:
-
-```
-/review-plan {title}
-
-{description}
-```
-
-If the description is empty, use just:
-
-```
-/review-plan {title}
-```
-
-**Implement directly** → `/implement` invocation:
-
-```
-/implement {title}
-
-Context from TODO.md:
-
-{description}
-```
-
-If the description is empty, use just:
-
-```
-/implement {title}
-```
-
-### Step 9: Copy to Clipboard (best effort)
-
-Detect an available clipboard tool and pipe the invocation to it. Try in order; stop at the first success. Write the invocation to a tempfile first so quoting stays safe:
-
-```bash
-INVOCATION_FILE=$(mktemp)
-cat > "$INVOCATION_FILE" << 'INVOCATION_EOF'
-{invocation text}
-INVOCATION_EOF
-
-CLIP_TOOL=""
-if command -v wl-copy >/dev/null 2>&1; then
-  wl-copy < "$INVOCATION_FILE" && CLIP_TOOL="wl-copy"
-elif command -v xclip >/dev/null 2>&1; then
-  xclip -selection clipboard < "$INVOCATION_FILE" && CLIP_TOOL="xclip"
-elif command -v xsel >/dev/null 2>&1; then
-  xsel --clipboard --input < "$INVOCATION_FILE" && CLIP_TOOL="xsel"
-elif command -v pbcopy >/dev/null 2>&1; then
-  pbcopy < "$INVOCATION_FILE" && CLIP_TOOL="pbcopy"
-fi
-
-rm -f "$INVOCATION_FILE"
-```
-
-`$CLIP_TOOL` is empty if no tool was available or all attempts failed. That is not an error — the invocation is still printed in Step 10 for manual copy.
-
-**Show-details-only path:** Skip clipboard entirely (no invocation to copy).
-
-### Step 10: Report
-
-**For `Validate plan first` / `Implement directly`:**
+**For `Validate plan first` → `/review-plan`:**
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Ready to hand off
+Handing off to /review-plan
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Item:    {title}
+Status:  {Proposed|Not started|Needs discussion} → In progress
 
-Item:     {title}
-Action:   {Validate plan | Implement directly}
-Status:   {Proposed|Not started|Needs discussion} → In progress
+Run next:
 
-{if clipboard succeeded:}
-Copied to clipboard via {CLIP_TOOL} — paste into your next message:
-{else:}
-Copy the block below into your next message:
+  /review-plan {title}
+  {if description present:}
+  {description}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**For `Implement directly` → `/implement`:**
 
 ```
-{invocation text}
-```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Handing off to /implement
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Item:    {title}
+Status:  {Proposed|Not started|Needs discussion} → In progress
+
+Run next:
+
+  /implement {title}
+  {if description present:}
+  Context from TODO.md:
+
+  {description}
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -272,7 +228,7 @@ Status:   {status}   (unchanged)
 /todo-work
 ```
 
-Lists pending items sorted by priority. User picks item #2 ("Add webhook support"). Chooses "Validate plan first". Skill updates status to `In progress`, copies `/review-plan Add webhook support\n\n{description}` to clipboard, prints the handoff block.
+Lists pending items sorted by priority. User picks item #2 ("Add webhook support"). Chooses "Validate plan first". Skill updates status to `In progress` and prints the hand-off block with `/review-plan Add webhook support` (plus the description) as the suggested next command.
 
 ### Example 2: Direct selection by number, implement directly
 
@@ -280,7 +236,7 @@ Lists pending items sorted by priority. User picks item #2 ("Add webhook support
 /todo-work 1
 ```
 
-Jumps straight to item #1 ("Fix broken link in README"). User chooses "Implement directly". Status flips to `In progress`; `/implement Fix broken link in README` is copied to clipboard.
+Jumps straight to item #1 ("Fix broken link in README"). User chooses "Implement directly". Status flips to `In progress`; the skill prints `/implement Fix broken link in README` as the next command to run.
 
 ### Example 3: Show details only, no status change
 
@@ -288,7 +244,7 @@ Jumps straight to item #1 ("Fix broken link in README"). User chooses "Implement
 /todo-work
 ```
 
-User picks item #3, chooses "Just show details". No Edit to `TODO.md`, no clipboard action — just prints the item details and stops.
+User picks item #3, chooses "Just show details". No Edit to `TODO.md`, no hand-off — just prints the item details and stops.
 
 ### Example 4: No pending items
 
@@ -330,6 +286,6 @@ Warn and continue with the handoff (see Step 7).
 
 - **Stateless** — no `.claude/work/` files, no configuration dependency
 - **Read + targeted Edit** — only touches `TODO.md` via one `Status:` line change
-- **Handoff is passive** — prints (and copies) the invocation; does not auto-launch a skill, because slash commands are user-invoked
+- **Handoff is passive** — prints the proposed next command; does not auto-launch a skill, because slash commands are user-invoked
 - **Priority ordering is stable** — document order is the tiebreaker within a priority tier
 - **Missing metadata tolerated** — items with partial fields are listed with an `(missing metadata)` marker, not dropped

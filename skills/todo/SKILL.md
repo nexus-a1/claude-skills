@@ -115,13 +115,17 @@ Map selection to scope value: `quick win`, `small`, `medium`, `large`.
 
 Use AskUserQuestion:
 - header: "Details"
-- question: "Any additional details, context, or acceptance criteria? (optional)"
+- question: "Any additional details, context, or acceptance criteria? (Select 'Other' to type details, or 'Skip' to leave blank.)"
 - options:
-  - "Enter details" / "I'll type the details in the text field below"
-  - "Skip" / "No additional details needed — the title is enough"
+  - "Skip" / "No additional details — the title is enough"
+  - "Add later" / "Leave blank now; I'll edit TODO.md manually to add details later"
 - multiSelect: false
 
-If user selects "Skip", leave description empty. Otherwise, capture the user's text input as the description.
+Free-form details are captured via the built-in "Other" option. Handle the response:
+
+- "Skip" or "Add later" → leave description empty
+- "Other" with typed text → use that text as the description
+- "Other" with no text → leave description empty (do not re-ask)
 
 ### Step 7: Ask About Related TODOs
 

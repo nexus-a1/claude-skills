@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.4.4] - 2026-04-17
+
+## What's Changed
+
+### Features
+- Work-issue worktree isolation + /create-requirements hand-off (#170)
+
+### Bug Fixes
+- Stop /todo Step 6 from failing when user adds details (#169)
+
+### Other Changes
+- Replace todo-work clipboard step with inline hand-off proposal (#171)
+
+**Full Changelog**: https://github.com/traczewskim/claude-skills/compare/v1.4.3...v1.4.4
+
 ## [1.4.3] - 2026-04-16
 
 ## What's Changed
