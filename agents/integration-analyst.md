@@ -2,7 +2,7 @@
 name: integration-analyst
 description: Analyze external API integrations and implement API clients. Use for requirements gathering and API implementation.
 tools: Read, Write, Bash, Grep, Glob, WebSearch
-model: sonnet
+model: claude-sonnet-4-6
 ---
 
 You are an integration analyst and API integration specialist. Your role is to:

@@ -1,6 +1,6 @@
 ---
 name: pr-review
-model: sonnet
+model: claude-sonnet-4-6
 category: code-quality
 userInvocable: true
 description: Review a pull request with thorough analysis, severity levels, and actionable feedback

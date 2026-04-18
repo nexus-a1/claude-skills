@@ -1,7 +1,7 @@
 ---
 name: update-context
 category: implementation
-model: haiku
+model: claude-haiku-4-5
 userInvocable: true
 description: Annotate an active work session with a note, scope change, or new finding. Appends a timestamped entry to state.json and updates the manifest. Use mid-session when you learn something that should be preserved.
 argument-hint: "[identifier] [note]"

@@ -1,7 +1,7 @@
 ---
 name: create-requirements
 category: planning
-model: opus
+model: claude-opus-4-7
 userInvocable: true
 description: Run a multi-agent pipeline to produce detailed technical requirements and a ticket-ready summary. Creates a feature branch, persists session state, and supports resume. Optionally seeds from a prior brainstorm session.
 argument-hint: "[--light] [--from-brainstorm <slug>] [feature-description]"
@@ -326,11 +326,10 @@ Store as `{base_branch}`.
 
 Create the branch locally. Remote push is deferred to Stage 2 (after initial context has been gathered).
 
-**Use Task tool with `subagent_type: "git-operator"`:**
+Run inline — local branch creation has no hook restrictions beyond the existing guard:
 
-```
-Prompt: Create a new local branch feature/{identifier} from {base_branch}.
-Do NOT push to remote yet.
+```bash
+git checkout -b feature/{identifier} {base_branch}
 ```
 
 **VERIFICATION** (required):
@@ -459,6 +458,26 @@ Read or initialize manifest, then upsert item using `identifier` as unique key:
 
 Update `last_updated` and `total_items` in the envelope.
 
+#### 1.9 Register Active Session (for auto-context hook)
+
+```bash
+if [ -n "${CLAUDE_SESSION_ID:-}" ] && command -v jq >/dev/null 2>&1; then
+  mkdir -p "$WORK_DIR"
+  touch "$WORK_DIR/.active-sessions.lock"
+  (
+    flock -x -w 2 200 || exit 0
+    [ -s "$WORK_DIR/.active-sessions" ] || echo '{}' > "$WORK_DIR/.active-sessions"
+    jq --arg s "$CLAUDE_SESSION_ID" --arg w "{identifier}" \
+       '. + {($s): $w}' "$WORK_DIR/.active-sessions" \
+       > "$WORK_DIR/.active-sessions.tmp.$$" \
+       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
+       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
+  ) 200>"$WORK_DIR/.active-sessions.lock"
+fi
+```
+
+No-op when `CLAUDE_SESSION_ID` is unset or `jq` is missing. Enables the optional `auto-context.sh` PostToolUse hook to route entries to this session's `state.json`. Cleared at Stage 4.11 completion.
+
 ---
 
 ### Stage 1.5: Feasibility Check
@@ -579,10 +598,11 @@ Save output to `$WORK_DIR/{identifier}/context/discovery.json`
 
 Push the branch to remote for team visibility and resume capability, now that initial context has been gathered.
 
-**Use Task tool with `subagent_type: "git-operator"`:**
+Run inline. No new commits have been made yet — we're pushing the branch pointer only — so security-auditor state from the base branch's HEAD applies. Record it first:
 
-```
-Prompt: Push branch feature/{identifier} to origin with upstream tracking (-u flag).
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
+git push -u origin feature/{identifier}
 ```
 
 **VERIFICATION** (required):
@@ -1320,6 +1340,21 @@ Next Steps (for YOU to run when ready):
 ```
 
 **STOP HERE. Do not enter plan mode. Do not propose implementation. Do not ask to proceed with implementation. The user will invoke `/implement` when ready.**
+
+```bash
+# Clear auto-context sentinel on completion
+if [ -n "${CLAUDE_SESSION_ID:-}" ] \
+   && [ -f "$WORK_DIR/.active-sessions" ] \
+   && command -v jq >/dev/null 2>&1; then
+  (
+    flock -x -w 2 200 || exit 0
+    jq --arg s "$CLAUDE_SESSION_ID" 'del(.[$s])' "$WORK_DIR/.active-sessions" \
+       > "$WORK_DIR/.active-sessions.tmp.$$" \
+       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
+       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
+  ) 200>"$WORK_DIR/.active-sessions.lock"
+fi
+```
 
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: release
 category: release-management
-model: haiku
+model: claude-haiku-4-5
 userInvocable: true
 description: Create a GitHub release with a version tag and auto-generated changelog. Supports pre-releases. Final step of the release workflow.
 argument-hint: "[version] [branch] [--pre-release]"

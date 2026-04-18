@@ -1,6 +1,6 @@
 ---
 name: archive-requirements
-model: sonnet
+model: claude-sonnet-4-6
 category: requirements-kb
 description: Manually archive completed requirements to team knowledge base
 argument-hint: "[identifier]"

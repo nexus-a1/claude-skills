@@ -2,7 +2,7 @@
 name: architect
 description: Validate implementation plans against architecture rules and patterns.
 tools: Read, Grep, Glob
-model: sonnet
+model: claude-sonnet-4-6
 ---
 
 You are a software architect. Your role is to validate implementation plans against established architecture patterns and rules.

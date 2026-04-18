@@ -1,6 +1,6 @@
 ---
 name: todo-work
-model: haiku
+model: claude-haiku-4-5
 category: project-setup
 description: List pending items from TODO.md, pick one, mark it In progress, and propose a hand-off to /review-plan or /implement.
 argument-hint: "[item number]"
@@ -90,19 +90,46 @@ No pending TODO items. Use /todo to add one, or /status to see active work sessi
 
 ### Step 5: Pick Item
 
-**If `$ARGUMENTS` contains a positive integer N and 1 ≤ N ≤ count(pending):** Use item N. Skip this step's AskUserQuestion.
+**If `$ARGUMENTS` contains a positive integer N and 1 ≤ N ≤ count(pending):** Use item N. Skip the inline list and AskUserQuestion entirely.
 
-**Otherwise:** Display the top 4 items and use AskUserQuestion to pick:
+**Otherwise (no numeric argument):**
 
-- header: `"Pick item"`
-- question: `"Which TODO item should we work on?"`
-- options (up to 4; each label is short, description shows priority + category + scope):
-  - `{title}` / `priority · category · scope`
-  - ... up to 4 ...
-  - `Cancel` / `Don't start any item — exit`
-- multiSelect: `false`
+1. **Print the full pending list inline**, using the 1..N sorted index from Step 3.
 
-If more than 4 pending items exist, include this note above the question: *"Showing top 4 by priority. {count-4} more in TODO.md — re-run with `/todo-work {N}` to select a different one."*
+   Header: `Pending TODO items ({N} total):`
+
+   Format, one line per item:
+
+   ```
+   {N}. [{priority}] {title}{ (missing metadata) if any of the four fields was unknown}
+   ```
+
+   Example:
+
+   ```
+   Pending TODO items (7 total):
+   1. [medium] Integrate playwright-engineer into /implement QA phase
+   2. [medium] Knowledge Sync workflow implementation
+   3. [medium] Consider changing todo list to JSON
+   4. [medium] Update 'todo-work' skill to list existing items
+   5. [low] Evaluate Garry Tan's plan mode prompt
+   6. [low] Expand agent test coverage
+   7. [low] Implement true action-based audit trail
+   ```
+
+   Titles only — no descriptions, categories, or scope in the inline list (those stay in the AskUserQuestion option descriptions for the top 4).
+
+2. **Then use AskUserQuestion** to pick from the top 4 as quick-select shortcuts:
+
+   - header: `"Pick item"`
+   - question: `"Which TODO item should we work on?"`
+   - options (up to 4; each label is short, description shows priority + category + scope):
+     - `{title}` / `priority · category · scope`
+     - ... up to 4 ...
+     - `Cancel` / `Don't start any item — exit`
+   - multiSelect: `false`
+
+   If more than 4 pending items exist, include this note above the question: *"Showing top 4 as quick-select options. Use `/todo-work {N}` to jump to any item from the list above."*
 
 If the user picks `Cancel`, stop with: `No item selected.`
 
@@ -228,7 +255,7 @@ Status:   {status}   (unchanged)
 /todo-work
 ```
 
-Lists pending items sorted by priority. User picks item #2 ("Add webhook support"). Chooses "Validate plan first". Skill updates status to `In progress` and prints the hand-off block with `/review-plan Add webhook support` (plus the description) as the suggested next command.
+Prints the full pending list inline (all N items, one per line with priority + title), then shows the AskUserQuestion with the top 4 as quick-select. User picks item #2 ("Add webhook support"). Chooses "Validate plan first". Skill updates status to `In progress` and prints the hand-off block with `/review-plan Add webhook support` (plus the description) as the suggested next command.
 
 ### Example 2: Direct selection by number, implement directly
 

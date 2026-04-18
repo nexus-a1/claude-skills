@@ -1,6 +1,6 @@
 ---
 name: feedback
-model: sonnet
+model: claude-sonnet-4-6
 category: analysis
 userInvocable: true
 description: Generate a retrospective report analyzing agent pipeline execution, duplication, scope adherence, and output quality from a completed work session.

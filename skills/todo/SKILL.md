@@ -1,6 +1,6 @@
 ---
 name: todo
-model: haiku
+model: claude-haiku-4-5
 category: project-setup
 description: Add a new item to the project TODO.md with priority, category, and scope through an interactive wizard.
 argument-hint: "[title or description of the TODO item]"

@@ -1,7 +1,7 @@
 ---
 name: implement
 category: implementation
-model: opus
+model: claude-opus-4-7
 userInvocable: true
 description: Implement a feature from saved requirements. Chunk-based commits, parallel QA (tests + review + security), and PR creation. Resumes interrupted sessions from saved state. Runs in the current working tree by default — set `worktree.enabled: true` in `.claude/configuration.yml` to isolate work in a git worktree.
 argument-hint: "[--light] [identifier]"
@@ -269,12 +269,10 @@ Ensure on correct branch:
 **Multi mode:** branches already set during worktree creation.
 **No worktree:** standard checkout.
 
-**Use Task tool with `subagent_type: "git-operator"`:**
+Run inline — the guard hook allows branch checkout without agent delegation:
 
-```
-Prompt: Switch to the existing branch feature/{identifier}.
-Do NOT create a new branch — just checkout the existing one.
-Do NOT push.
+```bash
+git checkout feature/{identifier}
 ```
 
 **CRITICAL VALIDATION** - Verify we're on a feature branch:
@@ -364,6 +362,30 @@ Read or initialize manifest, then upsert item using `identifier` as unique key:
 ```
 
 Update `last_updated` and `total_items` in the envelope.
+
+#### 0.5 Register Active Session (for auto-context hook)
+
+If the optional `auto-context.sh` PostToolUse hook is enabled (opt-in via `hooks.auto_context.enabled` in `.claude/configuration.yml`), it resolves the active work-id by reading `${WORK_DIR}/.active-sessions` — a JSON map keyed by the Claude Code `session_id`. Session-starting skills maintain this map.
+
+Register the current session → work-id mapping:
+
+```bash
+if [ -n "${CLAUDE_SESSION_ID:-}" ] && command -v jq >/dev/null 2>&1; then
+  mkdir -p "$WORK_DIR"
+  touch "$WORK_DIR/.active-sessions.lock"
+  (
+    flock -x -w 2 200 || exit 0
+    [ -s "$WORK_DIR/.active-sessions" ] || echo '{}' > "$WORK_DIR/.active-sessions"
+    jq --arg s "$CLAUDE_SESSION_ID" --arg w "{identifier}" \
+       '. + {($s): $w}' "$WORK_DIR/.active-sessions" \
+       > "$WORK_DIR/.active-sessions.tmp.$$" \
+       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
+       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
+  ) 200>"$WORK_DIR/.active-sessions.lock"
+fi
+```
+
+This step is a no-op when `CLAUDE_SESSION_ID` is unset, `jq` is missing, or the hook is disabled — it never fails the skill. A matching clear block runs in the Worktree Exit / completion section at the end of this skill.
 
 ---
 
@@ -701,29 +723,34 @@ For each chunk:
    - Modify existing files
    - Follow patterns identified in exploration phase
 
-3. **Commit the chunk using git-operator:**
+3. **Commit the chunk inline:**
 
-   **Use Task tool with `subagent_type: "git-operator"`:**
+   Review the diff, author a conventional-commit message, and commit. The `git-mutation-guard.sh` hook runs the credential scan on staged files automatically.
 
+   ```bash
+   git status --short
+   git diff --stat HEAD
+   # Per-file diff only when the commit message needs it:
+   # git diff HEAD -- <file>
+   git add <files>
+   git commit -m "$(cat <<'EOF'
+[TICKET-123] type(scope): description
+
+Chunk: {chunk_description}
+EOF
+)"
    ```
-   Prompt: Commit the following changes as a single atomic commit.
 
-   Identifier: {identifier}
-   Chunk: {chunk_description}
-   Files changed: {files_list}
-
-   Generate an appropriate commit message and commit the changes.
-   Do NOT push yet.
-   ```
+   No push here — push happens once at the end of the implementation (Phase 5), after security-auditor confirms the full delta.
 
    **Error Handling for Commit Failure:**
 
-   If git-operator fails to commit:
+   If the commit fails (hook block, pre-commit hook, merge conflict):
    ```
    ⚠ Failed to commit chunk {N}: {error_message}
 
    Options:
-   [r] Retry commit (will re-run git-operator)
+   [r] Retry commit (re-run after fixing the cause)
    [m] Manual fix (you commit manually, then continue)
    [s] Skip commit (DANGEROUS - work is done but not committed)
    [a] Abort implementation
@@ -733,7 +760,7 @@ For each chunk:
 
    Use AskUserQuestion for selection.
 
-   - **r (Retry)**: Re-run git-operator with same prompt
+   - **r (Retry)**: Re-run the commit (surface any hook findings to the user first)
    - **m (Manual)**: Wait for user to manually commit, then verify commit exists before proceeding
    - **s (Skip)**: Log warning in state, mark chunk as "completed_uncommitted", continue
    - **a (Abort)**: Stop implementation, save state, exit
@@ -1064,17 +1091,11 @@ Collect findings from code-reviewer and security-auditor:
 
 #### 4.4 Auto-Fix Issues
 
-For auto-fixable issues, apply fixes and create additional commit:
+For auto-fixable issues, apply fixes and create an additional commit inline:
 
-**Use Task tool with `subagent_type: "git-operator"`:**
-
-```
-Prompt: Commit the review fixes.
-
-Fixes applied:
-{list_of_fixes}
-
-Create a commit for these fixes.
+```bash
+git add <files>
+git commit -m "[TICKET-123] fix(review): address review feedback"
 ```
 
 #### 4.5 Report QA Summary
@@ -1213,19 +1234,11 @@ Issue SA-2: UNRESOLVED - Both auto-fix attempts failed, requires manual interven
 **If any fixes were applied successfully:**
 
 1. Stage the fixed files
-2. Commit via git-operator:
+2. Commit inline (hook runs credential scan automatically):
 
-   **Use Task tool with `subagent_type: "git-operator"`:**
-
-   ```
-   Prompt: Commit the following QA auto-fix changes.
-
-   Identifier: {identifier}
-   Fixes applied:
-   {list_of_resolved_issues_with_files}
-
-   Commit message format: [{identifier}] fix: address critical QA findings
-   Do NOT push yet.
+   ```bash
+   git add <fixed-files>
+   git commit -m "[{identifier}] fix: address critical QA findings"
    ```
 
 3. Update state with the new commit:
@@ -1368,11 +1381,11 @@ if [[ ! "$current_branch" =~ ^feature/ ]]; then
 fi
 ```
 
-**Use Task tool with `subagent_type: "git-operator"`:**
+Before the push, record the security-auditor confirmation for the final HEAD (the push hook will block otherwise):
 
-```
-Prompt: Push branch feature/{identifier} to origin.
-Set upstream tracking if not already set.
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
+git push -u origin feature/{identifier}
 ```
 
 #### 5.2 Confirm Target Branch
@@ -1399,29 +1412,49 @@ Create PR to {base_branch}? [y/change/skip]
 
 #### 5.3 Create PR
 
-**Use Task tool with `subagent_type: "git-operator"`:**
+For a short commit range (≤ 10 commits, a handful of files), author the PR inline with `gh pr create`:
 
-```
-Prompt: Create a pull request for feature/{identifier} targeting {target_branch}.
+```bash
+gh pr create \
+  --base {target_branch} \
+  --head feature/{identifier} \
+  --title "[{identifier}] <type>(<scope>): <description>" \
+  --body "$(cat <<'EOF'
+## Summary
+{feature_summary}
 
-Context for the PR description:
-- Identifier: {identifier}
-- Feature title: {feature_title}
-- Summary: {feature_summary}
-- Changes: {list_of_changes}
-- Quality gate result: {quality_gate_result: PASSED | FAILED_OVERRIDE}
-- Commits: {commit_list}
+## Ticket
+{identifier}
 
-{if FAILED_OVERRIDE, include:}
-Include in PR body:
+## Changes
+- {bullet per logical change}
+
+## Technical Details
+{notable patterns}
+
+## Testing
+- [ ] {verification steps}
+
+{If FAILED_OVERRIDE:}
 ⚠️ KNOWN CRITICAL ISSUES (user approved proceeding):
 - [{issue_id}] {description} in {file}:{line}
 
-{if IMPORTANT/MINOR issues remain, include:}
-Include in PR body under "Remaining Review Findings":
+{If remaining findings:}
+## Remaining Review Findings
 🟡 Important: {important_issues}
 🔵 Minor: {minor_issues}
+EOF
+)"
 ```
+
+For a **large commit range** (10+ commits or wide file changes), delegate PR body authoring only (not the `gh pr create` call itself):
+
+```
+Use Task tool with subagent_type: "git-operator"
+Prompt: Author a PR body for feature/{identifier} covering commits {base}..HEAD. Return title + body only.
+```
+
+Then run `gh pr create` with the returned title/body inline.
 
 #### 5.4 Offer PR Review
 
@@ -1571,6 +1604,24 @@ Read `references/branch-safety-rules.md` for the complete branch safety rules. *
 - **Branch protection**: NEVER push directly to release/main/master branches
 - **Ticket requirement**: Commit messages MUST include ticket number from branch in `[TICKET-123]` format
 - **Worktree isolation**: When `worktree.enabled: true`, implementation runs in an isolated worktree. State files persist in the original workspace root. On completion, the worktree is kept (not removed) so the user can inspect or continue work
+
+## Completion Cleanup
+
+After Phase 5 (PR creation) completes — or if the skill ends early for any reason — clear the session from the auto-context sentinel (complements Phase 0.5). No-op when the feature is not in use:
+
+```bash
+if [ -n "${CLAUDE_SESSION_ID:-}" ] \
+   && [ -f "$WORK_DIR/.active-sessions" ] \
+   && command -v jq >/dev/null 2>&1; then
+  (
+    flock -x -w 2 200 || exit 0
+    jq --arg s "$CLAUDE_SESSION_ID" 'del(.[$s])' "$WORK_DIR/.active-sessions" \
+       > "$WORK_DIR/.active-sessions.tmp.$$" \
+       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
+       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
+  ) 200>"$WORK_DIR/.active-sessions.lock"
+fi
+```
 
 ## Worktree Exit
 

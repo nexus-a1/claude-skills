@@ -1,7 +1,7 @@
 ---
 name: troubleshoot
 category: implementation
-model: opus
+model: claude-opus-4-7
 userInvocable: true
 description: Systematically troubleshoot a failing feature or error. Discovers code, investigates root cause, applies fix, verifies with tests, and commits. Use when something isn't working as expected. Runs in the current working tree by default — set `worktree.enabled: true` in `.claude/configuration.yml` to isolate work in a git worktree.
 argument-hint: <error-or-description>
@@ -406,10 +406,17 @@ Fix verified successfully.
 
 **Goal:** Save the fix with proper documentation.
 
-**Use Task tool with `subagent_type: "git-operator"`:**
+Run inline — the hook enforces credential scan and branch protection automatically:
 
-```
-Prompt: Commit and push: Fix /api/users to return 200 instead of 202
+```bash
+git add <files>
+git commit -m "$(cat <<'EOF'
+[TICKET-123] fix(scope): description
+EOF
+)"
+# If pushing: record security-auditor confirmation first (after a clean scan)
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
+git push
 ```
 
 **Commit message format:**

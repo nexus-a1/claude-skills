@@ -2,7 +2,7 @@
 name: archivist
 description: Store, search, and retrieve team requirements from knowledge base
 tools: Bash, Read, Write, Grep, Glob
-model: sonnet
+model: claude-sonnet-4-6
 ---
 
 # Archivist Agent

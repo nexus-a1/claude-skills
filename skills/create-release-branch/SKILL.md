@@ -1,7 +1,7 @@
 ---
 name: create-release-branch
 category: release-management
-model: haiku
+model: claude-haiku-4-5
 userInvocable: true
 description: Create a release/vX.Y.Z branch from origin/master (default), any branch, or a specific tag using tag@vX.Y.Z syntax
 argument-hint: <version> [source]
@@ -201,19 +201,17 @@ Proceed? [y/n]
 
 ### 6. Create the Release Branch and Push
 
-Delegate branch creation and push to the `git-operator` agent:
+Run inline. The `git-mutation-guard.sh` hook allows the initial push to a protected branch name when the remote doesn't exist yet; subsequent pushes are blocked (changes to an existing release branch must go through a PR).
 
-**Use Task tool with `subagent_type: "git-operator"`:**
+The push still requires a security-auditor confirmation for the current HEAD. For a release branch created from `origin/master` with no new commits, the confirmation for the source's HEAD applies. Record one if needed before pushing:
 
+```bash
+git checkout -b release/${version} ${resolved_ref}
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
+git push -u origin release/${version}
 ```
-Prompt: Create branch release/${version} from ${resolved_ref} and push to origin.
-```
 
-The git-operator will:
-1. `git checkout -b release/${version} ${resolved_ref}`
-2. `git push -u origin release/${version}`
-
-**On failure**, report the error from git-operator and stop execution.
+**On failure**, surface the hook's error and stop.
 
 ### 7. Report Results
 
@@ -242,7 +240,7 @@ Next Steps
 ## Important Notes
 
 - **Single message execution**: Complete all operations in ONE response
-- **Git operations**: Branch creation and push are delegated to the `git-operator` agent
+- **Git operations**: Branch creation and push run inline. The PreToolUse hook enforces branch protection (allows initial creating push, blocks subsequent pushes to `release/*`), credential scan on commits, and security-auditor confirmation on push.
 - **Branch naming**: Always `release/vX.Y.Z` — enforce the `v` prefix
 - **Source `master`** is treated as `origin/master` — always branch from the remote, not a potentially stale local copy
 - **Tags**: `tag@v1.1.1` syntax is the explicit form; resolve the tag ref before branching

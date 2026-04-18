@@ -1,7 +1,7 @@
 ---
 name: resume-work
 category: implementation
-model: sonnet
+model: claude-sonnet-4-6
 userInvocable: true
 description: Resume any interrupted work session — brainstorm, requirements, proposal, epic, or implementation. Scans for incomplete sessions and continues from the last saved checkpoint. Re-enters the original session's worktree if one was used; otherwise runs in the current working tree.
 argument-hint: "[identifier]"
@@ -137,6 +137,28 @@ Select [1-5]:
 ```
 
 Use AskUserQuestion to get selection.
+
+### Re-register Active Session (for auto-context hook)
+
+Once the target `{identifier}` is resolved (either from the argument or the user's manifest selection), re-register the current session → work-id mapping so the optional `auto-context.sh` PostToolUse hook can resolve it. This is a no-op when `CLAUDE_SESSION_ID` is unset or `jq` is missing:
+
+```bash
+if [ -n "${CLAUDE_SESSION_ID:-}" ] && command -v jq >/dev/null 2>&1; then
+  mkdir -p "$WORK_DIR"
+  touch "$WORK_DIR/.active-sessions.lock"
+  (
+    flock -x -w 2 200 || exit 0
+    [ -s "$WORK_DIR/.active-sessions" ] || echo '{}' > "$WORK_DIR/.active-sessions"
+    jq --arg s "$CLAUDE_SESSION_ID" --arg w "{identifier}" \
+       '. + {($s): $w}' "$WORK_DIR/.active-sessions" \
+       > "$WORK_DIR/.active-sessions.tmp.$$" \
+       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
+       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
+  ) 200>"$WORK_DIR/.active-sessions.lock"
+fi
+```
+
+The corresponding clear block lives inside the target skill that takes over (e.g. `/implement`'s Completion Cleanup section). `/resume-work` itself does not clear the sentinel because control hands off to the resumed skill.
 
 ### Surface Session Updates
 

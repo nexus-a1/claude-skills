@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.5.0] - 2026-04-18
+
+## What's Changed
+
+### Features
+- 2f0062d [SKILLS-006] feat(skills): complete auto-context sentinel plumbing (PR 2) (#176)
+- 35529f2 [SKILLS-006] feat(hooks): auto-update ticket context via opt-in PostToolUse hook (#175)
+- 33a4b2b [SKILLS-000] feat(skills): list all pending TODO items inline in /todo-work
+- ceda362 [SKILLS-000] feat(plugin): pin explicit model versions across skills and agents (#172)
+
+### Improvements
+- 72a1446 [SKILLS-000] refactor(git): hook-first git mutations, narrow git-operator
+
+### Bug Fixes
+- c7e89a8 [SKILLS-000] fix(ci): address code reviewer suggestions in TODO.md
+- de792ee [SKILLS-000] fix(hooks): replace python3 with grep, drop misleading allowlist entry
+- 15528ee [SKILLS-000] fix(commit): correct credential-scan bypass instruction
+- 4f5858c [SKILLS-000] fix(hooks): address review findings from PR #173
+
+### Other Changes
+
+**Full Changelog**: https://github.com/traczewskim/claude/compare/v1.4.4...v1.5.0
+
 ## [1.4.4] - 2026-04-17
 
 ## What's Changed

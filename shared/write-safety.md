@@ -44,6 +44,17 @@ Only the skill lead (main orchestrator) writes to:
 - `manifest.json`
 - Final output documents
 
+### Authorized Secondary Writers
+
+The following non-skill writers are authorized to mutate specific session-state fields under a defined locking protocol:
+
+| Writer | Files | Fields | Protocol |
+|--------|-------|--------|----------|
+| `plugin/hooks/auto-context.sh` (PostToolUse) | `state.json`, `manifest.json` | `.updates[]` (append only, entries flagged `auto: true`), `.auto_context_last_at`, `.updated_at`, `manifest.items[].updated_at` | `flock -x -w 2` on `${STATE_FILE}.lock`; read under `flock -s` on `${WORK_DIR}/.active-sessions.lock` |
+| Session-initiating skills (`/implement`, `/resume-work`, etc.) | `${WORK_DIR}/.active-sessions` | Whole-file rewrite via jq+mv | `flock -x -w 2` on `${WORK_DIR}/.active-sessions.lock` for both register and clear |
+
+Skill leads continue to own `state.json` for all other fields and all non-`.updates[]` mutations. The `auto-context.sh` writes are advisory context annotations that never overwrite lead-written progress fields.
+
 ## When to Apply
 
 These rules apply when `execution_mode` is `"team"` (agents use TeamCreate + SendMessage). In `"subagent"` mode, agents are independent processes and cannot collide, but following these conventions is still recommended for consistency.

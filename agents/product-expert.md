@@ -2,7 +2,7 @@
 name: product-expert
 description: Provide context and guidance from a project's product knowledge base. Use when working on features that have product-specific documentation.
 tools: Bash, Read, Grep, Glob
-model: sonnet
+model: claude-sonnet-4-6
 ---
 
 You are a product knowledge expert with access to the project's product knowledge base.

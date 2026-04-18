@@ -1,7 +1,7 @@
 ---
 name: create-proposal
 category: planning
-model: opus
+model: claude-opus-4-7
 userInvocable: true
 description: Create a formal design document for a feature or component. Guides through requirements, approach brainstorming, and iterative proposal drafts with approval gate before optional implementation. Use when you need a written design approved before committing to code.
 argument-hint: "[--light] [proposal-name or identifier]"
@@ -249,6 +249,24 @@ Read or initialize manifest, then upsert item using `identifier` as unique key:
 ```
 
 Update `last_updated` and `total_items` in the envelope.
+
+Register active session for the optional `auto-context.sh` PostToolUse hook (no-op when `CLAUDE_SESSION_ID` is unset):
+
+```bash
+if [ -n "${CLAUDE_SESSION_ID:-}" ] && command -v jq >/dev/null 2>&1; then
+  mkdir -p "$WORK_DIR"
+  touch "$WORK_DIR/.active-sessions.lock"
+  (
+    flock -x -w 2 200 || exit 0
+    [ -s "$WORK_DIR/.active-sessions" ] || echo '{}' > "$WORK_DIR/.active-sessions"
+    jq --arg s "$CLAUDE_SESSION_ID" --arg w "{identifier}" \
+       '. + {($s): $w}' "$WORK_DIR/.active-sessions" \
+       > "$WORK_DIR/.active-sessions.tmp.$$" \
+       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
+       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
+  ) 200>"$WORK_DIR/.active-sessions.lock"
+fi
+```
 
 ---
 
@@ -870,6 +888,21 @@ Next Steps:
   1. Review: $PROPOSALS_DIR/{proposal_name}/README.md
   2. Copy src/ to your project
   3. Follow installation instructions
+```
+
+```bash
+# Clear auto-context sentinel on completion
+if [ -n "${CLAUDE_SESSION_ID:-}" ] \
+   && [ -f "$WORK_DIR/.active-sessions" ] \
+   && command -v jq >/dev/null 2>&1; then
+  (
+    flock -x -w 2 200 || exit 0
+    jq --arg s "$CLAUDE_SESSION_ID" 'del(.[$s])' "$WORK_DIR/.active-sessions" \
+       > "$WORK_DIR/.active-sessions.tmp.$$" \
+       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
+       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
+  ) 200>"$WORK_DIR/.active-sessions.lock"
+fi
 ```
 
 ---

@@ -1,6 +1,6 @@
 ---
 name: load-requirements
-model: sonnet
+model: claude-sonnet-4-6
 category: requirements-kb
 description: Load specific archived requirement for detailed review
 argument-hint: <identifier>

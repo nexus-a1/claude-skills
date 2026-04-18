@@ -1,6 +1,6 @@
 ---
 name: refactor
-model: sonnet
+model: claude-sonnet-4-6
 category: code-quality
 userInvocable: true
 description: Analyze code and suggest refactoring improvements with agent-driven analysis. Runs in the current working tree by default — set `worktree.enabled: true` in `.claude/configuration.yml` to isolate work in a git worktree.

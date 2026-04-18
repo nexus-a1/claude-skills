@@ -168,6 +168,37 @@ requirements:
 
 
 # -----------------------------------------------------------------------------
+# Hooks (optional)
+# -----------------------------------------------------------------------------
+# Opt-in behavior for plugin hooks. Absent = all flags default to disabled.
+#
+# hooks.auto_context — PostToolUse hook that auto-appends entries to the
+# active work session's state.json after milestone tool calls (Edit, Write,
+# MultiEdit, Task, NotebookEdit). Complements the manual /update-context
+# skill; does not replace it.
+#
+# Behavior:
+#   - Default disabled. When enabled, auto-entries are flagged "auto": true
+#     and prefixed with "[auto]" in the note.
+#   - Requires an active work session registered by a session-starting skill
+#     (e.g. /implement). Hook no-ops silently when no session is active.
+#   - Throttled by throttle_seconds so rapid Edit bursts produce one entry.
+#   - Hook never blocks tool execution; errors log to
+#     $HOME/.claude/auto-context-errors.log.
+#   - Requires: jq (mandatory), yq (to read this config), flock (Linux/macOS).
+#
+#   enabled          opt-in toggle (default: false)
+#   milestone_tools  tools that trigger an entry (default below)
+#   throttle_seconds minimum seconds between auto-entries per session (default 300)
+# -----------------------------------------------------------------------------
+# hooks:
+#   auto_context:
+#     enabled: false
+#     milestone_tools: [Edit, Write, MultiEdit, Task, NotebookEdit]
+#     throttle_seconds: 300
+
+
+# -----------------------------------------------------------------------------
 # Worktree Isolation (optional)
 # -----------------------------------------------------------------------------
 # When enabled, code-modifying skills (/implement, /troubleshoot, /refactor) work in

@@ -1,6 +1,6 @@
 ---
 name: report-issue
-model: sonnet
+model: claude-sonnet-4-6
 category: analysis
 userInvocable: true
 description: Draft and submit a bug report or feature request to the nexus plugin repository, using current conversation context to auto-populate details.

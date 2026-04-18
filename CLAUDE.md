@@ -21,57 +21,45 @@
 
 The following operations **MUST** always use their designated agents:
 
-#### Git Operations → `git-operator`
+#### Git Operations → direct Bash (hook-enforced policy)
 
-**MUST delegate** any git *mutation* to the `git-operator` agent via the **Task tool with `subagent_type: "git-operator"`**. Never run mutating git commands directly via Bash, even if the operation looks trivial (e.g., pushing an existing local commit, applying a single-line fix, resolving conflicts that are already merged locally). Never use `SendMessage` — always spawn a fresh agent.
+**Run git mutations inline via Bash.** The `git-mutation-guard.sh` PreToolUse hook enforces all safety policy regardless of caller — you do not need to wrap routine git operations in an agent.
 
-##### Direct Bash vs. Delegate — explicit table
+**What the hook enforces (automatically, on every Bash tool call):**
 
-| Command | Direct Bash OK? | Notes |
-|---------|----------------|-------|
-| `git status` | ✓ | Read-only |
-| `git diff`, `git diff --staged`, `git diff <ref>..<ref>` | ✓ | Read-only |
-| `git log`, `git show`, `git blame` | ✓ | Read-only |
-| `git branch --show-current`, `git branch -r`, `git branch --list` | ✓ | Read-only |
-| `git fetch` | ✓ | Updates remote refs only — no working-tree change |
-| `git rev-parse`, `git ls-files`, `git config --get` | ✓ | Read-only |
-| `git checkout -- <file>` | ✓ | Read-only restore of a tracked file |
-| `git commit` (any form, including `--amend`) | ✗ | Delegate — even one-line fixes |
-| `git push` (any form) | ✗ | Delegate — including pushing an already-merged commit or `git push -q` |
-| `git pull` | ✗ | Delegate — implicit merge/rebase |
-| `git merge`, `git rebase`, `git cherry-pick` | ✗ | Delegate — rewrites or extends history |
-| `git reset`, `git revert` | ✗ | Delegate — destructive |
-| `git checkout -b`, `git switch -c` | ✗ | Delegate — creates new branch |
-| `git checkout <branch>`, `git switch <branch>` | ✗ | Delegate — moves HEAD |
-| `git tag`, `git branch -d`, `git branch -D` | ✗ | Delegate — mutates refs |
-| `git stash` (any subcommand) | ✗ | Delegate — modifies working tree |
-| `git rm` | ✗ | Delegate — removes tracked files |
-| `git mv` | ✗ | Delegate — renames/moves tracked files |
-| `git restore` | ✗ | Delegate — modifies working tree or index |
-| `git clean` | ✗ | Delegate — deletes untracked files |
-| `git remote add/remove/set-url` | ✗ | Delegate — config mutation |
+- **Branch protection** — `git push` is blocked on `main`/`master`/`release/*`.
+- **Credential content scan** — every `git commit` scans staged files (and modified tracked files when `-a`/`--all` is used) via `plugin/hooks/credential-scan.sh`. Findings block the commit.
+- **Security-auditor push gate** — `git push` is blocked unless `.claude/session-state/git-audit.json` has a confirmation matching the current branch + HEAD sha. To record a confirmation after a clean security-auditor run:
+  ```bash
+  bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
+  ```
+  The confirmation invalidates whenever HEAD or branch changes.
 
-**Rule of thumb:** If a git command writes to refs, history, the working tree, or the remote → delegate. If it only reads → direct Bash is OK. **"I already know what to do" is not a reason to skip delegation** — git-operator runs the safety checks (security-auditor verification, branch protection, sensitive-file scan) that direct Bash bypasses. This rule is also **enforced by a `PreToolUse` hook** (`git-mutation-guard.sh`) that blocks mutation commands run directly via Bash; git-operator bypasses the hook internally using `GIT_AUTHORIZED=1`.
+**Bypass** (logged to stderr, use only with an explicit reason):
+- `SECURITY_AUDITOR_BYPASS=1 git push …` — skip only the audit state check. Branch protection and credential scan still run.
+- `GIT_AUTHORIZED=1 git …` — legacy full bypass; kept for backward compatibility with existing skills still using the old flow. New code should not use it.
+
+##### When to delegate to `git-operator` (narrow)
+
+The `git-operator` agent now exists only for operations where isolation from the main conversation is actually valuable:
+
+1. **Merge conflict resolution** — reading both sides, resolving semantically, staging.
+2. **Complex rebases / cherry-picks** — multi-commit interactive rebases, squashes with likely conflicts.
+3. **PR body authoring from a large commit range** (10+ commits or wide file changes).
+
+Anything else — plain commit, push, branch create, simple PR — runs inline. No delegation. Don't spawn a 15k-token agent to execute a one-line command the hook already guards.
 
 ```
-Use Task tool with subagent_type: "git-operator"
-Prompt: Commit and push: {description of changes}
+# Routine (do inline):
+git add src/foo.ts src/bar.ts
+git commit -m "[JIRA-123] feat(x): ..."
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"   # after security-auditor clean
+git push -u origin feature/JIRA-123
 
+# Narrow cases (delegate):
 Use Task tool with subagent_type: "git-operator"
-Prompt: Push existing commit on {branch} to origin (no new commit needed)
-
-Use Task tool with subagent_type: "git-operator"
-Prompt: Commit, push, and create PR to {branch}: {description}
+Prompt: Resolve the merge conflict in src/PaymentService.php (keeping both the new validation and the existing logging).
 ```
-
-**Exceptions** — skills that run git mutations inline with a `GIT_AUTHORIZED=1` prefix instead of delegating to `git-operator`:
-
-- **Haiku-tier release skills** (`/nexus:create-release`, `/nexus:merge-release`, `/nexus:release`) — simple, deterministic operations where git-operator delegation adds latency without quality benefit.
-- **`/nexus:commit`** — delegates staging and commit-message generation to `git-operator` (which runs `git status`/`git diff` internally) but runs `git commit` directly.
-- **`/nexus:create-release-branch`** — delegates branch creation and push to `git-operator`.
-- **`/nexus:monitor-pr` Step 2** — local-only alignment (`git fetch` + `git checkout` + `git pull --ff-only`) of a PR branch that already exists on origin. No commits, no pushes, no rewrites of shared history; `--ff-only` guards against divergence. Inlining avoids the ~17k-token cost of a subagent spin-up for a read-through operation.
-
-All other git mutations (any commit, push, merge, rebase, reset, revert, history rewrite, or push-visible operation) must go through `git-operator` — including in the skills listed above where the exception is scoped only to the operations named.
 
 #### Documentation → `doc-writer`
 Every time documentation needs to be created or updated, delegate to the `doc-writer` agent via the **Task tool with `subagent_type: "doc-writer"`**.
@@ -124,7 +112,7 @@ Prompt: Scan staged changes for PII and sensitive data exposure
 | `code-reviewer` | Code quality + performance review | After writing code, reviewing PRs |
 | `security-auditor` | Security analysis + PII scanning | Reviewing auth, payments, sensitive data, **ALWAYS before commit** |
 | `doc-writer` | Technical + API documentation | **ALWAYS use for documentation** |
-| `git-operator` | Git operations (commit, push, PR) | **ALWAYS use for any git operation** |
+| `git-operator` | Merge conflicts, complex rebases, large-range PR authoring | Only for those three cases — routine mutations run inline (hook-guarded) |
 
 #### Standalone Agents
 | Agent | Use For | When to Use |

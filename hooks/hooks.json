@@ -52,6 +52,16 @@
             "timeout": 5000
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|Task|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/auto-context.sh",
+            "timeout": 5000
+          }
+        ]
       }
     ],
     "Stop": [

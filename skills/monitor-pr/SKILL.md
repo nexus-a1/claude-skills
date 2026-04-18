@@ -1,6 +1,6 @@
 ---
 name: monitor-pr
-model: sonnet
+model: claude-sonnet-4-6
 category: code-quality
 userInvocable: true
 description: Monitor an open pull request — watch CI, investigate and fix failing workflows, address new review comments, and loop until the PR is approved, merged, or the iteration limit is reached.
@@ -208,16 +208,14 @@ gh run view {run_id} --repo "$REPO" --log-failed
 After applying a fix locally:
 
 1. Re-run relevant local checks (e.g., `bash scripts/validate.sh`) before pushing
-2. Delegate commit + push to `git-operator`:
+2. Commit + push inline. The hook runs credential scan on commit; push requires a security-auditor confirmation for the new HEAD, so record one after a clean audit:
 
-```
-subagent_type: git-operator
-prompt: |
-  Stage the modified files, commit with message:
-
-  [SKILLS-{N}] fix(ci): {short description of the failure fixed}
-
-  Then push to origin on branch {BRANCH}.
+```bash
+git add <modified-files>
+git commit -m "[SKILLS-{N}] fix(ci): {short description of the failure fixed}"
+# Run security-auditor on the staged/committed changes, then:
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
+git push
 ```
 
 Use the **issue/ticket number this PR closes** as `{N}` (e.g., `[SKILLS-022]`) — per the repo's commit convention, the prefix is always the originating ticket, never the PR number. Pushing a new commit updates `HEAD_SHA`; the next loop iteration will pick it up.

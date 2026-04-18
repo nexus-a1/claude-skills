@@ -1,7 +1,7 @@
 ---
 name: load-context
 category: implementation
-model: sonnet
+model: claude-sonnet-4-6
 userInvocable: true
 description: Load all available context for a ticket or topic — work state, brainstorms, proposals, requirements KB, product knowledge, and git history — into a single unified summary.
 argument-hint: "<identifier-or-query>"
@@ -131,7 +131,7 @@ If `${WORK_DIR}/${slug}/` exists:
 - Read `state.json` (check `type` field to understand session kind)
 - Read agent outputs from `context/` subdirectory. **Prefer distilled `-summary.md` variants over their full counterparts** (e.g., `qa-code-reviewer-summary.md` over `qa-code-reviewer.md`, `archaeologist-summary.md` over `archaeologist.md`). Fall back to the full file only if the summary is absent. Summaries are ≤10 lines each; the full file is available via explicit `Read()` when deeper context is needed.
 - Summarize: identifier, current phase, status, last updated, key files
-- **If `state.json` has a non-empty `updates` array:** surface all entries as a **Session Updates** section (timestamp + note, newest last). These are manually recorded annotations from `/update-context`.
+- **If `state.json` has a non-empty `updates` array:** surface all entries as a **Session Updates** section (timestamp + note, newest last). Entries with `"auto": true` are from the `auto-context.sh` hook — prefix their display with `[auto]` to distinguish from manually recorded `/update-context` annotations.
 - **If `state.json` has `brainstorm.promoted_from`:** also load the linked brainstorm as prior art:
   - Read `$WORK_DIR/{promoted_from}/state.json`
   - Read `$WORK_DIR/{promoted_from}/context/approaches.md`, `context/exploration.md`, `implementation-picture.md` (if exist)

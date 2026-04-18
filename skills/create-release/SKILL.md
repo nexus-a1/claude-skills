@@ -1,7 +1,7 @@
 ---
 name: create-release
 category: release-management
-model: haiku
+model: claude-haiku-4-5
 userInvocable: true
 description: Push a release branch and open a PR to the target branch. Step 2 of the release workflow — runs after branching, before merging.
 argument-hint: "[target-branch] [version]"

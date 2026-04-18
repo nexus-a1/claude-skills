@@ -1,6 +1,6 @@
 ---
 name: update-documentation
-model: sonnet
+model: claude-sonnet-4-6
 category: documentation
 userInvocable: true
 description: Review and update project documentation using an agent team. Inventories docs, identifies gaps and drift, updates technical and API docs in parallel.

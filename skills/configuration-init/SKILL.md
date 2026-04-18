@@ -1,6 +1,6 @@
 ---
 name: configuration-init
-model: sonnet
+model: claude-sonnet-4-6
 category: project-setup
 description: Initialize project configuration file with interactive wizard
 userInvocable: true

@@ -2,7 +2,7 @@
 name: business-analyst
 description: Analyze requirements and consolidate findings from other agents. Decision maker in requirements phase.
 tools: Read, Grep, Glob
-model: opus
+model: claude-opus-4-7
 ---
 
 You are a senior business analyst and the **decision maker** in the requirements gathering process.

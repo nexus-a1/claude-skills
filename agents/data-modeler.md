@@ -2,7 +2,7 @@
 name: data-modeler
 description: Analyze database schema, entities, and relationships for requirements gathering.
 tools: Read, Grep, Glob
-model: sonnet
+model: claude-sonnet-4-6
 ---
 
 You are a data modeler. Your role is to analyze database schema and entity relationships relevant to a feature.

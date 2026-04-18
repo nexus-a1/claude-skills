@@ -1,6 +1,6 @@
 ---
 name: rebuild-requirements-index
-model: haiku
+model: claude-haiku-4-5
 category: requirements-kb
 description: Rebuild search index for requirements repository
 userInvocable: true
@@ -327,12 +327,13 @@ ls -lt index.json.backup.*
 cp index.json.backup.20260203_143022 index.json
 ```
 
-Then delegate the commit to git-operator:
+Then commit and push inline. Record a security-auditor confirmation for the restoration commit before pushing:
 
-**Use Task tool with `subagent_type: "git-operator"`:**
-
-```
-Prompt: Stage index.json, commit with message "Restore index from backup", and push to origin.
+```bash
+git add index.json
+git commit -m "Restore index from backup"
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
+git push
 ```
 
 ## Validation

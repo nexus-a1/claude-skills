@@ -1,7 +1,7 @@
 ---
 name: status
 category: project-setup
-model: haiku
+model: claude-haiku-4-5
 userInvocable: true
 description: Show all active work sessions across brainstorms, requirements, proposals, and epics. Fast overview of where you left off.
 argument-hint: "[slug]"
