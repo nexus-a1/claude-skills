@@ -90,6 +90,7 @@ Return a markdown document with integration map and requirements.
 
 ## Output Constraints
 
-- **Target ~1500 tokens**. Be concise. Use tables over prose.
+- **Maximum output: 1500 tokens (roughly 120 lines). Hard cap, not a target.** Use tables over prose.
+- Triage findings by severity; include only actionable items. If the integration surface is larger than the cap allows, split scope at the request layer rather than emitting a wrapper summary.
 - Only include integrations **directly relevant to the feature**.
 - Reference specific file paths and line numbers.

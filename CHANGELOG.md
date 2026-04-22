@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.5.1] - 2026-04-22
+
+## What's Changed
+
+### Bug Fixes
+* dcb7a28 [EXT-15709] fix(plugin): apply process improvements from EXT-15709 feedback (#179)
+
+### Maintenance
+* a4de5e2 [SKILLS-000] chore(license): set copyright holder to Michal Traczewski
+* d41a4bc [SKILLS-000] chore(repo): update references after migration to nexus-a1
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.5.0...v1.5.1
+
 ## [1.5.0] - 2026-04-18
 
 ## What's Changed

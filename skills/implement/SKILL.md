@@ -553,12 +553,21 @@ Each chunk should be:
 - Independently testable
 - Suitable for a single commit
 
+Include a **Test Impact** section in the plan listing:
+- Existing test fixtures that break due to proposed signature/contract changes (grep callers of any changed constructor, method, or interface — list each affected fixture file)
+- Per-fixture changes required to keep the suite green
+- New fixtures needed for new code paths (happy path, opt-out, edge cases such as warm-start state)
+
+If a signature change has zero fixture callers, state so explicitly. Do not skip the section.
+
 When the implementation plan spans 2+ independent services (no shared write targets),
 recommend parallel chunk execution. Note which chunks are independent and can be
 implemented by separate agents simultaneously.
 ```
 
 #### 2.3 Architecture Validation
+
+**Pre-check**: Before spawning the architect, confirm the Plan agent produced an implementation plan with a non-empty **Test Impact** section (required by 2.2). If absent or empty, re-spawn the Plan agent once with explicit instruction to include the section. Do not proceed with an incomplete plan.
 
 **Use Task tool with `subagent_type: "architect"`:**
 
@@ -897,6 +906,22 @@ Save all agent outputs to `$WORK_DIR/{identifier}/context/`:
 - `qa-test-writer.md`
 - `qa-code-reviewer.md`
 - `qa-security-auditor.md`
+
+##### Step 1b: Output-Presence Check (mandatory)
+
+After the three parallel QA tasks return, verify every expected output file exists and has non-trivial content before advancing to the skeptic step:
+
+```bash
+for agent in test-writer code-reviewer security-auditor; do
+  f="$WORK_DIR/{identifier}/context/qa-${agent}.md"
+  if [[ ! -s "$f" ]] || [[ $(wc -c <"$f") -lt 200 ]]; then
+    echo "⚠ Missing or under-threshold output: $f — halting. Re-spawn the responsible agent with the same prompt. After one re-spawn failure, escalate via AskUserQuestion. Do NOT advance to the skeptic step."
+    exit 1
+  fi
+done
+```
+
+Rationale: a silent agent failure (no output file) has historically advanced the pipeline to PR without security or test coverage. The skeptic can only verify findings it receives — it cannot detect *missing* agents. The presence check catches the failure at the earliest stage and blocks progression.
 
 ##### Step 2: Skeptic Challenge
 
@@ -1265,7 +1290,7 @@ Minor issues: {count} (will be included in PR description)
 Proceeding to PR creation...
 ```
 
-→ Proceed to Phase 5 (PR creation)
+→ Proceed to Phase 4.8 (requirements gap analysis)
 → Include remaining IMPORTANT/MINOR issues in PR description body
 
 **If CRITICAL issues remain (auto-fix failed):**
@@ -1297,7 +1322,7 @@ Select [1/2/3]:
 ```
 
 - **1 (Fix manually and retry)**: Pause for user to fix, then re-run Phase 4.7 from 4.7.1
-- **2 (Proceed anyway)**: Continue to Phase 5 with critical issues documented in PR description as warnings:
+- **2 (Proceed anyway)**: Continue to Phase 4.8 (gap analysis still runs) with critical issues documented in PR description as warnings:
   ```
   ⚠️ KNOWN CRITICAL ISSUES (user approved proceeding):
   - [{issue_id}] {description} in {file}:{line}
@@ -1330,6 +1355,78 @@ Update work manifest:
 {
   "current_phase": "qa_gate",
   "updated_at": "{ISO_TIMESTAMP}"
+}
+```
+
+---
+
+#### 4.8 Requirements-Implementation Gap Analysis (mandatory)
+
+**Goal**: Before PR creation, verify each requirement from Phase 1 was actually implemented in the branch diff. Blocks silent scope drift and missed requirements from reaching PR.
+
+Run this *after* the quality gate passes and *before* Phase 5.
+
+**Use Task tool with `subagent_type: "architect"`:**
+
+```
+Prompt: Produce a diff-level implementation gap analysis.
+
+Requirements (from Phase 1):
+{requirements_list}
+
+Acceptance Criteria:
+{acceptance_criteria}
+
+Branch diff:
+{output of `git diff {base_branch}...HEAD`}
+
+Commits:
+{commit_list from state}
+
+Cross-reference each requirement and acceptance criterion against the actual diff:
+
+For each item, produce a row:
+| Requirement | Status       | Evidence (file:line / commit) |
+|-------------|--------------|-------------------------------|
+| Req 1       | IMPLEMENTED  | src/Foo.php:45, commit abc123 |
+| Req 2       | PARTIAL      | Only happy-path added; opt-out path missing |
+| Req 3       | MISSING      | No diff touches this area     |
+
+Also flag:
+- Any diff hunks that do NOT trace back to a specific requirement (scope creep)
+- Any known pre-implementation risks (from planning phase) not addressed in the diff
+
+Return the table plus a verdict line: COMPLETE | PARTIAL | MISSING_ITEMS.
+```
+
+Save output to `$WORK_DIR/{identifier}/gap-analysis.md`.
+
+**Gate decision:**
+
+- **COMPLETE**: Proceed to Phase 5.
+- **PARTIAL or MISSING_ITEMS**: Use AskUserQuestion:
+  ```
+  Gap analysis found {n} unimplemented/partial requirements:
+  {rows}
+
+  Options:
+  [1] Return to implementation to address gaps
+  [2] Proceed to PR with gaps documented in description
+  [3] Abort
+  ```
+
+When proceeding with gaps (option 2), the PR body MUST include a "Known Gaps" section listing the PARTIAL/MISSING rows verbatim.
+
+Update state:
+```json
+{
+  "phases": {
+    "gap_analysis": {
+      "status": "completed",
+      "verdict": "COMPLETE | PARTIAL | MISSING_ITEMS",
+      "report_path": "{identifier}/gap-analysis.md"
+    }
+  }
 }
 ```
 
