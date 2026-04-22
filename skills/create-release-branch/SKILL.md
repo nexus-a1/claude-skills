@@ -5,7 +5,7 @@ model: claude-haiku-4-5
 userInvocable: true
 description: Create a release/vX.Y.Z branch from origin/master (default), any branch, or a specific tag using tag@vX.Y.Z syntax
 argument-hint: <version> [source]
-allowed-tools: "Bash(git fetch:*), Bash(git branch:*), Bash(git rev-parse:*), Bash(git tag:*), Bash(git log:*), Bash(git checkout:*), Bash(git push:*), Task, AskUserQuestion"
+allowed-tools: "Bash(git fetch:*), Bash(git branch:*), Bash(git rev-parse:*), Bash(git tag:*), Bash(git log:*), Bash(git checkout:*), Bash(git push:*), Bash(bash:*), Task, AskUserQuestion"
 ---
 
 # Create Release Branch Command
@@ -21,6 +21,10 @@ Arguments provided: $ARGUMENTS
 Available tags: !`git tag --sort=-version:refname 2>/dev/null || echo "(no tags)"`
 
 Available branches: !`git branch -a --list 'master' 'main' 'develop' 'release/*' 'origin/master' 'origin/main' 'origin/develop' 'origin/release/*' 2>/dev/null || echo "(no branches listed)"`
+
+Latest release (deterministic — `<kind> <ref> <version>`): !`bash "${CLAUDE_PLUGIN_ROOT}/shared/resolve-latest-release.sh" 2>/dev/null || echo "(resolver unavailable)"`
+
+**Release terminology** — use the definitions in `${CLAUDE_PLUGIN_ROOT}/shared/release-concepts.md`. In particular: "latest release" is the value printed above, not your own interpretation of the tag/branch lists.
 
 ## Your Task
 

@@ -5,7 +5,7 @@ model: claude-haiku-4-5
 userInvocable: true
 description: Create a GitHub release with a version tag and auto-generated changelog. Supports pre-releases. Final step of the release workflow.
 argument-hint: "[version] [branch] [--pre-release]"
-allowed-tools: "Bash(git tag:*), Bash(git fetch:*), Bash(git log:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git status:*), Bash(gh release create:*), Bash(gh pr list:*), AskUserQuestion, Skill"
+allowed-tools: "Bash(git tag:*), Bash(git fetch:*), Bash(git log:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git status:*), Bash(bash:*), Bash(gh release create:*), Bash(gh pr list:*), AskUserQuestion, Skill"
 ---
 
 # Release Command
@@ -21,6 +21,10 @@ Arguments provided: $ARGUMENTS
 Available tags: !`git tag --sort=-version:refname 2>/dev/null || echo "(no tags)"`
 
 Available branches: !`git branch -a --list 'master' 'main' 'release/*' 'origin/master' 'origin/main' 'origin/release/*' 2>/dev/null || echo "(no branches listed)"`
+
+Latest release (deterministic — `<kind> <ref> <version>`): !`bash "${CLAUDE_PLUGIN_ROOT}/shared/resolve-latest-release.sh" 2>/dev/null || echo "(resolver unavailable)"`
+
+**Release terminology** — use the definitions in `${CLAUDE_PLUGIN_ROOT}/shared/release-concepts.md`. In particular: "latest release" is the value printed above, not your own interpretation of the tag/branch lists.
 
 ## Your Task
 

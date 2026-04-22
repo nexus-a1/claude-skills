@@ -5,7 +5,7 @@ model: claude-haiku-4-5
 userInvocable: true
 description: Push a release branch and open a PR to the target branch. Step 2 of the release workflow — runs after branching, before merging.
 argument-hint: "[target-branch] [version]"
-allowed-tools: "Bash(GIT_AUTHORIZED=1 git push:*), Bash(GIT_AUTHORIZED=1 git checkout:*), Bash(git ls-remote:*), Bash(git branch:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-parse:*), Bash(git fetch:*), Bash(git remote:*), Bash(gh pr create:*), Bash(gh pr list:*), Bash(gh pr edit:*), Bash(gh pr comment:*), AskUserQuestion"
+allowed-tools: "Bash(GIT_AUTHORIZED=1 git push:*), Bash(GIT_AUTHORIZED=1 git checkout:*), Bash(git ls-remote:*), Bash(git branch:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-parse:*), Bash(git fetch:*), Bash(git remote:*), Bash(git tag:*), Bash(bash:*), Bash(gh pr create:*), Bash(gh pr list:*), Bash(gh pr edit:*), Bash(gh pr comment:*), AskUserQuestion"
 ---
 
 # Create Release PR Command
@@ -21,6 +21,10 @@ Remote status: !`git remote -v 2>/dev/null || echo "(no remotes configured)"`
 Available branches: !`git branch -a --list 'master' 'main' 'develop' 'release/*' 'origin/master' 'origin/main' 'origin/develop' 'origin/release/*' 2>/dev/null || echo "(no branches listed)"`
 
 Recent commits: !`git log --oneline -10 2>/dev/null || echo "(no commits)"`
+
+Latest release (deterministic — `<kind> <ref> <version>`): !`bash "${CLAUDE_PLUGIN_ROOT}/shared/resolve-latest-release.sh" 2>/dev/null || echo "(resolver unavailable)"`
+
+**Release terminology** — use the definitions in `${CLAUDE_PLUGIN_ROOT}/shared/release-concepts.md`. In particular: "latest release" is the value printed above, not your own interpretation of the tag/branch lists.
 
 ## Your Task
 

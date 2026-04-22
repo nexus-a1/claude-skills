@@ -117,19 +117,19 @@ No pending TODO items. Use /todo to add one, or /status to see active work sessi
    7. [low] Implement true action-based audit trail
    ```
 
-   Titles only — no descriptions, categories, or scope in the inline list (those stay in the AskUserQuestion option descriptions for the top 4).
+   Titles only — no descriptions, categories, or scope in the inline list (those stay in the AskUserQuestion option descriptions for the top 3).
 
-2. **Then use AskUserQuestion** to pick from the top 4 as quick-select shortcuts:
+2. **Then use AskUserQuestion** to pick from the top 3 as quick-select shortcuts:
 
    - header: `"Pick item"`
    - question: `"Which TODO item should we work on?"`
-   - options (up to 4; each label is short, description shows priority + category + scope):
+   - options (up to 4 total: up to 3 items + `Cancel`; each item label is short, description shows priority + category + scope):
      - `{title}` / `priority · category · scope`
-     - ... up to 4 ...
+     - ... up to 3 items ...
      - `Cancel` / `Don't start any item — exit`
    - multiSelect: `false`
 
-   If more than 4 pending items exist, include this note above the question: *"Showing top 4 as quick-select options. Use `/todo-work {N}` to jump to any item from the list above."*
+   The `AskUserQuestion` tool enforces a maximum of 4 options, so the pick list must stay at 3 items + `Cancel`. If more than 3 pending items exist, include this note above the question: *"Showing top 3 as quick-select options. Use `/todo-work {N}` to jump to any item from the list above."*
 
 If the user picks `Cancel`, stop with: `No item selected.`
 
@@ -255,7 +255,7 @@ Status:   {status}   (unchanged)
 /todo-work
 ```
 
-Prints the full pending list inline (all N items, one per line with priority + title), then shows the AskUserQuestion with the top 4 as quick-select. User picks item #2 ("Add webhook support"). Chooses "Validate plan first". Skill updates status to `In progress` and prints the hand-off block with `/review-plan Add webhook support` (plus the description) as the suggested next command.
+Prints the full pending list inline (all N items, one per line with priority + title), then shows the AskUserQuestion with the top 3 as quick-select. User picks item #2 ("Add webhook support"). Chooses "Validate plan first". Skill updates status to `In progress` and prints the hand-off block with `/review-plan Add webhook support` (plus the description) as the suggested next command.
 
 ### Example 2: Direct selection by number, implement directly
 

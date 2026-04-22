@@ -72,20 +72,23 @@ Use `$PLUGIN_REPO` for GitHub issue creation in Phase 7.
 
 #### 1.1 Resolve Identifier
 
+**Source-of-truth rule.** The identifier MUST come from `$ARGUMENTS` or from `${WORK_DIR}/` on disk. **DO NOT** infer the identifier from conversation context — e.g. tickets mentioned in earlier messages, loaded via `/load-context`, or referenced in the user's latest prompt. Tickets discussed in the session are not necessarily the session the user wants analyzed, and silently picking one up produces a feedback report attributed to the wrong work. If the disk-based sources below do not yield an identifier, ask the user — never guess from the transcript.
+
 **From $ARGUMENTS:**
 - If provided: use as work identifier (e.g., `JIRA-123`, `sso-integration`)
-- If empty: scan `$WORK_DIR/` for the most recently updated session
+- If empty: auto-detect from `${WORK_DIR}/`, then confirm with the user (see below)
 
-**Auto-detection** (when no argument):
+**Auto-detection** (when no argument). Compute the top 3 most recent sessions from disk:
+
 ```bash
 # Check for manifest first
 if [[ -f "${WORK_DIR}/manifest.json" ]]; then
-  # Find the most recent item by updated_at
-  jq -r '[.items[] | select(.status != "archived")] | sort_by(.updated_at) | last | .identifier' "${WORK_DIR}/manifest.json"
+  # Top 3 most recent non-archived sessions by updated_at, newest first
+  jq -r '[.items[] | select(.status != "archived")] | sort_by(.updated_at) | reverse | .[0:3] | .[] | .identifier' "${WORK_DIR}/manifest.json"
 else
   # Fall back to Glob for directory listing (preferred over ls)
   # Call: Glob("*/", path="${WORK_DIR}/")
-  # Glob results are sorted by mtime ascending — take the last entry as the most recent session.
+  # Glob results are sorted by mtime ascending — reverse the order and take the first 3 as the most recent sessions.
   # If Glob returns no results, set identifier="" and proceed to the error path below.
 fi
 ```
@@ -94,6 +97,24 @@ If no sessions exist, report and stop:
 ```
 No work sessions found in ${WORK_DIR}/. Nothing to analyze.
 ```
+
+**Confirm with the user before proceeding.** Even when auto-detection finds a clear "most recent" match, show it and require explicit approval — a silent pick is what produces wrong-ticket feedback reports. Use AskUserQuestion:
+
+- header: `"Session"`
+- question: `"Which work session should /feedback analyze?"`
+- options (up to 4 total — at most 3 sessions plus `Cancel`):
+  - `{identifier_1}` / `most recent — updated {updated_at_1}`
+  - `{identifier_2}` / `updated {updated_at_2}` *(only if a second session exists)*
+  - `{identifier_3}` / `updated {updated_at_3}` *(only if a third session exists)*
+  - `Cancel` / `Stop — I will re-run with an explicit identifier`
+- multiSelect: `false`
+
+If the user picks `Cancel`, stop with:
+```
+No session selected. Re-run as /feedback <identifier> to target a specific session.
+```
+
+Do NOT skip this confirmation even when exactly one session exists on disk — the point is to prevent the skill from silently analyzing a session the user did not mean to target.
 
 #### 1.2 Detect Work Type
 

@@ -5,7 +5,7 @@ model: claude-haiku-4-5
 userInvocable: true
 description: Merge an approved release PR into its target branch. Validates PR status and checks before merging. Step 3 of the release workflow.
 argument-hint: "[release-branch]"
-allowed-tools: "Bash(git branch:*), Bash(GIT_AUTHORIZED=1 git checkout:*), Bash(GIT_AUTHORIZED=1 git push:*), Bash(GIT_AUTHORIZED=1 git branch:*), Bash(git fetch:*), Bash(git rev-parse:*), Bash(git log:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr merge:*), Bash(gh pr checks:*), AskUserQuestion"
+allowed-tools: "Bash(git branch:*), Bash(GIT_AUTHORIZED=1 git checkout:*), Bash(GIT_AUTHORIZED=1 git push:*), Bash(GIT_AUTHORIZED=1 git branch:*), Bash(git fetch:*), Bash(git rev-parse:*), Bash(git log:*), Bash(git tag:*), Bash(bash:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr merge:*), Bash(gh pr checks:*), AskUserQuestion"
 ---
 
 # Merge Release PR Command
@@ -17,6 +17,10 @@ Current branch: !`git branch --show-current 2>/dev/null || echo "(not in a git r
 Arguments provided: $ARGUMENTS
 
 Available release branches: !`git branch -a --list 'release/*' 'origin/release/*' 2>/dev/null || echo "(no release branches)"`
+
+Latest release (deterministic — `<kind> <ref> <version>`): !`bash "${CLAUDE_PLUGIN_ROOT}/shared/resolve-latest-release.sh" 2>/dev/null || echo "(resolver unavailable)"`
+
+**Release terminology** — use the definitions in `${CLAUDE_PLUGIN_ROOT}/shared/release-concepts.md`. In particular: "latest release" is the value printed above, not your own interpretation of the tag/branch lists.
 
 ## Your Task
 

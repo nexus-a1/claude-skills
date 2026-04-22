@@ -2,7 +2,7 @@
 name: load-requirements
 model: claude-sonnet-4-6
 category: requirements-kb
-description: Load specific archived requirement for detailed review
+description: Load a specific archived requirement from the requirements KB for detailed review. For in-flight tickets that have not been archived yet, use /load-context instead — it also covers work sessions, brainstorms, and proposals.
 argument-hint: <identifier>
 userInvocable: true
 allowed-tools: Read, Bash, Task, AskUserQuestion
@@ -11,6 +11,8 @@ allowed-tools: Read, Bash, Task, AskUserQuestion
 # Load Requirements
 
 Load full details of a specific archived requirement from the team's knowledge base.
+
+> **Scope:** this skill only reads the archived requirements repository. It does not look at active work sessions, brainstorms, or proposals. If the ticket you are after has not been archived yet, use [`/load-context`](../load-context/SKILL.md) — it aggregates every artifact type (work, brainstorms, proposals, requirements KB, product knowledge, git history) into a single summary and is the right entry point for in-flight tickets.
 
 ## Purpose
 
@@ -23,6 +25,8 @@ View complete requirements, decisions, implementation notes, and lessons learned
 - Reviewing past architectural decisions
 - Learning from lessons learned
 - Understanding implementation patterns
+
+**When NOT to use:** if the ticket is still in flight (work session open, brainstorm or proposal exists, requirement not yet archived). Use `/load-context <identifier>` instead — it searches across all artifact types, including the requirements KB.
 
 ## Arguments
 
@@ -340,16 +344,24 @@ cp /path/to/requirements-repo/${identifier}/requirements.md \
 
 ### Requirement Not Found
 
+The requirements KB only contains tickets that have been archived. If nothing matches, the ticket is most likely still in flight — point the user at `/load-context`, which searches every artifact type (work sessions, brainstorms, proposals, requirements KB, product knowledge, git history):
+
 ```
 ❌ Requirement not found: USER-999
 
-Available requirements:
+This skill only searches the archived requirements KB. For in-flight tickets,
+try /load-context — it also covers work sessions, brainstorms, and proposals:
+
+  /load-context USER-999
+
+Other options:
+- Search the archive:   /search-requirements "keyword"
+- List recent archives: /search-requirements "after:2020-01-01"
+
+Nearby entries in the archive:
 - USER-123
 - USER-456
 - PROJ-789
-
-Search: /search-requirements "keyword"
-List all: /search-requirements "after:2020-01-01"
 ```
 
 ### Missing Sections

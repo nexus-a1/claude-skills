@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.5.2] - 2026-04-22
+
+## What's Changed
+
+### Features
+- feat(release): centralize release terminology and latest-release resolution (#183)
+
+### Bug Fixes
+- fix(skills): feedback resolves identifier from disk only, confirms with user (#182)
+- fix(skills): cap todo-work pick list at 3 items + Cancel (#180)
+
+### Documentation
+- docs(skills): clarify load-requirements scope, point at load-context for in-flight tickets (#181)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.5.1...v1.5.2
+
 ## [1.5.1] - 2026-04-22
 
 ## What's Changed
