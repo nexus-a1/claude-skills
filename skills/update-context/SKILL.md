@@ -115,7 +115,7 @@ fi
 ✓ Updated: {identifier}
   {timestamp}  {note}
 
-Session now has {N} update(s). View with: /status {identifier}
+Session now has {N} update(s). View with: /work-status {identifier}
 ```
 
 ---
@@ -155,4 +155,4 @@ Beyond manual annotations, skills write progress to `state.json` automatically a
 | `epic` | After ticket generation completes |
 | `implement` | After each chunk commit; after QA gate result |
 
-The `updated_at` field in `state.json` always reflects the last write, so `/status` shows accurate recency without requiring manual intervention.
+The `updated_at` field in `state.json` always reflects the last write, so `/work-status` shows accurate recency without requiring manual intervention.

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../docs/assets/logo.svg" alt="claude-skills" width="240">
+  <img src="assets/logo.svg" alt="claude-skills" width="240">
 </p>
 
 # Claude Nexus Plugin

@@ -26,7 +26,7 @@ Companion to `/todo`. Surfaces pending items from `TODO.md`, lets the user pick 
 
 - Adding a new item → `/todo`
 - Resuming an in-flight skill session → `/resume-work`
-- Listing active work sessions (not TODO items) → `/status`
+- Listing active work sessions (not TODO items) → `/work-status`
 
 ## Arguments
 
@@ -85,7 +85,7 @@ Priority sort key (higher wins):
 If zero pending items, stop with:
 
 ```
-No pending TODO items. Use /todo to add one, or /status to see active work sessions.
+No pending TODO items. Use /todo to add one, or /work-status to see active work sessions.
 ```
 
 ### Step 5: Pick Item
@@ -282,7 +282,7 @@ User picks item #3, chooses "Just show details". No Edit to `TODO.md`, no hand-o
 Output:
 
 ```
-No pending TODO items. Use /todo to add one, or /status to see active work sessions.
+No pending TODO items. Use /todo to add one, or /work-status to see active work sessions.
 ```
 
 ---
@@ -296,7 +296,7 @@ No TODO.md found in the project root. Use /todo to add your first item.
 
 ### All items completed/in-progress (none pending)
 ```
-No pending TODO items. Use /todo to add one, or /status to see active work sessions.
+No pending TODO items. Use /todo to add one, or /work-status to see active work sessions.
 ```
 
 ### Argument out of range (e.g., `/todo-work 99` when 5 items pending)

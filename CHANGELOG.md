@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.3] - 2026-04-23
+
+## What's Changed
+
+### Features
+- Rename `/status` to `/work-status` and add lifecycle tracking — sessions now support explicit `ready_to_implement` → `in_progress` → `qa_ready` → `qa` → `done` states with optional `--update` and `--sync` modes (#184)
+
+### Bug Fixes
+- Ship logo inside plugin so marketplace README renders correctly (#185)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.5.2...v1.5.3
+
 ## [1.5.2] - 2026-04-22
 
 ## What's Changed
