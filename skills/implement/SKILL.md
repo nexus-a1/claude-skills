@@ -204,62 +204,13 @@ Extract:
 
 #### 0.2b Enter Worktree (Conditional)
 
-Skip this step if `resolve_worktree_enabled` returns `"false"`.
-
 ```bash
 WORKTREE_ENABLED=$(resolve_worktree_enabled)
 ```
 
-**If WORKTREE_ENABLED == "true":**
+Skip this step if `WORKTREE_ENABLED == "false"`.
 
-**Single mode** (`WORKSPACE_MODE == "single"`):
-1. Call `EnterWorktree` with name `"impl-{identifier}"`
-   - CWD moves to `.claude/worktrees/impl-{identifier}/`
-   - A temporary branch is created from HEAD
-2. After entering, checkout the feature branch (next step handles this)
-3. `$WORK_DIR` still resolves correctly (anchored to `WORKSPACE_ROOT`)
-
-**Multi mode** (`WORKSPACE_MODE == "multi"`):
-1. Create per-service worktrees:
-```bash
-WT_ROOT=$(resolve_worktree_root)
-TICKET_WORKSPACE="${WT_ROOT}/{identifier}"
-mkdir -p "$TICKET_WORKSPACE"
-
-for svc in $(resolve_services); do
-  svc_path=$(resolve_service_path "$svc")
-  wt_path="${TICKET_WORKSPACE}/${svc}"
-
-  if [[ -d "$wt_path" ]]; then
-    echo "Worktree exists: ${svc}/ → ${wt_path}"
-    continue
-  fi
-
-  # Create worktree with feature branch (create branch or checkout existing)
-  git -C "$svc_path" worktree add "$wt_path" -b "feature/{identifier}" 2>/dev/null \
-    || git -C "$svc_path" worktree add "$wt_path" "feature/{identifier}"
-
-  echo "Created worktree: ${svc}/ → ${wt_path}"
-done
-```
-2. All subsequent agent prompts MUST use `$TICKET_WORKSPACE/{service}/` paths instead of original service paths
-3. Track in state.json (see 0.3 below)
-
-**Track worktree state** — add to state.json:
-```json
-{
-  "worktree": {
-    "enabled": true,
-    "mode": "single|multi",
-    "name": "impl-{identifier}",
-    "workspace": "/absolute/path/.worktrees/{identifier}",
-    "services": {
-      "service1": "/absolute/path/.worktrees/{identifier}/service1",
-      "service2": "/absolute/path/.worktrees/{identifier}/service2"
-    }
-  }
-}
-```
+**If WORKTREE_ENABLED == "true":** Read `references/worktree-setup.md` for the single-mode and multi-mode worktree creation flows plus the `state.json` schema for `worktree`. Apply the procedure that matches `WORKSPACE_MODE`.
 
 ---
 
@@ -839,6 +790,27 @@ Continue to next chunk? [y/n/review]
 
 ---
 
+#### 4.0 Detect Frontend Changes
+
+Before running QA agents, determine whether the implementation includes frontend changes that warrant Playwright E2E testing:
+
+```bash
+FRONTEND_CHANGED=false
+
+# Check implemented files for frontend extensions or directories
+if echo "{implemented_files}" | grep -qE '\.(tsx|jsx|vue|svelte)$'; then
+  FRONTEND_CHANGED=true
+elif echo "{implemented_files}" | grep -qE '/(pages|components|views)/'; then
+  FRONTEND_CHANGED=true
+elif [[ -f "playwright.config.ts" ]] || [[ -f "playwright.config.js" ]]; then
+  FRONTEND_CHANGED=true
+fi
+```
+
+If `FRONTEND_CHANGED=true`, a `playwright-engineer` Task is added to the parallel QA block in Step 4.1.
+
+---
+
 #### 4.1 Run QA Agents (Autonomous Collaboration)
 
 **Design principle**: QA agents work autonomously, validate each other's findings, and resolve issues among themselves before presenting results to the user. The user reviews a consolidated, pre-validated report — not raw agent output.
@@ -847,7 +819,7 @@ Continue to next chunk? [y/n/review]
 
 ##### Step 1: Parallel Initial Review
 
-Run all three QA agents in parallel as independent tasks.
+Run QA agents in parallel as independent tasks (3 always; 4 if `FRONTEND_CHANGED=true`).
 
 **Execute in a single message with multiple Task tool calls:**
 
@@ -900,6 +872,24 @@ Check for:
 - PII/secrets exposure
 - Input validation gaps
 - Injection risks
+
+---
+
+Task 4 (only if FRONTEND_CHANGED=true): subagent_type: "playwright-engineer"
+Prompt: Write or update Playwright E2E tests for the following frontend changes.
+
+Implemented files:
+{implemented_files}
+
+Implementation context:
+{what_was_implemented}
+
+Requirements:
+- Detect existing Playwright setup (playwright.config.ts, test files, page objects) before writing
+- Write tests covering user-visible behavior for the changed components/pages
+- Follow existing test patterns; use Page Object Model if already in use
+- Prefer getByRole/getByLabel locators; avoid CSS selectors and XPath
+- Return: test files created and a brief coverage summary
 ```
 
 Save all agent outputs to `$WORK_DIR/{identifier}/context/`:
@@ -909,10 +899,13 @@ Save all agent outputs to `$WORK_DIR/{identifier}/context/`:
 
 ##### Step 1b: Output-Presence Check (mandatory)
 
-After the three parallel QA tasks return, verify every expected output file exists and has non-trivial content before advancing to the skeptic step:
+After the parallel QA tasks return, verify every expected output file exists and has non-trivial content before advancing to the skeptic step:
 
 ```bash
-for agent in test-writer code-reviewer security-auditor; do
+qa_agents=(test-writer code-reviewer security-auditor)
+[[ "$FRONTEND_CHANGED" == "true" ]] && qa_agents+=(playwright-engineer)
+
+for agent in "${qa_agents[@]}"; do
   f="$WORK_DIR/{identifier}/context/qa-${agent}.md"
   if [[ ! -s "$f" ]] || [[ $(wc -c <"$f") -lt 200 ]]; then
     echo "⚠ Missing or under-threshold output: $f — halting. Re-spawn the responsible agent with the same prompt. After one re-spawn failure, escalate via AskUserQuestion. Do NOT advance to the skeptic step."
@@ -939,6 +932,7 @@ QA agent outputs (read these files):
 - $WORK_DIR/{identifier}/context/qa-test-writer.md
 - $WORK_DIR/{identifier}/context/qa-code-reviewer.md
 - $WORK_DIR/{identifier}/context/qa-security-auditor.md
+- $WORK_DIR/{identifier}/context/qa-playwright-engineer.md (if present — frontend changes only)
 
 Your job (Level 2 — Implementation Validation):
 1. Verify each CRITICAL finding by checking the actual code — did the reviewer cite the right file/line?
@@ -1007,7 +1001,7 @@ Read `references/qa-team-mode.md` for team mode QA execution details (TeamCreate
 
 After Phase 4.1 converges (both modes have produced the four QA files, and any agent-resolution rounds are complete), write a distilled `-summary.md` sibling for each full output. This keeps `/resume-work` and `/load-context` cheap on resume — they prefer the summary variant by default.
 
-For each file at `$WORK_DIR/{identifier}/context/qa-{agent}.md` that exists (`qa-test-writer.md`, `qa-code-reviewer.md`, `qa-security-auditor.md`, `qa-quality-guard.md`):
+For each file at `$WORK_DIR/{identifier}/context/qa-{agent}.md` that exists (`qa-test-writer.md`, `qa-code-reviewer.md`, `qa-security-auditor.md`, `qa-quality-guard.md`, and `qa-playwright-engineer.md` if frontend changes were detected):
 
 1. `Read()` the full file
 2. Distill to **≤10 lines**, concrete only:
@@ -1231,48 +1225,7 @@ Generated: {ISO_TIMESTAMP}
 
 **If NO critical issues found**: Skip to 4.7.4 (proceed directly).
 
-**If critical issues found**, attempt auto-fix for each one sequentially (max 2 fix attempts per issue):
-
-```
-For each critical issue:
-
-1. Attempt fix via refactorer agent (attempt 1)
-2. Re-validate the fix
-3. If still unresolved: attempt fix via refactorer agent (attempt 2, with failure context)
-4. Re-validate again
-5. Track result (resolved / unresolved)
-```
-
-Read `references/quality-gate-prompts.md` for the detailed auto-fix and re-validation prompt templates (refactorer fix prompts, code-reviewer/security-auditor re-validation prompts, attempt 2 enriched context prompt).
-
-**Track results for each issue:**
-```
-Issue CR-1: RESOLVED (attempt 1) - Fix applied in UserService.php
-Issue SA-1: RESOLVED (attempt 2) - Different approach worked after first attempt failed
-Issue SA-2: UNRESOLVED - Both auto-fix attempts failed, requires manual intervention
-```
-
-**IMPORTANT**: Run fixes sequentially (each fix may affect subsequent ones). Do NOT run fixes in parallel.
-
-#### 4.7.3 Commit Fixes (Conditional)
-
-**If any fixes were applied successfully:**
-
-1. Stage the fixed files
-2. Commit inline (hook runs credential scan automatically):
-
-   ```bash
-   git add <fixed-files>
-   git commit -m "[{identifier}] fix: address critical QA findings"
-   ```
-
-3. Update state with the new commit:
-
-   ```json
-   {
-     "commits": ["abc123", "def456", "qa-fix-789"]
-   }
-   ```
+**If critical issues found**: Read `references/quality-gate-auto-fix.md` for the auto-fix loop (up to 2 refactorer attempts per issue, sequential, with re-validation) and the commit step that follows (4.7.3). After the loop completes, return here and continue with 4.7.4.
 
 #### 4.7.4 Quality Gate Decision
 
@@ -1615,6 +1568,7 @@ Skill: /implement
 | test-writer | sonnet | Phase 4 | Test creation |
 | code-reviewer | opus | Phase 4 | Code review |
 | security-auditor | opus | Phase 4 | Security audit |
+| playwright-engineer | sonnet | Phase 4 | E2E tests (frontend changes only) |
 | quality-guard | opus | Phase 4 | Skeptic validation |
 | test-fixer | sonnet | Phase 4 | Test fixes (if needed) |
 | refactorer | sonnet | Phase 4.7 | Auto-fix (if needed) |

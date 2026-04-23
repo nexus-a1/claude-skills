@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.6.0] - 2026-04-23
+
+## What's Changed
+
+### Features
+• [SKILLS-000] feat(skills): add /add-product-knowledge skill
+• [SKILLS-000] feat(configuration-init): add migrate mode for legacy formats (#193)
+• [SKILLS-000] feat(skills): integrate playwright-engineer into /implement Phase 4 QA (#3)
+
+### Bug Fixes & Improvements
+• [SKILLS-000] fix(docs): align add-product-knowledge category with docs/skills.md
+• [SKILLS-000] fix(skills): add missing xargs/basename/sort to allowed-tools
+• [SKILLS-000] refactor(skills): use resolve_artifact_typed in add-product-knowledge
+• [SKILLS-000] fix(skills): address code review findings for add-product-knowledge
+• [SKILLS-000] refactor(skills): extract conditional sections to references/ for create-requirements and create-proposal
+• [SKILLS-000] refactor(implement): extract worktree setup and auto-fix loop to references (#2)
+
+### Documentation
+• [SKILLS-000] chore(docs): archive deep-dive assessment and record won't-do decisions
+• [SKILLS-000] docs(principles): add skill composition guidance (#10)
+• [SKILLS-000] docs(decisions): defer knowledge-sync workflow via ADR 008 (#5)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.5.4...v1.6.0
+
 ## [1.5.4] - 2026-04-23
 
 ## What's Changed

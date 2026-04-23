@@ -2,14 +2,17 @@
 name: configuration-init
 model: claude-sonnet-4-6
 category: project-setup
-description: Initialize project configuration file with interactive wizard
+description: Initialize project configuration file with interactive wizard. Also supports `validate` and `migrate` modes for existing installs.
+argument-hint: "[validate | migrate]"
 userInvocable: true
 allowed-tools: Read, Write, Bash, AskUserQuestion
 ---
 
 # Configuration Init
 
-Initialize `.claude/configuration.yml` for the current project using an interactive wizard.
+Initialize `.claude/configuration.yml` for the current project using an interactive wizard. Also supports:
+- `/configuration-init validate` — check an existing config for errors and warnings.
+- `/configuration-init migrate` — detect and rewrite legacy configuration and state file formats in place (with backups).
 
 ## Purpose
 
@@ -29,6 +32,9 @@ If `$ARGUMENTS` contains "validate":
 1. Find existing config (same directory walk as Step 1)
 2. If config found → jump directly to **Step 9: Validate Configuration**
 3. If no config found → error: "No configuration file found to validate. Run `/configuration-init` to create one."
+
+If `$ARGUMENTS` contains "migrate":
+1. Jump directly to **Step 10: Migrate Legacy Formats**. No interactive wizard is run.
 
 ### Step 1: Check Existing Configuration
 
@@ -472,6 +478,151 @@ If any FAIL results exist, suggest fixes. If only WARN or PASS, report "Configur
 
 ---
 
+### Step 10: Migrate Legacy Formats
+
+**Triggered by:** `$ARGUMENTS` containing "migrate".
+
+Scan the project for legacy configuration and state file formats left over from past breaking changes and rewrite them in place. All rewrites create a `.bak-YYYYMMDD-HHMMSS` copy beside the original so nothing is destroyed.
+
+**Three migrations are checked:**
+
+1. `configuration.json` → `configuration.yml` (JSON to YAML)
+2. `*-state.json` (per-skill state files) → unified `state.json` with `type` field
+3. `domain_knowledge` configuration key → `product_knowledge`
+
+#### 10.1 Plan phase (dry run — no writes)
+
+```bash
+TIMESTAMP=$(date -u +%Y%m%d-%H%M%S)
+PROJECT_ROOT=$(pwd)
+PLAN=()
+
+# 1. configuration.json → configuration.yml
+if [[ -f ".claude/configuration.json" && ! -f ".claude/configuration.yml" ]]; then
+  PLAN+=("config-json-to-yml:.claude/configuration.json")
+fi
+
+# 2. Per-skill state files → state.json
+LEGACY_STATE_NAMES=(
+  "brainstorm-state.json:brainstorm"
+  "requirements-state.json:requirements"
+  "proposal-state.json:proposal"
+  "implementation-state.json:implementation"
+  "epic-state.json:epic"
+)
+
+WORK_DIR=$(resolve_artifact work work 2>/dev/null || echo ".claude/work")
+for dir in "$WORK_DIR"/*/; do
+  [[ -d "$dir" ]] || continue
+  for pair in "${LEGACY_STATE_NAMES[@]}"; do
+    old_name="${pair%:*}"
+    type_field="${pair#*:}"
+    if [[ -f "${dir}${old_name}" && ! -f "${dir}state.json" ]]; then
+      PLAN+=("state-rename:${dir}${old_name}:${type_field}")
+    fi
+  done
+done
+
+# 3. domain_knowledge key in configuration.yml
+if [[ -f ".claude/configuration.yml" ]] && grep -q '^[[:space:]]*domain_knowledge:' ".claude/configuration.yml"; then
+  PLAN+=("rename-key:.claude/configuration.yml:domain_knowledge:product_knowledge")
+fi
+```
+
+**Report the plan to the user:**
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Migration Plan
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Legacy config file  .claude/configuration.json → .claude/configuration.yml
+  Legacy state file   .claude/work/JIRA-123/requirements-state.json → state.json (type: requirements)
+  Legacy config key   .claude/configuration.yml: domain_knowledge → product_knowledge
+
+  Backups will be written as *.bak-${TIMESTAMP}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+If `PLAN` is empty, report:
+
+```
+✓ No legacy formats detected. Nothing to migrate.
+```
+
+…and exit.
+
+Use `AskUserQuestion`:
+- header: "Apply migration?"
+- question: "Apply the planned migrations? Each original file is backed up before rewrite."
+- options:
+  - "Apply" / "Run the migrations"
+  - "Cancel" / "Exit without changes"
+
+If "Cancel" → stop with: "Migration cancelled. No files were modified."
+
+#### 10.2 Apply phase
+
+For each planned action, create the backup, then rewrite:
+
+**config-json-to-yml** (uses `yq` to convert JSON to YAML):
+```bash
+cp ".claude/configuration.json" ".claude/configuration.json.bak-${TIMESTAMP}"
+yq -P '.' ".claude/configuration.json" > ".claude/configuration.yml"
+# Only remove original after successful YAML write
+if [[ -s ".claude/configuration.yml" ]]; then
+  rm ".claude/configuration.json"
+fi
+```
+
+**state-rename** (add `type` field, rename file):
+```bash
+if [[ -s "${dir}state.json" ]]; then
+  echo "⚠ Skipping ${old_path} — ${dir}state.json already written by an earlier migration in this directory."
+  continue
+fi
+cp "${old_path}" "${old_path}.bak-${TIMESTAMP}"
+jq --arg t "${type_field}" '. + {type: $t}' "${old_path}" > "${dir}state.json"
+if [[ -s "${dir}state.json" ]]; then
+  rm "${old_path}"
+fi
+```
+
+**rename-key** (update a top-level YAML key, preserve structure):
+```bash
+cp "${file}" "${file}.bak-${TIMESTAMP}"
+yq -i '.product_knowledge = .domain_knowledge | del(.domain_knowledge)' "${file}"
+```
+
+After each action, print a single line confirmation:
+
+```
+✓ .claude/configuration.json → .claude/configuration.yml  (backup: .bak-20260423-160500)
+✓ .claude/work/JIRA-123/requirements-state.json → state.json  (backup: .bak-20260423-160500)
+✓ .claude/configuration.yml: domain_knowledge → product_knowledge  (backup: .bak-20260423-160500)
+```
+
+If any step fails, stop and report which action failed. The user can retry after resolving the issue.
+
+#### 10.3 Summary
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Migration Complete
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Actions applied: {count}
+  Backups created: {count}
+
+  Next step: run /configuration-init validate to confirm the
+  rewritten configuration passes validation.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Scope note:** This migration only handles known-historical format changes. Unknown legacy formats are left untouched — the user can file an issue if they encounter a case this skill misses.
+
+---
+
 ## Examples
 
 ### Example 1: Minimal Setup (No Team Repo)
@@ -520,7 +671,19 @@ If any FAIL results exist, suggest fixes. If only WARN or PASS, report "Configur
 # → Shows "Configuration is valid" or suggests fixes
 ```
 
-### Example 5: Reconfigure Existing
+### Example 5: Migrate Legacy Formats
+
+```bash
+/configuration-init migrate
+
+# → Scans for legacy configuration.json, *-state.json, domain_knowledge key
+# → Prints plan; no writes yet
+# → Asks for confirmation (Apply / Cancel)
+# → On Apply: creates .bak-TIMESTAMP copies, rewrites in place
+# → Reports which migrations landed; suggests running validate next
+```
+
+### Example 6: Reconfigure Existing
 
 ```bash
 /configuration-init

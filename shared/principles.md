@@ -41,3 +41,20 @@ These principles apply to all multi-agent skills and their spawned agents. Skill
 14. **Max 3 rejection cycles.** If a skeptic or reviewer rejects the same deliverable 3 times, STOP iterating. Escalate to the user with: (a) summary of all submissions, (b) reviewer's objections across all rounds, (c) agent's attempts to address them. The user decides: override, provide guidance, or abort.
 
 15. **Max 2 auto-fix attempts per issue.** When auto-fixing critical findings, attempt at most 2 fixes per issue. The second attempt includes failure context from the first. If both fail, escalate to the user.
+
+## Skill Composition
+
+When one skill's workflow naturally needs another skill's behavior, prefer **agent delegation** over **skill chaining** in almost every case. Skill chaining is appropriate only for a narrow set of patterns.
+
+16. **Prefer agent delegation.** If you need specialized work (code review, security audit, requirements analysis, documentation), invoke the relevant agent via `Task`. Agents are designed to be composed — they return structured output, accept narrow prompts, and cap their output for inclusion in a larger flow.
+
+17. **Use skill chaining only for pipelines of user-facing commands.** A skill should invoke another skill (via the `Skill` tool in `allowed-tools`) only when:
+    - The callee is an atomic user-facing command the user could reasonably have run directly, AND
+    - The caller is explicitly orchestrating a multi-step user workflow (e.g., `/release` chains `/create-release-branch` → `/create-release` → `/merge-release`), AND
+    - The callee's interactive prompts, state writes, and output format all make sense from inside the calling flow.
+
+    Outside this pattern — "I need a piece of X's behavior" — use an agent instead of calling the skill. Skills assume interactive context; agents don't.
+
+18. **Don't chain a skill just to reuse its internal logic.** If the logic is reusable, extract it into a shared utility (`plugin/shared/`), a `references/*.md` file, or an agent. Chaining a user-facing skill to get at its internals imports its prompts, state writes, and user interactions too — all of which usually don't belong in the caller's flow.
+
+19. **Document chain points.** When a skill does chain another skill, the calling SKILL.md must name the exact skill called, the trigger condition, and why an agent wasn't used. This keeps the composition graph legible as skills evolve.

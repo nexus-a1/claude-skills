@@ -533,36 +533,7 @@ After setup completes, run a quick feasibility check:
 
 **Skip this step if `EXEC_MODE == "subagent"`.**
 
-```
-TeamCreate(team_name="req-{identifier}")
-```
-
-Update state:
-```json
-{
-  "team": {
-    "name": "req-{identifier}",
-    "created": true
-  }
-}
-```
-
-Create task graph with dependencies using TaskCreate:
-
-```
-T1: "Run context-builder discovery" (no deps)
-T2: "Run archaeologist deep-dive" (blocked by T1)
-T2b: "Run architect deep-dive" (blocked by T1)
-T3: "Run data-modeler deep-dive" (blocked by T1) — if applicable
-T4: "Run integration-analyst deep-dive" (blocked by T1) — if applicable
-T5: "Run aws-architect deep-dive" (blocked by T1) — if applicable
-T6: "Run security-requirements deep-dive" (blocked by T1) — if applicable
-T7: "Run archivist deep-dive" (blocked by T1) — if applicable
-T8: "Run product-expert deep-dive" (blocked by T1) — if applicable
-T9: "Run business-analyst synthesis" (blocked by ALL deep-dive tasks)
-```
-
-Use TaskUpdate to set `addBlockedBy` relationships.
+Read `references/team-mode-protocol.md` § "Stage 2.1" for the TeamCreate call, task graph definition (T1–T9), and TaskUpdate dependency wiring.
 
 #### 2.2 Run Context Builder
 
@@ -724,28 +695,7 @@ Read `references/deep-dive-agent-prompts.md` for the complete prompt templates f
 
 **Skip this step if `EXEC_MODE == "subagent"`.**
 
-While teammates are running:
-
-1. Monitor progress via TaskList
-2. When an agent finishes:
-   a. **Read** `$WORK_DIR/{identifier}/context/{completed-agent}.md`
-   b. **Distill** the findings into a summary of **at most 10 lines**: the key decision(s), 2–3 evidence bullets with file:line references, and any signal that affects another agent's scope. Do NOT pass the full document.
-   c. Use SendMessage to notify still-running agents with the distilled summary:
-   ```
-   SendMessage(
-     type="message",
-     recipient="{agent-name}",
-     content="From {completed-agent} (treat as settled):
-   - Decision: {one line}
-   - Evidence: {file:line}, {file:line}, {file:line}
-   - Impact on you: {one line, if any}
-   Read $WORK_DIR/{identifier}/context/{completed-agent}.md ONLY if you need code references beyond the above.",
-     summary="{completed-agent} decision summary"
-   )
-   ```
-3. Repeat for each agent that finishes while others are still running
-
-**Why summaries, not file pointers:** Passing the full 200–300 line document causes downstream agents to re-validate settled decisions, which the business-analyst then re-reads on every synthesis pass. A 10-line decision summary preserves the cross-pollination signal without the duplication tax.
+Read `references/team-mode-protocol.md` § "Stage 3.3" for the TaskList monitoring loop, 10-line distillation rule, and SendMessage format for cross-pollinating completed agent findings.
 
 #### 3.4 Verify and Save Agent Outputs
 
@@ -957,104 +907,9 @@ echo "✓ All synthesis outputs saved"
 
 #### 4.5 Resolve Flagged Issues (Conditional)
 
-**Goal**: If the business-analyst flagged contradictions, coverage gaps, or unresolved assumptions in its "Challenge & Cross-Validate" section, resolve them by spawning targeted re-analysis agents.
+**Goal**: If the business-analyst flagged contradictions, coverage gaps, or unresolved assumptions in its output, resolve them by spawning targeted re-analysis agents.
 
-**Check for flags**: Read the saved business-analyst output at `$WORK_DIR/{identifier}/context/business-analyst.md`. Look for:
-- Explicit contradiction flags between agent findings
-- Coverage gaps (areas no agent analyzed)
-- Challenged assumptions or severity mismatches
-
-**If NO flags found**: Update state and skip to Stage 4.9 (Update Final State).
-
-```json
-{
-  "updated_at": "{ISO_TIMESTAMP}",
-  "stages": {
-    "resolve_flags": {"stage": 4.5, "status": "skipped", "reason": "no flags found"}
-  }
-}
-```
-
-**If flags found**: Continue with targeted re-analysis.
-
-Update state:
-```json
-{
-  "updated_at": "{ISO_TIMESTAMP}",
-  "stages": {
-    "resolve_flags": {"stage": 4.5, "status": "in_progress", "flags_found": ["contradiction: ...", "gap: ...", "assumption: ..."]}
-  }
-}
-```
-
-##### Sub-agent Mode (`EXEC_MODE == "subagent"`)
-
-For each flagged issue, identify which agent(s) from Stage 3 need to provide targeted clarification. Spawn them **in parallel** via Task tool calls in a single message.
-
-**IMPORTANT**: Do NOT re-run general analysis. Each prompt must be a SPECIFIC question about the flagged issue.
-
-Example prompts:
-
-```
-Task 1 (contradiction resolution): subagent_type: "{agent-name}"
-Prompt: Your finding about {Agent A's position} conflicts with {Agent B's finding}.
-Specifically: {describe the contradiction}.
-Analyze whether these two approaches can coexist, and recommend a compatible approach.
-If they cannot coexist, recommend which approach should take priority and why.
-
-Task 2 (coverage gap): subagent_type: "{appropriate-agent}"
-Prompt: During synthesis, a coverage gap was identified: {describe the gap}.
-No agent analyzed {gap area}. Investigate this specific area and provide findings:
-- What exists currently in the codebase for {gap area}
-- What changes are needed for the feature
-- What risks does this gap introduce
-
-Task 3 (assumption challenge): subagent_type: "{agent-name}"
-Prompt: Your analysis assumed {describe assumption}. This assumption was challenged because {reason}.
-Verify whether this assumption holds. If it does not, re-analyze your recommendation
-for {specific area} under the corrected assumption.
-```
-
-Save each targeted response to `$WORK_DIR/{identifier}/context/{agent-name}-reanalysis.md`.
-
-##### Team Mode (`EXEC_MODE == "team"`)
-
-Business-analyst sends targeted messages to relevant agents via SendMessage:
-
-```
-SendMessage(
-  type="message",
-  recipient="{agent-name}",
-  content="Your finding about {issue} conflicts with {other agent's finding}. {specific question}. Please respond with your clarification.",
-  summary="Resolve: {brief issue description}"
-)
-```
-
-Collect responses from agents. Save each to `$WORK_DIR/{identifier}/context/{agent-name}-reanalysis.md`.
-
-##### Save and Update State
-
-**VERIFICATION** (required):
-```bash
-# List re-analysis files
-for file in $WORK_DIR/{identifier}/context/*-reanalysis.md; do
-  if [[ -f "$file" ]] && [[ -s "$file" ]]; then
-    echo "  ✓ $(basename $file)"
-  fi
-done
-
-echo "✓ Targeted re-analysis outputs saved"
-```
-
-Update state:
-```json
-{
-  "updated_at": "{ISO_TIMESTAMP}",
-  "stages": {
-    "resolve_flags": {"stage": 4.5, "status": "completed", "agents_rerun": ["agent-name", ...]}
-  }
-}
-```
+Read `references/resolve-flagged-issues.md` for the complete conditional re-analysis protocol — flag detection, sub-agent and team mode variants, example prompts, verification, and state updates.
 
 #### 4.6 Re-Synthesis (Conditional)
 
@@ -1219,30 +1074,7 @@ Update state:
 
 **Skip this step if `EXEC_MODE == "subagent"`.**
 
-Send shutdown requests to all teammates:
-
-```
-SendMessage(type="shutdown_request", recipient="context-builder", content="Work complete")
-SendMessage(type="shutdown_request", recipient="archaeologist", content="Work complete")
-... (for each spawned teammate)
-```
-
-After all teammates have shut down:
-
-```
-TeamDelete()
-```
-
-Update state:
-```json
-{
-  "team": {
-    "name": "req-{identifier}",
-    "created": true,
-    "deleted": true
-  }
-}
-```
+Read `references/team-mode-protocol.md` § "Stage 4.8.5" for the SendMessage shutdown sequence, TeamDelete call, and state update.
 
 #### 4.9 Update Final State
 
