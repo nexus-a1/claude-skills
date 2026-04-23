@@ -20,6 +20,8 @@ Use this when something happens outside the normal skill flow that should be rec
 - Blocker or dependency found
 - Decision made mid-session that future context should know about
 
+**Scope:** `/update-context` is for free-form notes only — it appends to `state.json` without changing lifecycle state. For advancing a session's post-implementation lifecycle (e.g., to `in-review`, `merged`, `completed`), use `/work-status --update`. The two skills write to the same `state.json` but own different fields.
+
 ## Context
 
 Arguments: $ARGUMENTS

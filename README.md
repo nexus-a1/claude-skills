@@ -26,7 +26,7 @@ Skills are invoked with the `nexus:` namespace prefix (e.g., `/nexus:brainstorm`
 /nexus:implement               # Implement from requirements with built-in QA
 /nexus:resume-work             # Resume interrupted work
 /nexus:commit                  # Commit with conventional format
-/nexus:local-pr-review         # Review local changes before PR
+/nexus:pr-review --local       # Review local branch changes before opening a PR
 ```
 
 ## What's Included

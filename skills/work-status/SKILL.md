@@ -12,6 +12,8 @@ allowed-tools: "Read, Glob, Bash(jq:*), Bash(git:*), Bash(ls:*), Bash(yq:*), Bas
 
 Show active work sessions and advance their post-implementation lifecycle.
 
+**Scope:** `/work-status` owns the `lifecycle` field in `state.json` — use it for status transitions (`in-review`, `merged`, `completed`, etc.). For free-form notes, scope changes, or mid-session findings that should be preserved against a session, use `/update-context` instead. Both skills write to the same `state.json` but own different fields.
+
 ## Usage
 
 ```bash

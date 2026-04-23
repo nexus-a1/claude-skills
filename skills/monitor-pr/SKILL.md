@@ -14,7 +14,7 @@ Arguments: $ARGUMENTS
 
 Autonomously monitor an open pull request: watch CI workflows to completion, investigate and fix any failures, address new review comments, and repeat until the PR reaches a terminal state (approved with all checks green, merged, closed, or the iteration cap is hit).
 
-This skill complements `/local-pr-review` (pre-flight review before opening a PR) and `/pr-review` (one-shot review of an existing PR). Use `monitor-pr` **after** a PR is open when you want the PR shepherded through CI and review without constant manual polling.
+This skill complements `/pr-review` (one-shot review of an existing PR, or `--local` for a pre-flight review before opening one). Use `monitor-pr` **after** a PR is open when you want the PR shepherded through CI and review without constant manual polling.
 
 ## Non-Goals
 

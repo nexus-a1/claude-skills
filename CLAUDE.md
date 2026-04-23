@@ -233,8 +233,7 @@ execution_mode:
 | `documentation_update` | `/update-documentation` | Phase 2-4 agents (context-builder, business-analyst, doc-writer) |
 | `refactor` | `/refactor` | Step 5.1 quality gate loop (code-reviewer, test-writer, quality-guard) |
 | `troubleshoot` | `/troubleshoot` | Phase 6 verification (security-auditor, quality-guard) |
-| `local_pr_review` | `/local-pr-review` | Step 4 review agents (code-reviewer, security-auditor, quality-guard) |
-| `pr_review` | `/pr-review` | Step 4 review agents (code-reviewer, security-auditor, quality-guard) |
+| `pr_review` | `/pr-review` (remote and `--local` modes) | Step 4 review agents (code-reviewer, security-auditor, quality-guard) |
 | `review_plan` | `/review-plan` | Step 3 review agents (architect, quality-guard, optionally security-auditor) |
 
 All skills that use multiple agents support configurable execution mode (`"subagent"` or `"team"`).

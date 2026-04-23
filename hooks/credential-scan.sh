@@ -66,7 +66,7 @@ for f in "$@"; do
             [[ -z "$lineno" ]] && continue
             echo "credential-scan: ${fname}:${lineno} — ${label}" >&2
             total=$((total + 1))
-        done < <(grep -InHE "$pattern" "$f" 2>/dev/null || true)
+        done < <(grep -InHE -- "$pattern" "$f" 2>/dev/null || true)
     done
 done
 

@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.5.4] - 2026-04-23
+
+## What's Changed
+
+### Documentation
+- docs(assessment): mark item #9 done — output caps already landed
+- docs(assessment): correct hook count 8→9 per review
+- docs(skills): cross-link /work-status and /update-context scopes (#187)
+
+### Testing
+- test(hooks): add coverage for credential-scan and git-mutation-guard (#188)
+
+### Other Changes
+- Deep-dive assessment + merge /local-pr-review into /pr-review --local (#186)
+
+**Full Changelog**: https://github.com/anthropics/claude-skills/compare/v1.5.3...v1.5.4
+
 ## [1.5.3] - 2026-04-23
 
 ## What's Changed

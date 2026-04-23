@@ -129,8 +129,7 @@ Then use AskUserQuestion:
   - "Documentation Update" / "documentation_update — context-builder, business-analyst, doc-writer in /update-documentation"
   - "Refactor" / "refactor — code-reviewer, test-writer, quality-guard in /refactor"
   - "Troubleshoot" / "troubleshoot — security-auditor, quality-guard in /troubleshoot"
-  - "Local PR Review" / "local_pr_review — code-reviewer, security-auditor, quality-guard in /local-pr-review"
-  - "PR Review" / "pr_review — code-reviewer, security-auditor, quality-guard in /pr-review"
+  - "PR Review" / "pr_review — code-reviewer, security-auditor, quality-guard in /pr-review (covers remote and `--local` modes)"
 - multiSelect: true
 
 Store the result as an object:
@@ -426,7 +425,7 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
    → If string: must be "subagent" or "team" → else FAIL
    → If object: must have "default" key with value "subagent" or "team"
    → If object with "overrides": each key must be a known phase name
-     Known phases: requirements_deep_dive, qa_review, documentation_update, refactor, troubleshoot, local_pr_review, pr_review
+     Known phases: requirements_deep_dive, qa_review, documentation_update, refactor, troubleshoot, pr_review
      Unknown phase name → WARN ("unknown phase: {name}, will be ignored by skills")
 
 3. storage.locations

@@ -41,8 +41,7 @@
 #   documentation_update    — /update-documentation Phases 2-4
 #   refactor                — /refactor Step 5.1 (quality gate loop)
 #   troubleshoot            — /troubleshoot Phase 6 (verification review)
-#   local_pr_review         — /local-pr-review Step 4 (review agents)
-#   pr_review               — /pr-review Step 4 (review agents)
+#   pr_review               — /pr-review Step 4 (review agents; covers remote and --local modes)
 #
 # All skills that use multiple agents support both modes.
 # Both formats are fully supported — simple string is a shorthand for
