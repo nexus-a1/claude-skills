@@ -4,7 +4,7 @@ category: release-management
 model: claude-haiku-4-5
 userInvocable: true
 description: Create a GitHub release with a version tag and auto-generated changelog. Supports pre-releases. Final step of the release workflow.
-argument-hint: "[version] [branch] [--pre-release]"
+argument-hint: "[version] [branch] [--pre-release] [--fasttrack|-y]"
 allowed-tools: "Bash(git tag:*), Bash(git fetch:*), Bash(git log:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git status:*), Bash(bash:*), Bash(gh release create:*), Bash(gh pr list:*), AskUserQuestion, Skill"
 ---
 
@@ -82,6 +82,24 @@ Arguments in $ARGUMENTS are OPTIONAL hints that guide version suggestion:
 - Version line: `v1.8` or `v1.8.x` or `1.8` → Find latest v1.8.* tag and suggest next patch
 - Branch: `release/v1.0.2` → Extract version from branch
 - Flag: `--pre-release` → Mark as pre-release
+- Flag: `--fasttrack` (alias: `-y`, `--yes`) → Non-interactive mode. Skip every AskUserQuestion and apply the "Recommended" default. See **Fasttrack Mode** below.
+
+#### Fasttrack Mode
+
+When `--fasttrack` (or `-y` / `--yes`) is present, set `FASTTRACK=true` and follow these rules throughout the rest of the workflow:
+
+1. **Do NOT call AskUserQuestion.** For every wizard question in Step 5 and the confirmation in Step 8, automatically choose the option marked "(Recommended)" — i.e., the value computed by the analysis in steps 2–4. Print a one-line summary of each auto-selected answer instead of asking.
+2. **Version** — Use the single suggested version from Step 4 (next patch of the requested version line, or the bump inferred from commit scope, or the `-rc.N` increment for pre-releases). If the analysis yields multiple candidates (e.g. minor vs. major ambiguity from `BREAKING CHANGE:`), abort with an error asking the user to pass an explicit version — do not guess.
+3. **Branch** — Use the default branch from Step 2 (`origin/master` unless overridden by an argument).
+4. **Pre-release flag** — Use the default from Step 3 (derived from branch / `--pre-release`).
+5. **Release branch / PR checks (Step 6)** — Fasttrack only proceeds on the happy path:
+   - Case A (release branch exists, no PR) → **Abort.** Do not invoke `/create-release`. Print the error and exit.
+   - Case B (release branch PR open) → **Abort.** Do not invoke `/merge-release`. Print the error and exit.
+   - Case C (PR merged, or no release branch) → Proceed.
+6. **Validation warnings (Step 7)** — If a validation step would normally ask for confirmation (e.g. regular release from a non-master branch), abort with an error instead.
+7. **Final confirmation (Step 8)** — Skip. Print the summary and proceed directly to tag + release creation.
+
+Fasttrack is designed for the common case where the operator has already merged the release PR (or is tagging directly from `origin/master`) and just wants the tag + GitHub release created. Anything off the happy path must stop and require manual intervention.
 
 **Version line interpretation:**
 When user provides a partial version like `v1.8`, `v1.8.x`, `1.8`, or says "patch for v1.8":
@@ -213,6 +231,8 @@ Suggested bump: Minor (new features detected)
 
 **CRITICAL**: Use AskUserQuestion to gather input. **Always present analysis and let user decide** - do not make version decisions automatically.
 
+**If `FASTTRACK=true` (set in Step 1):** skip this entire step. Use the Recommended values from the analysis (version from Step 4, branch from Step 2, pre-release from Step 3) and print a short summary of the auto-selected answers. Proceed to Step 6.
+
 #### Question 1: Show Analysis and Select Version
 
 First, show the analysis summary, then ask:
@@ -280,6 +300,8 @@ options:
 - multiSelect: false
 
 ### Step 6: Check Release Branch PR Status
+
+**If `FASTTRACK=true`:** Cases A and B abort immediately (see Fasttrack Mode rules in Step 1). Only Case C proceeds — do not call `AskUserQuestion` in this step.
 
 **IMPORTANT**: This step ensures the proper release workflow is followed when a release branch exists.
 
@@ -471,6 +493,8 @@ Use AskUserQuestion with:
 
 If user selects "No, cancel", stop and show: "Release cancelled."
 
+**If `FASTTRACK=true`:** skip the AskUserQuestion confirmation. Print the summary with a `(--fasttrack: auto-confirmed)` marker and continue to Step 9.
+
 ### Step 9: Generate Release Notes
 
 Auto-generate release notes from commits:
@@ -615,4 +639,4 @@ Next steps:
 - **Version bumps** — Analyze commits: `BREAKING CHANGE:`/`!:` → Major, `feat:` → Minor, `fix:`/`docs:`/`chore:` → Patch. Explain reasoning.
 - **Release branch workflow** — If `release/v<version>` exists, enforce PR to master: no PR → `/create-release`, open PR → `/merge-release`, merged → proceed.
 - **Version format** — Always `v` prefix. Pre-releases: `vX.Y.Z-rc.N`. Default branch: `origin/master`.
-- **Always use AskUserQuestion** for user input and final confirmation before creating release.
+- **Always use AskUserQuestion** for user input and final confirmation before creating release — except when `--fasttrack` (alias `-y` / `--yes`) is passed, in which case all questions are auto-answered with the Recommended default and the release proceeds straight to tag + release creation. Fasttrack aborts (never auto-advances) if the release branch has no PR, has an unmerged PR, or if any validation warning would normally require confirmation.

@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.4] - 2026-04-24
+
+## What's Changed
+
+### Features
+- Add `--fasttrack` flag to `/release` skill for non-interactive releases by @nexus-a1 in #203
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.6.3...v1.6.4
+
 ## [1.6.3] - 2026-04-24
 
 ## Bug Fixes
