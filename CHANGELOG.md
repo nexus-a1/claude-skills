@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.2] - 2026-04-24
+
+## What's Changed
+
+### Bug Fixes
+- [SKILLS-000] fix(release): enforce version-only GitHub release title
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.6.1...v1.6.2
+
 ## [1.6.1] - 2026-04-24
 
 ## What's Changed

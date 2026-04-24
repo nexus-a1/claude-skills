@@ -515,6 +515,15 @@ Auto-generate release notes from commits:
 
 Use `gh release create` to create the release.
 
+**CRITICAL: Release Title Format**
+
+The GitHub release title MUST be the tag/version only (e.g., `v1.4.0`). Do NOT prefix it with the word `Release` or any other label.
+
+- Correct: `v1.4.0`, `v2.1.0-rc.1`
+- Wrong: `Release v1.4.0`, `Version 1.4.0`, `v1.4.0 Release`
+
+Always pass `--title "<version>"` explicitly — omitting it lets `gh`/GitHub fall back to a "Release …" default.
+
 **CRITICAL: Branch Name Format**
 
 The `--target` option requires the branch name **without** the `origin/` prefix:
@@ -549,7 +558,7 @@ EOF
 
 **Important:**
 - `--target` requires branch name WITHOUT `origin/` prefix (e.g., `master` not `origin/master`)
-- `--title` is the release title (use version)
+- `--title` is the release title — MUST be the version tag only (e.g., `v1.4.0`), never prefixed with `Release`
 - `--notes` contains the auto-generated release notes
 - `--prerelease` flag marks it as a pre-release in GitHub
 - The command will automatically create the git tag
