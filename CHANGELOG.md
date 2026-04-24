@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.7.0] - 2026-04-24
+
+## What's Changed
+
+### Features
+- `/todo-work`: create isolated worktree before handoff (#202)
+- `/release`: add `--fasttrack` flag (#203)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.6.3...v1.7.0
+
 ## [1.6.4] - 2026-04-24
 
 ## What's Changed

@@ -1,11 +1,11 @@
 ---
 name: todo-work
-model: claude-haiku-4-5
+model: claude-sonnet-4-6
 category: project-setup
 description: List pending items from TODO.md, pick one, mark it In progress, and propose a hand-off to /review-plan or /implement.
 argument-hint: "[item number]"
 userInvocable: true
-allowed-tools: Read, Edit, AskUserQuestion
+allowed-tools: Read, Edit, Bash, AskUserQuestion, EnterWorktree
 ---
 
 # Work on a TODO Item
@@ -187,7 +187,57 @@ If the Edit fails (e.g., because `{title}` or `{current_status}` is not unique i
     Handoff will proceed; update the status manually if needed.
 ```
 
-### Step 8: Propose Hand-off
+### Step 8: Create Isolated Worktree (skip for show-details-only)
+
+**If the user chose `Just show details`:** Skip to Step 9. No worktree.
+
+**Otherwise:** Create a git worktree off the remote default branch with a new feature branch so downstream code changes happen in isolation from the current working tree.
+
+1. **Derive a slug** from the selected item's title:
+   - Lowercase, ASCII only.
+   - Drop filler words (`the`, `a`, `an`, `to`, `for`, `of`, `add`, `update`, `fix`).
+   - Keep 2–5 meaningful words, joined with `-`.
+   - Strip any character outside `[a-z0-9-]`.
+   - If the title contains a ticket-like prefix (`[A-Z]+-[0-9]+`), keep it as `{TICKET}-{slug}`. Otherwise use the slug alone (no prefix).
+
+2. **Detect the default remote branch and create the worktree**:
+
+   ```bash
+   DEFAULT_BRANCH=$(git rev-parse --abbrev-ref origin/HEAD 2>/dev/null | sed 's|^origin/||')
+   if [ -z "$DEFAULT_BRANCH" ] || [ "$DEFAULT_BRANCH" = "HEAD" ]; then
+     DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | awk '/HEAD branch/{print $NF}')
+   fi
+   DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}
+   REPO_ROOT=$(git rev-parse --show-toplevel)
+
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+     source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+   elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+     source "$HOME/.claude/shared/resolve-config.sh"
+   fi
+   WT_ROOT=$(resolve_worktree_root 2>/dev/null || echo ".worktrees")
+   WORKTREE_PATH="$REPO_ROOT/$WT_ROOT/{branch-suffix}"
+
+   git fetch -q origin "$DEFAULT_BRANCH"
+   git worktree add -b feature/{branch-suffix} "$WORKTREE_PATH" "origin/$DEFAULT_BRANCH"
+   ```
+
+   `resolve_worktree_root` reads `worktree.root` from `.claude/configuration.yml` when present, falling back to `.worktrees/` — matching the pattern used by `/refactor`, `/update-documentation`, and `/implement`.
+
+   Where `{branch-suffix}` is the value derived in step 1 (e.g., `JIRA-123-webhook-support` or `broken-readme-link`).
+
+3. **Enter the worktree** using the `EnterWorktree` tool with `path: {WORKTREE_PATH}` (the absolute path from step 2). `EnterWorktree` with `path:` enters an already-registered worktree; `git worktree add` above registers it, so `git worktree list` will include this path. From this point the session is isolated.
+
+4. **If the worktree already exists** (branch name collision), surface a warning and continue without creating one — the user can run the handoff command in the existing worktree manually:
+
+   ```
+   ⚠️  Worktree feature/{branch-suffix} already exists. Continuing in current tree.
+       Switch manually with: cd $WT_ROOT/{branch-suffix}
+   ```
+
+5. **If git fetch or worktree creation fails for any other reason**, surface the error and continue with the handoff in the current tree — do not abort.
+
+### Step 9: Propose Hand-off
 
 Print a hand-off block that shows the user the exact command to run next. Do not invoke another skill — slash commands are user-invoked; `/todo-work` stops after printing.
 
@@ -197,8 +247,9 @@ Print a hand-off block that shows the user the exact command to run next. Do not
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Handing off to /review-plan
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Item:    {title}
-Status:  {Proposed|Not started|Needs discussion} → In progress
+Item:     {title}
+Status:   {Proposed|Not started|Needs discussion} → In progress
+Worktree: .worktrees/{branch-suffix}  (branch feature/{branch-suffix}, from origin/{default-branch})
 
 Run next:
 
@@ -215,8 +266,9 @@ Run next:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Handing off to /implement
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Item:    {title}
-Status:  {Proposed|Not started|Needs discussion} → In progress
+Item:     {title}
+Status:   {Proposed|Not started|Needs discussion} → In progress
+Worktree: .worktrees/{branch-suffix}  (branch feature/{branch-suffix}, from origin/{default-branch})
 
 Run next:
 
@@ -228,6 +280,8 @@ Run next:
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+If the worktree step was skipped (already exists or failed), drop the `Worktree:` line from the handoff block.
 
 **For `Just show details`:**
 
@@ -311,7 +365,8 @@ Warn and continue with the handoff (see Step 7).
 
 ## Notes
 
-- **Stateless** — no `.claude/work/` files, no configuration dependency
+- **Stateless** — no `.claude/work/` files; optionally reads `worktree.root` from `.claude/configuration.yml` (falls back to `.worktrees/`)
+- **Worktree isolation** — creates `.worktrees/{branch-suffix}/` on a new `feature/{branch-suffix}` branch off the remote default branch before handoff (skipped for `Just show details`); failures fall back to the current tree
 - **Read + targeted Edit** — only touches `TODO.md` via one `Status:` line change
 - **Handoff is passive** — prints the proposed next command; does not auto-launch a skill, because slash commands are user-invoked
 - **Priority ordering is stable** — document order is the tiebreaker within a priority tier
