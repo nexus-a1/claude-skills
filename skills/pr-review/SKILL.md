@@ -13,7 +13,6 @@ allowed-tools: "Read, Write, Glob, Grep, Bash(gh pr list:*), Bash(gh pr view:*),
 ## Context
 
 Current branch: !`git branch --show-current 2>/dev/null || echo "(not in a git repository)"`
-Available PRs: !`gh pr list --json number,title,author,headRefName,updatedAt --limit 20 2>/dev/null || echo "(gh unavailable or not authenticated)"`
 
 Arguments (if provided): $ARGUMENTS
 
@@ -76,7 +75,11 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
 **Use `--repo $REPO` on ALL subsequent `gh` commands.** This prevents cross-repo mistakes when the working directory changes or when reviewing PRs across multiple repositories. PR numbers are not globally unique — the same number can exist in different repos — so omitting `--repo` can silently target the wrong PR.
 
-If no PR number was provided, use AskUserQuestion to let the user pick from the list shown in Context.
+If no PR number was provided, fetch the list of open PRs and use AskUserQuestion to let the user pick:
+
+```bash
+gh pr list --repo $REPO --json number,title,author,headRefName,updatedAt --limit 20
+```
 
 ---
 

@@ -14,6 +14,8 @@ allowed-tools: "Bash(git fetch:*), Bash(git branch:*), Bash(git rev-parse:*), Ba
 
 ## Context
 
+Repository: !`git rev-parse --show-toplevel 2>/dev/null || echo "(not in a git repository)"`
+
 Current branch: !`git branch --show-current 2>/dev/null || echo "(not in a git repository)"`
 
 Arguments provided: $ARGUMENTS
@@ -91,6 +93,15 @@ Arguments are provided in $ARGUMENTS with this format:
 - `tag@v1.1.1` → extract `v1.1.1`, resolve to the tag ref
 
 ### 2. Interactive Mode
+
+**CRITICAL — grounding the next-version suggestion:** When you offer a `(next)` or `(recommended)` version in the AskUserQuestion options, it **MUST** be derived from the `Latest release` line in the Context block above (the output of `resolve-latest-release.sh` for the **current repository** — see the `Repository:` line). Do NOT carry over a version from earlier in this conversation, from another repository you recently worked in, or from the `Available branches` list. Each repo has independent version history — a version used in one repo tells you nothing about the next version in another.
+
+To compute the suggested next version:
+
+- Parse `<version>` from `Latest release` (e.g. `3.5.0`). If it is `0.0.0` (none), suggest `v0.1.0` as a starting point and mark it accordingly.
+- Offer a minor bump as the primary suggestion: `v{major}.{minor+1}.0` (e.g. `3.5.0` → `v3.6.0`).
+- Optionally offer a patch bump (`v{major}.{minor}.{patch+1}`) and major bump (`v{major+1}.0.0`) as alternatives.
+- Label the suggestion with the source it came from, e.g. `v3.6.0 (next minor after v3.5.0 in <repo-name>)`, so the user can verify at a glance that it matches the current repository.
 
 If version was not provided, ask:
 

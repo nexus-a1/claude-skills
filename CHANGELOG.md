@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.3] - 2026-04-24
+
+## Bug Fixes
+
+- Prevent pr-review crash in non-git CWD (#201)
+- Ground next-version suggestion in current repo (#200)
+
+**Full Changelog**: https://github.com/nexus-a1/claude-skills/compare/v1.6.2...v1.6.3
+
 ## [1.6.2] - 2026-04-24
 
 ## What's Changed
