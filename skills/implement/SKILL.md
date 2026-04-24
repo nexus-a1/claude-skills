@@ -107,6 +107,14 @@ This skill accepts requirements in multiple formats:
 
 **Goal**: Detect incomplete work or load requirements.
 
+> **Identifier source.** `/implement` does **not** create work directories
+> on its own. It always consumes an existing `{identifier}` produced by
+> `/create-requirements` (or `/epic` for ticketed sub-tickets), which
+> enforce the `{TICKET}-{slug}` Work Directory Naming Convention defined
+> in `CLAUDE.md`. The validation in §0.2 will fail if no `state.json`
+> exists for the supplied identifier — at which point the user is told to
+> run `/create-requirements` first.
+
 #### 0.1 Check for Incomplete Work
 
 If no arguments provided, scan for incomplete implementations:

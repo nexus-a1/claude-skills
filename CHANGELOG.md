@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.6.1] - 2026-04-24
+
+## What's Changed
+
+### Features
+- Enforce {TICKET}-{slug} work directory naming convention across skill ecosystem
+- Add /add-product-knowledge skill for enriching product context
+- Integrate playwright-engineer into /implement Phase 4 QA
+- Add migrate mode for legacy configuration formats in /configuration-init
+
+### Refactoring
+- Extract conditional sections to references for better maintainability
+- Refactor /implement worktree setup and auto-fix loop
+- Code structure improvements across skills
+
+### Documentation
+- Add skill composition guidance to principles
+- Document work directory naming convention in CLAUDE.md
+- Clarify /implement consumes identifiers from /create-requirements
+- Defer knowledge-sync workflow (ADR 008)
+
+### Fixes
+- Correct circular variable definitions in epic skill
+- Address code review findings and template inconsistencies
+- Align product-knowledge category with documentation
+- Add missing allowed tools (xargs/basename/sort)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.6.0...v1.6.1
+
 ## [1.6.0] - 2026-04-23
 
 ## What's Changed

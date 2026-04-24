@@ -166,18 +166,12 @@ Use AskUserQuestion:
 What is the ticket number for this work?
 
 Format: PROJECT-NUMBER (e.g., JIRA-123, PROJ-456, SKILLS-001)
-
-This will be used for:
-- Branch name: feature/{ticket}
-- Work directory: $WORK_DIR/{ticket}/
-- Commit messages: [{ticket}] type(scope): description
-- Output files: {ticket}-TECHNICAL_REQUIREMENTS.md
 ```
 
-**VALIDATION**: The identifier MUST match pattern `[A-Z]+-[0-9]+` (e.g., JIRA-123, SKILLS-001).
+**VALIDATION**: The ticket MUST match pattern `[A-Z]+-[0-9]+` (e.g., JIRA-123, SKILLS-001).
 If user provides a slug instead of ticket number, ask them to provide the ticket number.
 
-Store as `{identifier}`.
+Store as `{ticket}`. The full `{identifier}` is composed in §1.4 after the feature context is known.
 
 #### 1.2 Get Feature Description
 
@@ -298,7 +292,27 @@ Enter the brainstorm slug (e.g., "user-data-export"), or leave blank to skip.
 
 ---
 
-#### 1.4 Select Base Branch
+#### 1.4 Derive Work Identifier
+
+With `{ticket}` (from §1.1) and the refined requirements (§1.3) now in hand, derive a kebab-case slug (2–5 meaningful words, lowercase, ASCII, joined with `-`) from the refined requirements. Drop filler words. Confirm with the user via AskUserQuestion:
+
+```
+Derived slug: {slug}
+Proposed work identifier: {ticket}-{slug}
+Accept, or enter a different slug?
+```
+
+**Compose `{identifier}` = `{ticket}-{slug}`** (per the Work Directory Naming Convention in `CLAUDE.md`).
+
+This will be used for:
+- Branch name: `feature/{identifier}`
+- Work directory: `$WORK_DIR/{identifier}/`
+- Commit messages: `[{ticket}] type(scope): description` (commit prefix stays ticket-only)
+- Output files: `{identifier}-TECHNICAL_REQUIREMENTS.md`
+
+---
+
+#### 1.5 Select Base Branch
 
 Fetch available branches and present options:
 
@@ -320,7 +334,7 @@ Select base branch for this work:
 
 Store as `{base_branch}`.
 
-#### 1.5 Create Feature Branch (Local Only)
+#### 1.6 Create Feature Branch (Local Only)
 
 **CRITICAL**: This step MUST complete successfully before proceeding.
 
@@ -345,13 +359,13 @@ echo "✓ On feature branch: $current_branch"
 
 **If branch creation fails**: See Error Handling section.
 
-#### 1.6 Initialize Work Directory
+#### 1.7 Initialize Work Directory
 
 ```bash
 mkdir -p $WORK_DIR/{identifier}/context
 ```
 
-#### 1.7 Initialize State File
+#### 1.8 Initialize State File
 
 Write `$WORK_DIR/{identifier}/state.json`:
 

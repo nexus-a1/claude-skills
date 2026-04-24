@@ -11,6 +11,32 @@
 
 ---
 
+## Work Directory Naming Convention
+
+**Every work directory created under `$WORK_DIR/` for ticketed work MUST be named `{TICKET}-{slug}`.**
+
+- `{TICKET}` — the ticket identifier (e.g., `PROJ-123`, `SKILLS-042`). Pattern: `[A-Z]+-[0-9]+`.
+- `{slug}` — a short, kebab-case descriptor (2–5 words) derived from the task context: the feature description, refined requirements, or proposal name. Lowercase, ASCII only, no trailing/leading dashes.
+
+**Examples:**
+- `PROJ-123-user-data-export`
+- `SKILLS-042-work-dir-naming`
+- `SSO-7-okta-integration`
+
+**Applies to:** `/create-requirements`, `/create-proposal`, `/epic`, `/implement`, and any skill that initializes `$WORK_DIR/{id}/`. The same `{TICKET}-{slug}` value is used for:
+- Work directory: `$WORK_DIR/{TICKET}-{slug}/`
+- Feature branch: `feature/{TICKET}-{slug}`
+- Manifest `identifier` field
+- Resume handle: `/resume-work {TICKET}-{slug}`
+
+**Exceptions:**
+- `/brainstorm` is pre-ticket and uses slug-only directories (`$WORK_DIR/{slug}/`). On promotion (`/brainstorm promote`), the resulting requirements/proposal work uses the `{TICKET}-{slug}` form.
+- Epic ticket subdirectories follow `$WORK_DIR/{EPIC-TICKET}-{slug}/{TICKET}-{slug}/`.
+
+**Slug derivation:** summarize the feature description into 2–5 meaningful words (drop filler words like "add", "the", "a"), lowercase, join with `-`. Strip any characters outside `[a-z0-9-]`. When unsure between candidates, ask the user to confirm the slug before initializing the directory.
+
+---
+
 ## Agent Delegation
 
 **IMPORTANT**: Always delegate specialized tasks to agents. This improves quality and reduces context usage.

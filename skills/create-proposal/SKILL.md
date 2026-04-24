@@ -95,33 +95,18 @@ This reduces cost for the requirements-gathering and approach-generation phases 
 
 **Goal**: Establish identifier, initialize state, prepare work directory.
 
-### 0.1 Get Identifier
+### 0.1 Get Ticket Number
 
 Use AskUserQuestion:
 ```
-What identifier should we use for this proposal?
+What is the ticket number for this proposal?
 
-Options:
-- Ticket number (e.g., PROJ-123, SSO-001)
-- Descriptive slug (e.g., sso-integration, payment-system)
-
-This will be used for:
-- Work directory: $WORK_DIR/{identifier}/
-- Resume capability: /resume-work {identifier}
+Format: PROJECT-NUMBER (e.g., PROJ-123, SSO-001)
 ```
 
-Store as `{identifier}`.
+**VALIDATION**: Ticket MUST match pattern `[A-Z]+-[0-9]+`. Store as `{ticket}`. The full `{identifier}` is composed in §0.3 after the feature description is known.
 
-### 0.2 Get Proposal Name
-
-If identifier is a ticket number, ask for a descriptive name:
-```
-What should we call this proposal? (e.g., sso-integration, user-export)
-```
-
-Store as `{proposal_name}`. If identifier is already descriptive, use it as proposal_name.
-
-### 0.3 Get Feature Description
+### 0.2 Get Feature Description
 
 If not provided in $ARGUMENTS, use AskUserQuestion:
 ```
@@ -129,6 +114,24 @@ Describe the feature or system you want to design:
 ```
 
 Store as `{feature_description}`.
+
+### 0.3 Derive Proposal Name and Compose Identifier
+
+With `{ticket}` (§0.1) and `{feature_description}` (§0.2) in hand, derive a kebab-case slug (2–5 meaningful words, lowercase, ASCII, joined with `-`) from the feature description. Drop filler words. Confirm with the user via AskUserQuestion:
+
+```
+Derived name: {proposal_name}
+Proposed identifier: {ticket}-{proposal_name}
+Accept, or enter a different name?
+```
+
+**VALIDATION**: lowercase, ASCII, `[a-z0-9-]+`, no leading/trailing dashes. Store as `{proposal_name}`.
+
+**Compose `{identifier}` = `{ticket}-{proposal_name}`** (per the Work Directory Naming Convention in `CLAUDE.md`).
+
+This will be used for:
+- Work directory: `$WORK_DIR/{identifier}/`
+- Resume capability: `/resume-work {identifier}`
 
 ### 0.4 Detect Ecosystem
 
