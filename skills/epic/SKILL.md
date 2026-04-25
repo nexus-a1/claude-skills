@@ -206,36 +206,49 @@ Identify opportunities for parallel work.
 
 ---
 
-## Phase 5: Generate Technical Requirements
+## Phase 5: Generate Per-Ticket Spec
 
-For each ticket, create lightweight requirements:
+For each ticket, create a **lightweight spec.md** — Spec-Driven Development at the ticket level. The epic-level `EPIC_PLAN.md` plays the role of shared `plan.md`; each ticket emits only its product-facing spec. The full triad (plan + tasks) materializes when `/implement` picks up the ticket and derives them from the spec + EPIC_PLAN.md context.
 
-**Use the Task tool with `context-builder` agent** to gather context for each ticket area.
+**Layer boundary — strict at ticket level too:** spec.md contains NO file paths, class names, or library choices. HOW lives in the parent `EPIC_PLAN.md` and per-ticket `plan.md` (derived later by `/implement`).
+
+**Use the Task tool with `context-builder` agent** to gather context for each ticket area (used to populate the ticket's `context/` directory, not to put HOW into the spec).
 
 For each ticket, generate:
 
 ```markdown
-# {ticket-id}: {Title}             # e.g., PROJ-101-db-schema
+# {ticket-id}: {Title}             <!-- e.g., PROJ-101-db-schema -->
 
-## Description
-{What this ticket accomplishes and why}
+> **Layer: SPEC** — WHAT & WHY for this ticket. Part of epic `{epic-id}`.
+
+## Summary
+{One paragraph: what this ticket delivers and why it matters in the context of the epic.}
+
+## User Stories
+- **US-{ticket-number}.1**: As a {role}, I want {capability}, so that {outcome}.
+- **US-{ticket-number}.2**: ...
+
+## Acceptance Criteria
+Stable IDs scoped to the ticket: `AC-{ticket-number}.{n}` (so two tickets in the same epic don't collide).
+
+- **AC-{ticket-number}.1**
+  - Given {precondition}
+  - When {action}
+  - Then {observable outcome}
+- **AC-{ticket-number}.2**
+  - Given ...
+  - When ...
+  - Then ...
+
+## Security & Compliance Criteria
+(If `security-requirements` ran in Phase 2.5, include AC-SEC-{ticket-number}.{n} entries here. Otherwise omit.)
 
 ## Scope
 **In scope:**
-- {specific changes}
+- {specific behavior delivered by this ticket}
 
 **Out of scope:**
-- {what's NOT included - deferred to other tickets}
-
-## Technical Details
-- Files to create: {list}
-- Files to modify: {list}
-- Dependencies: {packages, services}
-
-## Acceptance Criteria
-- [ ] {testable criterion 1}
-- [ ] {testable criterion 2}
-- [ ] {testable criterion 3}
+- {explicit exclusions — typically deferred to other epic tickets, link by {ticket-id}}
 
 ## Dependencies
 - Blocked by: {ticket-id} (must complete first)
@@ -244,11 +257,15 @@ For each ticket, generate:
 ## Estimate
 {Small: <1 day | Medium: 1-2 days | Large: 2-3 days}
 
-## Implementation Notes
-{Key patterns to follow, pitfalls to avoid}
+## Epic Context
+- Epic: `{epic-id}` — {epic title}
+- Wave: {N}
+- Shared technical context: see `../EPIC_PLAN.md`
 ```
 
-Save each to: `$WORK_DIR/{epic-id}/{ticket-id}/{ticket-id}-TECHNICAL_REQUIREMENTS.md`
+Save each to: `$WORK_DIR/{epic-id}/{ticket-id}/spec.md`
+
+**Note:** No `plan.md` or `tasks.md` is generated here. `/implement` bootstraps both from this spec + parent `EPIC_PLAN.md` when the ticket is picked up.
 
 ---
 
@@ -273,6 +290,9 @@ Review:
 4. Are there missing tickets (e.g., infrastructure setup, migration rollback, documentation)?
 5. Is the scope appropriate — are any tickets doing too much (should be split) or too little (should be merged)?
 6. Does the epic cover the full feature, or are there gaps between tickets?
+7. **Spec-layer hygiene** — does each ticket's `spec.md` contain HOW-leakage (file paths, class names, library choices)? Those belong in `EPIC_PLAN.md` or in the per-ticket `plan.md` derived later by `/implement`, never in the ticket spec.
+8. **AC scoping** — do AC IDs use the `AC-{ticket-number}.{n}` format so they don't collide across tickets in the same epic?
+9. **AC coverage** — does every user story have at least one Given/When/Then AC? AC must be observable/testable.
 
 Return: APPROVED / CONDITIONAL (list specific issues) / REJECTED (fundamental restructuring needed).
 ```
@@ -299,9 +319,9 @@ mkdir -p $WORK_DIR/{epic-id}/{ticket-id}
 ```
 
 Save files:
-1. `$WORK_DIR/{epic-id}/EPIC_PLAN.md` - Overall plan
+1. `$WORK_DIR/{epic-id}/EPIC_PLAN.md` - Shared technical plan (epic-level HOW context for all tickets)
 2. `$WORK_DIR/{epic-id}/state.json` - Epic tracking
-3. `$WORK_DIR/{epic-id}/{ticket-id}/{ticket-id}-TECHNICAL_REQUIREMENTS.md` - Each ticket's requirements
+3. `$WORK_DIR/{epic-id}/{ticket-id}/spec.md` - Each ticket's product spec (WHAT/WHY only)
 
 Register active session for the optional `auto-context.sh` PostToolUse hook (no-op when `CLAUDE_SESSION_ID` is unset):
 
@@ -408,12 +428,12 @@ Files Created
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 $WORK_DIR/{epic-id}/
-├── EPIC_PLAN.md
+├── EPIC_PLAN.md                # Shared HOW context for all tickets
 ├── state.json
 ├── {ticket-id}/                # e.g., PROJ-101-db-schema/
-│   └── {ticket-id}-TECHNICAL_REQUIREMENTS.md
+│   └── spec.md                 # Product spec (WHAT/WHY) — plan.md + tasks.md derived by /implement
 ├── {ticket-id}/                # e.g., PROJ-102-entity-layer/
-│   └── {ticket-id}-TECHNICAL_REQUIREMENTS.md
+│   └── spec.md
 └── ...
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -430,7 +450,7 @@ Next Steps
    /resume-work {epic-id}
 
 4. View ticket details:
-   cat $WORK_DIR/{epic-id}/{ticket-id}/{ticket-id}-TECHNICAL_REQUIREMENTS.md
+   cat $WORK_DIR/{epic-id}/{ticket-id}/spec.md
 ```
 
 ```bash

@@ -119,12 +119,16 @@ Task(archivist, "Load full requirements for ${identifier}
 
 Load mode: complete
 
-Return:
-- Complete requirements.md (all sections)
+Return the Spec-Driven triad with clear layer headers:
+- spec.md      ── WHAT / WHY (user stories + Given/When/Then acceptance criteria)
+- plan.md      ── HOW (technical approach, files, data, risks, decision log)
+- tasks.md     ── EXECUTE (dependency-ordered, AC-linked tasks)
+
+Fallback for legacy archives: if the triad is absent, return the concatenated requirements.md under a single '## Requirements' header.
+
+Also include:
 - Metadata
-- Implementation approach
-- All technical decisions
-- Lessons learned
+- Lessons learned (if archive has an implementation section)
 - Related work
 ")
 ```
@@ -229,17 +233,26 @@ Search similar: /search-requirements "export excel"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-#### Full Requirements Format
+#### Full Requirements Format (Spec-Driven triad)
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 USER-123: User Data Export to Excel
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-[Complete requirements.md content displayed]
+═══ SPEC (WHAT / WHY) ═══
+[spec.md content]
+
+═══ PLAN (HOW) ═══
+[plan.md content]
+
+═══ TASKS (EXECUTE) ═══
+[tasks.md content]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+For legacy archives without the triad, display the concatenated `requirements.md` under a single section header instead.
 
 ## Examples
 
@@ -259,7 +272,7 @@ Shows summary with key points, decisions, and lessons.
 # Select option 2
 ```
 
-Shows complete requirements.md document.
+Shows the Spec-Driven triad (spec.md + plan.md + tasks.md) with clear layer headers, or the concatenated requirements.md for legacy archives.
 
 ### Example 3: Specific Section
 
@@ -333,11 +346,22 @@ Shows side-by-side comparison:
 ### Option 4: Export
 
 ```bash
-# Copy requirements.md to local file
-cp /path/to/requirements-repo/${identifier}/requirements.md \
-   docs/reference/${identifier}-requirements.md
+# Copy the Spec-Driven triad to a local reference directory
+mkdir -p docs/reference/${identifier}
+for f in spec.md plan.md tasks.md ${identifier}-JIRA_TICKET.md; do
+  if [ -f "/path/to/requirements-repo/${identifier}/$f" ]; then
+    cp "/path/to/requirements-repo/${identifier}/$f" "docs/reference/${identifier}/$f"
+  fi
+done
 
-✓ Exported to: docs/reference/${identifier}-requirements.md
+# Legacy fallback if triad absent
+if [ ! -f "docs/reference/${identifier}/spec.md" ] \
+   && [ -f "/path/to/requirements-repo/${identifier}/requirements.md" ]; then
+  cp "/path/to/requirements-repo/${identifier}/requirements.md" \
+     "docs/reference/${identifier}/requirements.md"
+fi
+
+✓ Exported to: docs/reference/${identifier}/
 ```
 
 ## Error Handling
@@ -436,7 +460,7 @@ Use load-requirements to build understanding of:
 
 **Loading times:**
 - Quick summary: < 1 second (index + metadata only)
-- Full requirements: 1-2 seconds (reads requirements.md)
+- Full requirements: 1-2 seconds (reads spec.md + plan.md + tasks.md, or requirements.md for legacy)
 - Specific section: < 1 second (targeted read)
 - Agent outputs: 1-2 seconds (reads context files)
 

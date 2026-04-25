@@ -130,7 +130,10 @@ This context feeds into business-analyst synthesis in Stage 4.
 Load specific historical requirements when requested:
 
 - **Metadata only (fast):** Read `{repository_path}/TICKET-123/metadata.json`
-- **Full context:** Read `metadata.json`, `requirements.md`, and `context/` files
+- **Full context (triad-first):**
+  1. Check for Spec-Driven triad: `spec.md`, `plan.md`, `tasks.md` in `{repository_path}/TICKET-123/`
+  2. If triad exists → read each file and present with layer headers (`═══ SPEC ═══`, `═══ PLAN ═══`, `═══ TASKS ═══`)
+  3. If triad absent → fall back to `requirements.md` (legacy concatenated view) + `context/` files
 
 Present summary: title, status, key decisions, recommendations, gotchas.
 

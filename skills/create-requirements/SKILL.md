@@ -36,16 +36,20 @@ This skill supports two execution modes, controlled by `execution_mode` in `.cla
 
 **Team mode adds:** Agents can read each other's outputs during deep-dive, enabling cross-pollination of findings. The lead monitors progress and notifies agents when peer findings become available.
 
-## Outputs
+## Outputs — Spec-Driven Triad
 
-This skill produces:
-1. **`state.json`** - State file for resume capability
-2. **`context/`** - Cached agent outputs for reference
-3. **`{identifier}-TECHNICAL_REQUIREMENTS.md`** - Full technical spec
-4. **`{identifier}-JIRA_TICKET.md`** - Light JIRA-ready summary
-5. **Consolidated requirements** - Final output from business-analyst synthesis
+This skill produces the canonical **Spec-Driven Development** triad — three artifacts with distinct audiences:
 
-All saved to `$WORK_DIR/{identifier}/`
+1. **`state.json`** — State file for resume capability
+2. **`context/`** — Cached agent outputs for reference
+3. **`spec.md`** — WHAT & WHY. User stories + Given/When/Then acceptance criteria. Product-facing, no implementation details.
+4. **`plan.md`** — HOW. Technical approach, files to touch, data model, integrations, risks. Implementer-facing.
+5. **`tasks.md`** — EXECUTE. Dependency-ordered, AC-linked task list. Agent-/engineer-executable.
+6. **`{identifier}-JIRA_TICKET.md`** — Derived view of `spec.md` for pasting into a tracker. Not a peer artifact.
+
+All saved to `$WORK_DIR/{identifier}/`.
+
+**Layer boundary rule:** If a statement answers *HOW* or references specific code, it belongs in `plan.md` — never in `spec.md`. `tasks.md` entries MUST cite at least one acceptance-criterion ID from `spec.md`.
 
 ---
 
@@ -94,7 +98,7 @@ Use `$EXEC_MODE` to determine team vs sub-agent behavior at stages 2, 3, 4, 4.5,
 Agents working in parallel MUST NOT write to the same file. Follow these conventions:
 
 - **Agent outputs**: Each agent writes ONLY to `$WORK_DIR/{identifier}/context/{agent-name}.md` (e.g., `context/archaeologist.md`, `context/data-modeler.md`). Agents NEVER write to another agent's output file.
-- **State files**: Only the skill lead writes to `state.json` and final output documents (`{identifier}-TECHNICAL_REQUIREMENTS.md`, `{identifier}-JIRA_TICKET.md`).
+- **State files**: Only the skill lead writes to `state.json` and final output documents (`spec.md`, `plan.md`, `tasks.md`, `{identifier}-JIRA_TICKET.md`).
 - **Manifest**: Only the skill lead writes to `${WORK_DIR}/manifest.json`.
 - **Discovery JSON**: Only the context-builder writes to `context/discovery.json`.
 
@@ -308,7 +312,7 @@ This will be used for:
 - Branch name: `feature/{identifier}`
 - Work directory: `$WORK_DIR/{identifier}/`
 - Commit messages: `[{ticket}] type(scope): description` (commit prefix stays ticket-only)
-- Output files: `{identifier}-TECHNICAL_REQUIREMENTS.md`
+- Output files: `spec.md`, `plan.md`, `tasks.md`, `{identifier}-JIRA_TICKET.md`
 
 ---
 
@@ -846,31 +850,134 @@ Tasks:
 7. Validate against user's acceptance criteria from refinement phase
 8. Note any performance considerations (queries, caching, scalability)
 
-Produce TWO documents, separated by the exact markers shown below.
+Produce FOUR documents, separated by the exact markers shown below. This follows **Spec-Driven Development**: spec describes WHAT/WHY, plan describes HOW, tasks describe EXECUTION, jira is a derived summary.
+
+**Layer boundary — enforce strictly:**
+- `SPEC` contains NO file paths, class names, library choices, or code. Only user stories and observable behavior.
+- `PLAN` contains the HOW — file paths, patterns, data schemas, integration contracts, risks.
+- `TASKS` is a numbered, dependency-ordered list. Every task MUST cite one or more AC IDs from SPEC (format: `Covers: AC-1.2, AC-3.1`).
+- `JIRA_TICKET` is a light paste-ready summary derived from SPEC — no HOW details.
+
+Token budgets: SPEC ≤1500, PLAN ≤2500, TASKS ≤1200, JIRA_TICKET ≤800.
 
 Use this EXACT format:
 
----BEGIN TECHNICAL_REQUIREMENTS---
-(Complete technical specification for developers)
-- Full implementation details
-- File paths and code references
-- Data schemas
-- API contracts
-- Error handling
-- Performance requirements
----END TECHNICAL_REQUIREMENTS---
+---BEGIN SPEC---
+# {Feature Title}
+
+## Summary
+(One paragraph: WHAT the feature is and WHY it matters. No HOW.)
+
+## User Stories
+- **US-1**: As a {role}, I want {capability}, so that {outcome}.
+- **US-2**: ...
+
+## Acceptance Criteria
+Each AC is a Given/When/Then scenario, grouped under its user story. Assign stable IDs (AC-{story}.{n}).
+
+### AC for US-1
+- **AC-1.1**
+  - Given {precondition}
+  - When {action}
+  - Then {observable outcome}
+- **AC-1.2** ...
+
+### AC for US-2
+...
+
+## Security & Compliance Criteria
+(From `security-requirements` if present — expressed as Given/When/Then, e.g. authn/authz, data handling, audit.)
+- **AC-SEC-1** ...
+
+## Out of Scope
+- {explicit exclusions}
+
+## Open Questions
+- {surfaced by synthesis or skeptic — or "None" }
+---END SPEC---
+
+---BEGIN PLAN---
+# Technical Plan — {Feature Title}
+
+## Approach
+(2–3 paragraphs: narrative of the chosen approach and WHY it fits the existing architecture.)
+
+## Files to Touch
+(From archaeologist; `path — purpose`.)
+- `src/...` — ...
+
+## Architecture Constraints
+(From architect: layer rules, DI patterns, SOLID concerns, dependency direction.)
+
+## Data Model
+(From data-modeler if present: entity changes, migrations, indices, query patterns. Omit section if N/A.)
+
+## External Integrations
+(From integration-analyst if present: API contracts, webhook patterns, resilience. Omit if N/A.)
+
+## Security & Infrastructure Notes
+(Implementation-level notes from security-requirements / aws-architect. Do NOT restate AC — cross-ref `AC-SEC-*`.)
+
+## Risks & Mitigations (MoSCoW)
+| Priority | Risk | Mitigation |
+|----------|------|------------|
+| Must | ... | ... |
+
+## Decision Log
+(Conflict resolutions from synthesis — format: `Decision | Options | Chosen | Rationale`.)
+---END PLAN---
+
+---BEGIN TASKS---
+# Implementation Tasks — {Feature Title}
+
+Ordered by dependency. Every task cites one or more AC IDs from SPEC.
+
+## Wave 1 (no dependencies)
+- [ ] **T-1** — {Short title}
+  - Scope: {1–2 lines — what this task produces}
+  - Covers: AC-1.1, AC-1.2
+- [ ] **T-2** — ...
+  - Covers: AC-2.1
+
+## Wave 2 (depends on Wave 1)
+- [ ] **T-3** — ...
+  - Depends on: T-1
+  - Covers: AC-1.3
+
+## Parallelization
+Tasks safe to run concurrently: {T-1, T-2}; {T-4, T-5}.
+
+## Coverage Check
+Every AC in SPEC maps to at least one task:
+- AC-1.1 → T-1
+- AC-1.2 → T-1
+- ...
+---END TASKS---
 
 ---BEGIN JIRA_TICKET---
-(Light version for JIRA - business + developer overview)
-- Summary (1 paragraph)
-- Background (problem, impact, solution)
-- Requirements (business terms)
-- Acceptance criteria
-- Technical notes (2-3 bullets max)
-- Out of scope
+# {Feature Title}
+
+**Summary** (1 paragraph — paste-ready for ticket body)
+
+**Background**
+- Problem:
+- Impact:
+- Solution (at a glance):
+
+**Acceptance Criteria**
+- AC-1.1: {one-line collapsed form of the Given/When/Then}
+- AC-1.2: ...
+
+**Out of Scope**
+- ...
+
+**Links**
+- Full spec: `spec.md`
+- Technical plan: `plan.md`
+- Task breakdown: `tasks.md`
 ---END JIRA_TICKET---
 
-IMPORTANT: Use the exact ---BEGIN/END--- markers. They are used to extract each document into separate files.
+IMPORTANT: Use the exact ---BEGIN/END--- markers. They are used to extract each document into separate files. Do NOT include HOW details in SPEC or JIRA_TICKET. Do NOT restate AC content in PLAN — reference by ID.
 ```
 
 **Team mode extra**: Add to prompt: `"Mark your task as completed when done."`
@@ -885,38 +992,48 @@ Save all synthesis outputs to the work directory:
 # Save business-analyst raw output
 # Write to: $WORK_DIR/{identifier}/context/business-analyst.md
 
-# Save the two requirement documents
-# Write to: $WORK_DIR/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md
+# Save the four triad documents
+# Write to: $WORK_DIR/{identifier}/spec.md
+# Write to: $WORK_DIR/{identifier}/plan.md
+# Write to: $WORK_DIR/{identifier}/tasks.md
 # Write to: $WORK_DIR/{identifier}/{identifier}-JIRA_TICKET.md
 ```
 
-Extract the two documents using the `---BEGIN/END---` markers:
+Extract the four documents using the `---BEGIN/END---` markers:
 
-1. Content between `---BEGIN TECHNICAL_REQUIREMENTS---` and `---END TECHNICAL_REQUIREMENTS---` → save as `$WORK_DIR/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md`
-2. Content between `---BEGIN JIRA_TICKET---` and `---END JIRA_TICKET---` → save as `$WORK_DIR/{identifier}/{identifier}-JIRA_TICKET.md`
-3. Save the complete raw business-analyst response → `$WORK_DIR/{identifier}/context/business-analyst.md`
+1. Content between `---BEGIN SPEC---` and `---END SPEC---` → save as `$WORK_DIR/{identifier}/spec.md`
+2. Content between `---BEGIN PLAN---` and `---END PLAN---` → save as `$WORK_DIR/{identifier}/plan.md`
+3. Content between `---BEGIN TASKS---` and `---END TASKS---` → save as `$WORK_DIR/{identifier}/tasks.md`
+4. Content between `---BEGIN JIRA_TICKET---` and `---END JIRA_TICKET---` → save as `$WORK_DIR/{identifier}/{identifier}-JIRA_TICKET.md`
+5. Save the complete raw business-analyst response → `$WORK_DIR/{identifier}/context/business-analyst.md`
 
-**If markers are missing**: The business-analyst did not follow the output format. Save the entire response as `{identifier}-TECHNICAL_REQUIREMENTS.md` and log a warning that JIRA ticket was not separately extracted.
+**If markers are missing**: The business-analyst did not follow the output contract. Save the entire response as `$WORK_DIR/{identifier}/context/business-analyst.md`, log an ERROR naming which marker(s) were missing, and re-invoke the business-analyst with the prompt appended: "Your previous output was missing block(s): {LIST}. Re-emit using the exact four-block format." Do not proceed past Stage 4.2 without all four files present.
 
 **VERIFICATION** (required):
 ```bash
-# Verify technical requirements doc was saved
-if [[ ! -f "$WORK_DIR/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md" ]]; then
-  echo "ERROR: Technical requirements document not saved"
-  exit 1
-fi
+missing=0
+for f in spec.md plan.md tasks.md "{identifier}-JIRA_TICKET.md"; do
+  if [[ ! -f "$WORK_DIR/{identifier}/$f" ]]; then
+    echo "ERROR: $f not saved"
+    missing=1
+  fi
+done
+[[ $missing -eq 1 ]] && exit 1
 
-# Verify JIRA ticket doc was saved
-if [[ ! -f "$WORK_DIR/{identifier}/{identifier}-JIRA_TICKET.md" ]]; then
-  echo "WARNING: JIRA ticket not separately extracted - check TECHNICAL_REQUIREMENTS.md"
-fi
-
-# Verify business-analyst output was saved
+# Verify business-analyst raw output was saved
 if [[ ! -f "$WORK_DIR/{identifier}/context/business-analyst.md" ]]; then
   echo "WARNING: Business analyst raw output not saved to context/"
 fi
 
-echo "✓ All synthesis outputs saved"
+# Lightweight triad coherence checks
+if ! grep -qE '^##? *Acceptance Criteria' "$WORK_DIR/{identifier}/spec.md"; then
+  echo "WARNING: spec.md has no Acceptance Criteria section"
+fi
+if ! grep -qE 'AC-[0-9A-Z]' "$WORK_DIR/{identifier}/tasks.md"; then
+  echo "WARNING: tasks.md does not cite any AC IDs — tasks must link back to spec"
+fi
+
+echo "✓ Triad (spec/plan/tasks) + JIRA view saved"
 ```
 
 #### 4.5 Resolve Flagged Issues (Conditional)
@@ -964,26 +1081,27 @@ Overwrite the original synthesis outputs with the updated versions:
 # Overwrite business-analyst raw output
 # Write to: $WORK_DIR/{identifier}/context/business-analyst.md
 
-# Overwrite the two requirement documents
-# Write to: $WORK_DIR/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md
+# Overwrite the four triad documents
+# Write to: $WORK_DIR/{identifier}/spec.md
+# Write to: $WORK_DIR/{identifier}/plan.md
+# Write to: $WORK_DIR/{identifier}/tasks.md
 # Write to: $WORK_DIR/{identifier}/{identifier}-JIRA_TICKET.md
 ```
 
-Extract using the same `---BEGIN/END---` marker logic as Stage 4.2.
+Extract using the same four-block `---BEGIN/END---` marker logic as Stage 4.2 (SPEC, PLAN, TASKS, JIRA_TICKET).
 
-**If markers are missing**: Save the entire response as `{identifier}-TECHNICAL_REQUIREMENTS.md` and log a warning.
+**If markers are missing**: Use the same recovery as Stage 4.2 — re-invoke business-analyst with an explicit list of missing blocks.
 
 **VERIFICATION** (required):
 ```bash
-# Verify re-synthesized documents were saved
-if [[ ! -f "$WORK_DIR/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md" ]]; then
-  echo "ERROR: Re-synthesized technical requirements not saved"
-  exit 1
-fi
-
-if [[ ! -f "$WORK_DIR/{identifier}/{identifier}-JIRA_TICKET.md" ]]; then
-  echo "WARNING: Re-synthesized JIRA ticket not separately extracted"
-fi
+missing=0
+for f in spec.md plan.md tasks.md "{identifier}-JIRA_TICKET.md"; do
+  if [[ ! -f "$WORK_DIR/{identifier}/$f" ]]; then
+    echo "ERROR: Re-synthesized $f not saved"
+    missing=1
+  fi
+done
+[[ $missing -eq 1 ]] && exit 1
 
 echo "✓ Re-synthesis outputs saved (overwriting initial synthesis)"
 ```
@@ -1005,26 +1123,29 @@ echo "✓ Re-synthesis outputs saved (overwriting initial synthesis)"
 
 **Goal**: For requirements that touch shared/core services, introduce new injection patterns, or modify global config scope — validate the business-analyst's conflict resolutions before declaring requirements complete.
 
-**When to run**: Check the TECHNICAL_REQUIREMENTS output. If any of these conditions are true, run this step:
-- Requirements modify shared/core services used by multiple features
-- Requirements introduce new dependency injection or service wiring patterns
-- Requirements change global configuration scope or environment variables
+**When to run**: Check `plan.md`. If any of these conditions are true, run this step:
+- Plan modifies shared/core services used by multiple features
+- Plan introduces new dependency injection or service wiring patterns
+- Plan changes global configuration scope or environment variables
 
 **If none of the conditions are met**: Skip this stage.
 
 **Use Task tool with `subagent_type: "architect"`:**
 
 ```
-Prompt: Validate the architectural decisions in these requirements.
+Prompt: Validate the architectural decisions in this technical plan.
 
-Requirements: $WORK_DIR/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md
+Plan: $WORK_DIR/{identifier}/plan.md
+(Reference only — do NOT propose changes to) Spec: $WORK_DIR/{identifier}/spec.md
 
 Focus on:
 1. Are conflict resolutions between agents architecturally sound?
 2. Do proposed patterns align with existing codebase architecture?
 3. Are there hidden coupling or scaling concerns?
+4. Does the plan respect the architecture constraints it claims to follow?
 
-If you find issues, recommend specific corrections.
+Do NOT challenge WHAT/WHY — that belongs to spec.md and is out of scope here.
+If you find HOW-level issues, recommend specific corrections to plan.md.
 Return: Validation result (APPROVED / CONCERNS) with details.
 ```
 
@@ -1039,19 +1160,25 @@ Save architect output to `$WORK_DIR/{identifier}/context/architect-validation.md
 **Use Task tool with `subagent_type: "quality-guard"`:**
 
 ```
-Prompt: Review these synthesized requirements as a skeptic challenger.
+Prompt: Review the Spec-Driven triad as a skeptic challenger.
 
-Requirements document: $WORK_DIR/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md
-JIRA ticket: $WORK_DIR/{identifier}/{identifier}-JIRA_TICKET.md
-Agent context files: $WORK_DIR/{identifier}/context/
+Spec (WHAT/WHY):      $WORK_DIR/{identifier}/spec.md
+Plan (HOW):           $WORK_DIR/{identifier}/plan.md
+Tasks (EXECUTE):      $WORK_DIR/{identifier}/tasks.md
+JIRA view:            $WORK_DIR/{identifier}/{identifier}-JIRA_TICKET.md
+Agent context files:  $WORK_DIR/{identifier}/context/
 
-Your job:
-1. Read the TECHNICAL_REQUIREMENTS and JIRA_TICKET documents
-2. Cross-reference claims against the actual codebase — verify file paths, patterns, and assumptions
-3. Check for: unstated assumptions, missing edge cases, vague acceptance criteria, scope gaps, contradictions
-4. Produce a Quality Review Gates report
+Report findings per layer — do NOT conflate layers:
+
+1. **Spec gates** — unstated assumptions, vague/unfalsifiable acceptance criteria, missing edge cases, scope gaps, HOW-leakage (any file path, class name, or library choice in spec.md is a violation).
+2. **Plan gates** — unverified mechanisms, file paths that don't exist, patterns that conflict with the codebase, hidden coupling, missing risk mitigations, claims not backed by an agent context file.
+3. **Tasks gates** — every AC in spec.md must be covered by at least one task; every task must cite AC IDs; dependency ordering sound; no task silently introduces scope not in spec.
+4. **Cross-layer gates** — JIRA view accurately reflects spec; plan covers every AC; decision log justifies HOW choices against spec intent.
+
+Cross-reference claims against the actual codebase — verify file paths, patterns, and assumptions.
 
 Focus on Level 1 (Requirements Validation). Do NOT review implementation code — there is none yet.
+Return a Quality Review Gates report grouped by the four categories above.
 ```
 
 **Process the skeptic's verdict:**
@@ -1063,7 +1190,7 @@ Focus on Level 1 (Requirements Validation). Do NOT review implementation code �
   - **Abort**: Stop and revisit requirements
 - **REJECTED**: Present fundamental issues to the user. Requirements need rework — return to appropriate stage.
 
-**Max iterations**: 2. If skeptic raises gates, agents address them, and skeptic still has concerns after a second pass, document remaining concerns as "OPEN QUESTIONS" in the TECHNICAL_REQUIREMENTS and proceed.
+**Max iterations**: 2. If skeptic raises gates, agents address them, and skeptic still has concerns after a second pass, document remaining concerns in the `## Open Questions` section of `spec.md` (for WHAT/WHY gaps) or the `## Risks & Mitigations` section of `plan.md` (for HOW concerns), then proceed.
 
 Save skeptic output to `$WORK_DIR/{identifier}/context/quality-guard.md`.
 
@@ -1112,7 +1239,9 @@ Update `state.json`:
   },
 
   "outputs": {
-    "technical_requirements": "{identifier}-TECHNICAL_REQUIREMENTS.md",
+    "spec": "spec.md",
+    "plan": "plan.md",
+    "tasks": "tasks.md",
     "jira_ticket": "{identifier}-JIRA_TICKET.md"
   }
 }
@@ -1154,9 +1283,11 @@ Mode: {EXEC_MODE} {if team: "(cross-pollination enabled)"}
 
 Work Directory: $WORK_DIR/{identifier}/
 
-Output Files:
-  - {identifier}-TECHNICAL_REQUIREMENTS.md
-  - {identifier}-JIRA_TICKET.md
+Output Files (Spec-Driven triad):
+  - spec.md                          ← WHAT / WHY (user stories + Given/When/Then AC)
+  - plan.md                          ← HOW (technical approach, files, data, risks)
+  - tasks.md                         ← EXECUTE (dependency-ordered, AC-linked)
+  - {identifier}-JIRA_TICKET.md      ← derived view for ticket paste
 
 Agents Used:
   ✓ context-builder (discovery) {if team: "[teammate]"}

@@ -179,10 +179,16 @@ Tasks:
 1. Sync requirements repository
 2. Read all state and context files
 3. Extract metadata from git commits and code changes
-4. Generate human-readable requirements.md
-5. Copy all files to requirements repository
-6. Update searchable index.json
-7. Commit and push to repository
+4. Copy the Spec-Driven triad verbatim into the archive:
+   - $WORK_DIR/${identifier}/spec.md             → archive/${identifier}/spec.md
+   - $WORK_DIR/${identifier}/plan.md             → archive/${identifier}/plan.md
+   - $WORK_DIR/${identifier}/tasks.md            → archive/${identifier}/tasks.md
+   - $WORK_DIR/${identifier}/${identifier}-JIRA_TICKET.md → archive/${identifier}/${identifier}-JIRA_TICKET.md
+   If the triad is absent (legacy work from pre-SDD runs), fall back to copying ${identifier}-TECHNICAL_REQUIREMENTS.md.
+5. Generate a concatenated human-readable requirements.md in the archive by joining spec.md + plan.md + tasks.md under clearly marked section headers (## Spec / ## Plan / ## Tasks). This preserves KB search compatibility without duplicating authoring.
+6. Copy all files to requirements repository (including context/ agent outputs)
+7. Update searchable index.json — extract tags from spec.md user stories and plan.md sections
+8. Commit and push to repository
 
 Provide detailed success report with archive location.
 ")
@@ -201,7 +207,11 @@ Title: ${feature_title}
 
 Archived to: ${repo_path}/${identifier}/
 - metadata.json (searchable)
-- requirements.md (human-readable)
+- spec.md (WHAT / WHY — user stories + AC)
+- plan.md (HOW — technical approach, risks, decisions)
+- tasks.md (EXECUTE — AC-linked task list)
+- ${identifier}-JIRA_TICKET.md (derived paste-ready view)
+- requirements.md (concatenated view for KB search compatibility)
 - state.json (session state)
 - context/ (all agent outputs)
 

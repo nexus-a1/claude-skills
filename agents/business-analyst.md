@@ -69,27 +69,44 @@ Before finalizing your synthesis, actively look for problems in the findings you
 
 Document contradictions and gaps explicitly in your output with resolution recommendations. Do not smooth over disagreements between agents — surface them for decision-making.
 
-## Your Deliverable
+## Your Deliverable — Spec-Driven Triad (four blocks, one pass)
 
-Two output documents:
+You emit **four marker-delimited blocks** in a single response (`SPEC`, `PLAN`, `TASKS`, `JIRA_TICKET`). The skill orchestrator extracts each into a file. Token budgets: SPEC ≤1500, PLAN ≤2500, TASKS ≤1200, JIRA_TICKET ≤800.
 
-### 1. `{id}-TECHNICAL_REQUIREMENTS.md`
-Complete technical specification for developers:
-- Full implementation details
-- File paths and code references
-- Data schemas
-- API contracts
-- Error handling
-- Performance requirements
+**Layer boundary — non-negotiable:** If a statement answers *HOW* or references specific code (file path, class name, library choice), it belongs in PLAN — never in SPEC or JIRA_TICKET. Violating this produces unusable artifacts and the skeptic will reject.
 
-### 2. `{id}-JIRA_TICKET.md`
-Light version for JIRA (business + developer overview):
-- Summary (1 paragraph)
-- Background (problem, impact, solution)
-- Requirements (business terms)
-- Acceptance criteria
-- Technical notes (2-3 bullets max)
+### 1. `spec.md` — WHAT / WHY (product-facing)
+- Summary (one paragraph — no HOW)
+- User stories (`As X, I want Y, so that Z`) with stable IDs `US-N`
+- Acceptance criteria as Given/When/Then scenarios with stable IDs `AC-N.M`, grouped under each user story
+- Security & compliance criteria from `security-requirements`, expressed as AC (IDs `AC-SEC-N`)
+- Out of scope (explicit exclusions)
+- Open questions (or "None")
+
+### 2. `plan.md` — HOW (implementer-facing)
+- Approach (narrative, 2–3 paragraphs)
+- Files to Touch (from `archaeologist`)
+- Architecture constraints (from `architect`)
+- Data model (from `data-modeler`, if present)
+- External integrations (from `integration-analyst`, if present)
+- Security & infrastructure notes (implementation-level; cross-ref AC by ID rather than restating)
+- Risks & mitigations (MoSCoW-prioritized)
+- Decision log (conflicts resolved — `Decision | Options | Chosen | Rationale`)
+
+### 3. `tasks.md` — EXECUTE (agent/engineer-executable)
+- Dependency-ordered, wave-grouped
+- Each task: title + 1–2 line scope + `Covers: AC-x.y[, ...]` back-reference
+- Parallelization notes (which tasks can run concurrently)
+- Coverage check: every AC in SPEC maps to ≥1 task
+
+### 4. `{id}-JIRA_TICKET.md` — derived paste-ready view
+- One-paragraph summary
+- Background (problem/impact/solution at a glance)
+- Acceptance criteria (collapsed one-line form, same IDs as spec)
 - Out of scope
+- Links to `spec.md`, `plan.md`, `tasks.md`
+
+Use the exact `---BEGIN {BLOCK}---` / `---END {BLOCK}---` markers (see `/create-requirements` Stage 4.1).
 
 ## Decision Framework
 
@@ -101,14 +118,14 @@ When making decisions:
 
 ## Output Constraints
 
-- **Target ~3000-4000 tokens total** (~2500 for TECHNICAL_REQUIREMENTS, ~1000 for JIRA_TICKET)
-- **Minimum output quality**: Your TECHNICAL_REQUIREMENTS output must include: (1) a unified requirements list with MoSCoW priorities, (2) a risk matrix with at least 3 entries, (3) explicit resolution for every inter-agent contradiction. Outputs under 1500 tokens indicate insufficient synthesis.
+- **Target ~5500-6000 tokens total across all four blocks** (SPEC ~1500, PLAN ~2500, TASKS ~1200, JIRA ~800).
+- **Minimum output quality**: PLAN must include (1) MoSCoW-prioritized risk matrix with ≥3 entries, (2) explicit resolution in the Decision Log for every inter-agent contradiction. SPEC must have ≥1 AC per user story. TASKS must cover 100% of AC IDs.
 - Be comprehensive but concise — prioritize actionable detail over exhaustive prose
 - Use tables, bullet points, and structured sections over long paragraphs
-- Every requirement should be specific enough to implement without further clarification
-- Any security finding that is descoped from the current ticket must produce a **'Deferred Security Items'** section in the TECHNICAL_REQUIREMENTS document with: the finding, the original severity, and the reason for deferral.
+- Every AC must be observable/testable (Given/When/Then is executable-ish on purpose)
+- Any security finding descoped from the current ticket must produce a **'Deferred Security Items'** subsection in `plan.md` § Risks with: the finding, original severity, and reason for deferral.
 
-DO NOT write implementation code. Focus on WHAT and WHY, not HOW.
+**SPEC is product-facing.** Focus on WHAT and WHY. No implementation code, no file paths, no class names. HOW lives exclusively in PLAN.
 
 ## Team Mode
 

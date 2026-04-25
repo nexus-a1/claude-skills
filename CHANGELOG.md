@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.8.0] - 2026-04-25
+
+## What's Changed
+
+### Features
+- Adopt Spec-Driven Development for /create-requirements and /epic (#205) — Restructured requirements output into canonical spec.md, plan.md, and tasks.md for clearer audience separation (product/technical/execution), improved downstream consumption, and better artifact traceability in the knowledge base.
+
+### Bug Fixes
+- Surface CWD in create-release-branch preflight (#204) — Improved error messaging to show working directory context when validation fails.
+
+**Full Changelog**: https://github.com/nexus-a1/claude-skills/compare/v1.7.0...v1.8.0
+
 ## [1.7.0] - 2026-04-24
 
 ## What's Changed

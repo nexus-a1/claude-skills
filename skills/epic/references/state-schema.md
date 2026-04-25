@@ -27,7 +27,7 @@ JSON schema for `$WORK_DIR/{epic-slug}/state.json`.
       "status": "pending",
       "blocked_by": [],
       "blocks": ["{epic-slug}-002", "{epic-slug}-004"],
-      "requirements_file": "{epic-slug}-001/{epic-slug}-001-TECHNICAL_REQUIREMENTS.md",
+      "spec_file": "{epic-slug}-001/spec.md",
       "implementation_status": null
     },
     {
@@ -38,7 +38,7 @@ JSON schema for `$WORK_DIR/{epic-slug}/state.json`.
       "status": "pending",
       "blocked_by": ["{epic-slug}-001"],
       "blocks": ["{epic-slug}-005"],
-      "requirements_file": "{epic-slug}-002/{epic-slug}-002-TECHNICAL_REQUIREMENTS.md",
+      "spec_file": "{epic-slug}-002/spec.md",
       "implementation_status": null
     }
   ],

@@ -5,7 +5,7 @@ model: claude-haiku-4-5
 userInvocable: true
 description: Create a release/vX.Y.Z branch from origin/master (default), any branch, or a specific tag using tag@vX.Y.Z syntax
 argument-hint: <version> [source]
-allowed-tools: "Bash(git fetch:*), Bash(git branch:*), Bash(git rev-parse:*), Bash(git tag:*), Bash(git log:*), Bash(git checkout:*), Bash(git push:*), Bash(bash:*), Task, AskUserQuestion"
+allowed-tools: "Bash(pwd:*), Bash(git fetch:*), Bash(git branch:*), Bash(git rev-parse:*), Bash(git tag:*), Bash(git log:*), Bash(git checkout:*), Bash(git push:*), Bash(bash:*), Task, AskUserQuestion"
 ---
 
 # Create Release Branch Command
@@ -13,6 +13,8 @@ allowed-tools: "Bash(git fetch:*), Bash(git branch:*), Bash(git rev-parse:*), Ba
 > Workflow: **`/create-release-branch`** → `/create-release` → `/merge-release` → `/release`
 
 ## Context
+
+Working directory: !`pwd`
 
 Repository: !`git rev-parse --show-toplevel 2>/dev/null || echo "(not in a git repository)"`
 
@@ -36,27 +38,37 @@ This command creates a release branch (`release/vX.Y.Z`) from a given source. Th
 
 ### 0. Pre-flight: Verify Git Repository
 
-Before doing anything else, verify the current directory is inside a git working tree:
+Before doing anything else, verify the current directory is inside a git working tree. Use the same CWD shown in the Context block above:
 
 ```bash
 git rev-parse --is-inside-work-tree 2>/dev/null
 ```
 
-**If this returns non-zero or empty** (CWD is not a git repository — e.g., a monorepo root that only contains service repos as subdirectories), stop immediately with:
+**If this returns non-zero or empty** (CWD is not a git repository — e.g., a monorepo root that only contains service repos as subdirectories), stop immediately with a message that includes the actual CWD so the user can see what directory the skill is inspecting:
 
 ```
 ✗ Not in a git repository
 
+Working directory: $(pwd)
+
 /create-release-branch must be run from inside a git repository.
+The directory above is what the skill inspected, and it is not a git
+working tree.
 
-If you're in a monorepo root with service repos as subdirectories,
-cd into a specific service repo first:
+If that directory is a monorepo root containing service repos as
+subdirectories, Claude Code must be launched from inside the specific
+service directory — the skill's context is evaluated against the
+session's working directory, and `cd` within an active session may not
+update it for subsequent skill invocations.
 
-    cd <service-name>
-    /create-release-branch v1.2.0
+To fix:
+  1. Exit this Claude Code session
+  2. cd into the specific service repository you want to release
+  3. Launch Claude Code from there
+  4. Re-run: /create-release-branch <version>
 
-To create release branches across multiple services, run the skill
-individually in each service directory.
+To create release branches across multiple services, launch Claude Code
+individually from within each service directory.
 ```
 
 Do NOT proceed to any other step.

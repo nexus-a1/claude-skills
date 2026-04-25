@@ -25,10 +25,17 @@ requirements-repo/
 ├── index.json                   # Searchable index (maintained by archivist)
 ├── templates/                   # Templates for manual archival
 │   ├── metadata.template.json
-│   └── requirements.template.md
-├── PROJECT-123/                 # Individual requirement
+│   ├── spec.template.md         # WHAT/WHY template (Spec-Driven)
+│   ├── plan.template.md         # HOW template (Spec-Driven)
+│   ├── tasks.template.md        # EXECUTE template (Spec-Driven)
+│   └── requirements.template.md # Concatenated view (legacy/compatibility)
+├── PROJECT-123/                 # Individual requirement (Spec-Driven triad)
 │   ├── metadata.json            # Searchable metadata
-│   ├── requirements.md          # Human-readable summary
+│   ├── spec.md                  # WHAT / WHY — user stories + Given/When/Then AC
+│   ├── plan.md                  # HOW — technical approach, files, risks, decisions
+│   ├── tasks.md                 # EXECUTE — dependency-ordered, AC-linked
+│   ├── PROJECT-123-JIRA_TICKET.md  # Derived paste-ready view
+│   ├── requirements.md          # Concatenated view (spec+plan+tasks) for KB search compatibility
 │   ├── requirements-state.json  # Original workflow state
 │   └── context/                 # Agent outputs
 │       ├── discovery.json

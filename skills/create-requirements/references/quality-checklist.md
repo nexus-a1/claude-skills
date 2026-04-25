@@ -22,14 +22,23 @@
 - [ ] [TEAM] Cross-pollination messages sent as agents complete (if team mode)
 - [ ] Findings saved to context/ (discovery.json validated as JSON, others as .md)
 
-## Stage 4: Synthesis
+## Stage 4: Synthesis (Spec-Driven Triad)
 - [ ] Business-analyst reads context files (not inlined in prompt)
 - [ ] Conflicts resolved
-- [ ] Requirements prioritized (MoSCoW)
-- [ ] Risks identified
-- [ ] {identifier}-TECHNICAL_REQUIREMENTS.md saved
-- [ ] {identifier}-JIRA_TICKET.md saved
-- [ ] context/business-analyst.md saved
+- [ ] Requirements prioritized (MoSCoW) in `plan.md`
+- [ ] Risks identified in `plan.md` § Risks & Mitigations
+- [ ] `spec.md` saved — contains user stories + Given/When/Then AC with stable IDs
+- [ ] `plan.md` saved — contains Approach, Files to Touch, Data Model (if any), Risks, Decision Log
+- [ ] `tasks.md` saved — dependency-ordered, every task cites AC IDs
+- [ ] `{identifier}-JIRA_TICKET.md` saved — derived view of spec
+- [ ] `context/business-analyst.md` saved (raw pre-extraction output)
+
+### Triad coherence (MUST pass)
+- [ ] **No HOW-leakage in spec** — `spec.md` contains no file paths, class names, or library choices (grep-check)
+- [ ] **AC coverage** — every AC ID in `spec.md` appears at least once in `tasks.md`
+- [ ] **Task back-reference** — every task in `tasks.md` has a `Covers:` line citing one or more AC IDs
+- [ ] **JIRA fidelity** — `{identifier}-JIRA_TICKET.md` does not contradict `spec.md` and adds no new AC not in spec
+- [ ] **Plan grounding** — every HOW decision in `plan.md` traces to an agent context file or the decision log
 
 ## Stage 4.5-4.6: Feedback Loop (Conditional)
 - [ ] Business-analyst output checked for flagged contradictions, gaps, assumptions

@@ -368,23 +368,114 @@ Detection logic:
 
 #### 1.2 Load Requirements
 
-**From work directory:**
-```
-Load context from $WORK_DIR/{identifier}/context/:
-- discovery.json (from context-builder — JSON)
-- archaeologist.md
-- data-modeler.md (if exists)
-- etc.
+**Detect input shape first:**
 
-Synthesize into requirements summary.
+```bash
+# Standalone ticket from /create-requirements (full triad)
+TRIAD_FULL=false
+[ -f "$WORK_DIR/{identifier}/spec.md" ] && [ -f "$WORK_DIR/{identifier}/plan.md" ] && [ -f "$WORK_DIR/{identifier}/tasks.md" ] && TRIAD_FULL=true
+
+# Epic-ticket from /epic (spec-only, parent EPIC_PLAN.md provides shared HOW)
+EPIC_TICKET=false
+PARENT_DIR="$(dirname "$WORK_DIR/{identifier}")"
+if [ -f "$WORK_DIR/{identifier}/spec.md" ] \
+   && [ ! -f "$WORK_DIR/{identifier}/plan.md" ] \
+   && [ -f "$PARENT_DIR/EPIC_PLAN.md" ]; then
+  EPIC_TICKET=true
+fi
+
+# Legacy single-doc format
+LEGACY=false
+[ -f "$WORK_DIR/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md" ] && [ "$TRIAD_FULL" = false ] && [ "$EPIC_TICKET" = false ] && LEGACY=true
+
+# Guard: partial triad (e.g. crashed mid-Stage-4.2) — none of the three cases matches
+if [ "$TRIAD_FULL" = false ] && [ "$EPIC_TICKET" = false ] && [ "$LEGACY" = false ]; then
+  echo "ERROR: No complete input found for {identifier}."
+  echo "  Expected one of:"
+  echo "    A) Full triad: spec.md + plan.md + tasks.md"
+  echo "    B) Epic ticket: spec.md + parent EPIC_PLAN.md"
+  echo "    C) Legacy: {identifier}-TECHNICAL_REQUIREMENTS.md"
+  echo "  Found files in $WORK_DIR/{identifier}/:"
+  ls "$WORK_DIR/{identifier}/" 2>/dev/null || echo "    (directory does not exist)"
+  echo "If a previous /create-requirements run crashed mid-way, re-run it to regenerate the missing files."
+  exit 1
+fi
 ```
+
+**Case A — Full triad (from `/create-requirements`):**
+```
+Load:
+- $WORK_DIR/{identifier}/spec.md    ← WHAT/WHY (user stories, Given/When/Then AC with stable IDs)
+- $WORK_DIR/{identifier}/plan.md    ← HOW (files to touch, constraints, data model, risks, decision log)
+- $WORK_DIR/{identifier}/tasks.md   ← dependency-ordered task list with AC back-references
+
+Plus supporting agent outputs from $WORK_DIR/{identifier}/context/.
+
+Populate pipeline variables:
+- {requirements_summary}  = spec.md § Summary + user stories
+- {requirements_list}     = acceptance criteria IDs + Given/When/Then from spec.md
+- {technical_context}     = plan.md (do NOT re-derive)
+- {task_list}             = tasks.md (feed to Plan agent as starting decomposition; refine, don't re-derive)
+```
+
+**Case B — Epic-ticket (from `/epic`): bootstrap plan.md + tasks.md before Phase 3.**
+
+The ticket has `spec.md` only; the parent epic provides shared technical context in `EPIC_PLAN.md`. `/implement` must materialize the ticket's `plan.md` and `tasks.md` before Phase 3.
+
+```
+1. Read:
+   - $WORK_DIR/{identifier}/spec.md           (ticket spec — WHAT/WHY for this ticket)
+   - $PARENT_DIR/EPIC_PLAN.md                 (shared epic HOW context)
+   - $WORK_DIR/{identifier}/context/*.md      (any context-builder output from epic Phase 5)
+
+2. Use Task tool with subagent_type: "Plan":
+   Prompt: |
+     Derive a per-ticket Spec-Driven plan.md and tasks.md from this epic ticket's spec
+     and the parent epic's shared technical plan.
+
+     Ticket spec:    $WORK_DIR/{identifier}/spec.md
+     Parent epic:    $PARENT_DIR/EPIC_PLAN.md
+     Ticket context: $WORK_DIR/{identifier}/context/
+
+     Produce TWO marker-delimited blocks (same contract as /create-requirements Stage 4.1):
+
+     ---BEGIN PLAN---
+     # Technical Plan — {ticket title}
+     ## Approach           (1–2 paragraphs, scoped to this ticket; reference epic plan for shared decisions)
+     ## Files to Touch
+     ## Architecture Constraints   (inherit from EPIC_PLAN.md, restate only what applies to this ticket)
+     ## Data Model        (omit if N/A)
+     ## External Integrations  (omit if N/A)
+     ## Security & Infrastructure Notes  (cross-ref AC IDs from spec.md, do NOT restate AC)
+     ## Risks & Mitigations
+     ## Decision Log      (decisions specific to this ticket; defer to EPIC_PLAN.md for cross-ticket calls)
+     ---END PLAN---
+
+     ---BEGIN TASKS---
+     # Implementation Tasks — {ticket title}
+     ## Wave 1 ... (dependency-ordered; every task cites AC IDs from this ticket's spec.md)
+     ## Coverage Check (every AC-{ticket-number}.{n} maps to ≥1 task)
+     ---END TASKS---
+
+     Layer rules (strict): no HOW in spec; no AC restatement in plan; every task cites AC IDs.
+
+3. Extract blocks → write $WORK_DIR/{identifier}/plan.md and $WORK_DIR/{identifier}/tasks.md.
+
+4. Verify both files exist and tasks.md cites at least one AC ID. If extraction fails, re-invoke
+   Plan agent with the missing-block list (same recovery as /create-requirements Stage 4.2).
+
+5. Continue to populate pipeline variables as in Case A.
+```
+
+This is a one-time bootstrap per epic ticket — `state.json` records `bootstrap_from_epic: true` so resumes don't re-run it.
+
+**Case C — Legacy single-doc (`{identifier}-TECHNICAL_REQUIREMENTS.md`):** Load as `{technical_context}` and derive `{requirements_list}` + `{task_list}` manually via the Plan agent (no triad expected).
 
 **From file:**
 ```
 Read the requirements file and extract:
 - Summary
-- Requirements list
-- Acceptance criteria
+- Requirements list / acceptance criteria
 - Technical context
 ```
 
@@ -934,7 +1025,10 @@ After all three QA agents complete, run the quality-guard to challenge their com
 Prompt: Review the QA findings from three agents and challenge their work.
 
 Implementation diff: {git_diff}
-Requirements: $WORK_DIR/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md
+Spec (acceptance criteria — verify implementation satisfies each AC ID): $WORK_DIR/{identifier}/spec.md
+Plan (intended approach): $WORK_DIR/{identifier}/plan.md
+Tasks (expected coverage): $WORK_DIR/{identifier}/tasks.md
+(Fallback: $WORK_DIR/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md if triad absent.)
 
 QA agent outputs (read these files):
 - $WORK_DIR/{identifier}/context/qa-test-writer.md

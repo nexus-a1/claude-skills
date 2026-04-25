@@ -32,33 +32,34 @@ Tasks:
 5. Re-prioritize requirements (MoSCoW) if the re-analysis changed priorities
 6. Update risk assessment based on new findings
 
-Produce TWO documents, separated by the exact markers shown below.
+Produce FOUR documents, separated by the exact markers shown below. Use the **Spec-Driven triad** contract — the same four-block format as the initial synthesis (see the Stage 4.1 prompt in `SKILL.md`):
+
+- `SPEC`   — WHAT / WHY (user stories, Given/When/Then acceptance criteria, security AC, out of scope, open questions). No file paths, no class names.
+- `PLAN`   — HOW (approach, files to touch, architecture constraints, data model, integrations, risks, decision log).
+- `TASKS`  — EXECUTE (dependency-ordered list; every task cites AC IDs from SPEC).
+- `JIRA_TICKET` — derived paste-ready view of SPEC.
+
+**Token budgets**: SPEC ≤1500, PLAN ≤2500, TASKS ≤1200, JIRA_TICKET ≤800.
 
 Use this EXACT format:
 
----BEGIN TECHNICAL_REQUIREMENTS---
-(Complete technical specification for developers — updated with re-analysis findings)
-- Full implementation details
-- File paths and code references
-- Data schemas
-- API contracts
-- Error handling
-- Performance requirements
-- If any issues required human decision, include a "Decisions Required" section
----END TECHNICAL_REQUIREMENTS---
+---BEGIN SPEC---
+(User stories + Given/When/Then AC — incorporate re-analysis findings. If any issue still requires human decision, list it under `## Open Questions`.)
+---END SPEC---
+
+---BEGIN PLAN---
+(Updated technical approach. If any contradiction remains unresolved after re-analysis, add a `## Decisions Required` section with competing options and trade-offs.)
+---END PLAN---
+
+---BEGIN TASKS---
+(Re-derived task list. Ensure every AC in SPEC is covered; update dependencies if re-analysis changed the shape of the work.)
+---END TASKS---
 
 ---BEGIN JIRA_TICKET---
-(Light version for JIRA - business + developer overview — updated)
-- Summary (1 paragraph)
-- Background (problem, impact, solution)
-- Requirements (business terms)
-- Acceptance criteria
-- Technical notes (2-3 bullets max)
-- Out of scope
-- If any issues required human decision, note them in Technical notes
+(Paste-ready view of SPEC. If any issue requires human decision, note it briefly under a `**Decisions Required**` subsection.)
 ---END JIRA_TICKET---
 
-IMPORTANT: Use the exact ---BEGIN/END--- markers. They are used to extract each document into separate files.
+IMPORTANT: Use the exact ---BEGIN/END--- markers. They are used to extract each document into separate files. Do NOT include HOW details in SPEC or JIRA_TICKET.
 ```
 
 **Team mode extra**: Add to prompt: `"Mark your task as completed when done."`
