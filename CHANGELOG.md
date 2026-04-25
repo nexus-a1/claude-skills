@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.7.1] - 2026-04-25
+
+## What's Changed
+
+### Security
+- **report-issue skill hardening** — Added deterministic bash grep gate that hard-blocks `gh issue create` on high-confidence secret prefixes (AWS/GitHub/Slack/Stripe/Anthropic/OpenAI/Google). Strengthened LLM sensitivity check with explicit pattern catalog and fixed bypass paths (Additional Notes, issue title). Pre-marketplace validation.
+
+### Features
+- **create-requirements & epic: Spec-Driven Development** — Requirements now include structured success criteria, acceptance tests, and implementation spec inline. Epic decomposition auto-validates against spec.
+
+### Bug Fixes
+- Prevent pr-review crash in non-git CWD
+- Surface CWD in create-release-branch preflight
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.7.0...v1.7.1
+
 ## [1.8.0] - 2026-04-25
 
 ## What's Changed

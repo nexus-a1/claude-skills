@@ -5,7 +5,7 @@ category: analysis
 userInvocable: true
 description: Draft and submit a bug report or feature request to the nexus plugin repository, using current conversation context to auto-populate details.
 argument-hint: "[--feature-request]"
-allowed-tools: "Read, Bash(gh issue create:*), Bash(gh auth status:*), Bash(jq:*), Bash(mktemp:*), AskUserQuestion"
+allowed-tools: "Read, Bash(gh issue create:*), Bash(gh auth status:*), Bash(jq:*), Bash(mktemp:*), Bash(grep:*), Bash(sed:*), Bash(sort:*), Bash(rm:*), AskUserQuestion"
 ---
 
 # Report Issue
@@ -65,9 +65,17 @@ Using the current conversation context, extract the following. Be concise — ai
 
 Extract:
 - **What happened** — the error or unexpected behavior observed
-- **Error message** — exact error text if visible in the conversation (quote verbatim)
-- **Context** — which skill or agent was running, what the user was trying to do
+- **Error message** — exact error text if visible in the conversation (quote verbatim, but redact secrets — see field instructions below)
+- **Context** — which skill or agent was running, what the user was trying to do (general terms only, no internal hostnames or paths)
 - **Trigger** — what action or input caused it
+
+**Per-field constraints** (apply during extraction, before the Step 5 scan):
+
+- **Description**: One sentence summarizing the bug. No file paths, hostnames, tokens, or PII.
+- **Error**: Quote verbatim if available. If the error contains tokens, passwords, API keys, connection strings, email addresses, internal hostnames, or absolute file paths, replace those substrings with `[REDACTED]` *before* including the quote. Keep the structural shape of the error (e.g., `connection refused: [REDACTED]`).
+- **Context**: Describe what skill/agent was active and what the user was attempting in general terms. Do NOT include internal hostnames, service names, cluster names, or absolute file paths.
+- **Steps to Reproduce**: Describe steps abstractly. Do NOT include credentials, absolute paths, or hostnames in step descriptions.
+- **Environment**: Plugin version only — no OS, shell, CWD, git remote, or username.
 
 Compose the issue body using this template:
 
@@ -78,15 +86,15 @@ Compose the issue body using this template:
 
 ## Error
 
-{exact error message or observed behavior — quote verbatim if available, otherwise describe}
+{verbatim error with secrets redacted as [REDACTED]; if no error available, describe behavior}
 
 ## Context
 
-{what skill/agent was active, what the user was attempting to do}
+{skill/agent that was active, what the user was attempting — general terms only}
 
 ## Steps to Reproduce
 
-1. {step 1 derived from conversation context}
+1. {step 1, abstract — no paths/hosts/credentials}
 2. {step 2}
 3. {add more if clear from context, otherwise omit}
 
@@ -133,24 +141,51 @@ Generate a concise issue title:
 
 ## Step 5: Sensitivity Check
 
-Before showing the draft, scan it for potentially sensitive content:
+Before showing the draft, scan **the full body and the title** for sensitive content. This is a soft, LLM-driven first pass; a deterministic bash gate in Step 7 catches anything missed here.
 
-- Absolute paths containing personal directories (e.g., `/home/username/`, `/Users/username/myproject/`)
-- Strings that look like tokens, API keys, or secrets (long random alphanumeric strings assigned to a variable)
-- Internal hostnames or private URLs
-- Project-specific names that weren't already part of the error/context
+### Patterns to detect
 
-If any are found, flag them clearly:
+**Known prefixes (high-confidence — match by prefix anywhere in the text):**
+
+- `AKIA[0-9A-Z]{16}`, `ASIA[0-9A-Z]{16}` — AWS access key IDs
+- `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_` followed by alphanumerics — GitHub personal access tokens
+- `xox[baprs]-` followed by alphanumerics — Slack tokens
+- `-----BEGIN` (any header) — private keys, certificates, PEM blocks (redact the entire block through `-----END ...-----`)
+- `eyJ` followed by a long base64 string with two more `.`-separated segments — JWTs
+- `postgres://`, `mysql://`, `mongodb://`, `redis://` — database connection strings (especially if `user:password@` is embedded)
+- `AIza[0-9A-Za-z_-]{35}` — Google API keys
+- `sk_live_…`, `rk_live_…`, `pk_live_…` — Stripe live keys
+- `sk-ant-` followed by alphanumerics — Anthropic API keys
+- `sk-` followed by 32+ alphanumerics — OpenAI-style API keys
+- `Authorization: Bearer …` and `Authorization: Basic …` — auth header values (redact the value, keep the header name)
+
+**Structural patterns (match by shape):**
+
+- Absolute paths: `/home/[name]/…`, `/Users/[name]/…`, `C:\Users\…`, `\\[host]\[share]\…`, `/mnt/c/Users/…`, `/private/var/folders/…`
+- `.env`-style assignments where the key name suggests a secret — `PASSWORD=`, `SECRET=`, `TOKEN=`, `API_KEY=`, `PRIVATE_KEY=`, `DATABASE_URL=`, `DSN=`, `AUTH_TOKEN=` — redact the value regardless of length
+- Email addresses matching `[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}` — but keep GitHub `@username` mentions (shape: `@` + 1–39 alphanumerics/hyphens, no domain)
+- Internal hostnames or service names that weren't already part of the error/context (e.g., `db-prod-1.corp.internal`, `kafka-east-cluster`)
+
+### Action
+
+For each match, replace the matched substring with `[REDACTED]` in both the body and the title. Preserve the surrounding text so the issue remains intelligible.
+
+After redaction, surface a summary of what was redacted (by category, not by value):
 
 ```
-⚠️  Sensitivity warning — the draft contains potentially private content:
-  - Absolute path: /home/michal/code/myproject/ (consider omitting or generalizing)
-  - [other items]
+⚠️  Sensitivity scan — redacted content:
+  - 1× AWS access key ID
+  - 2× absolute paths
+  - 1× email address
 
-Review before confirming.
+The draft below shows redacted content. Review before confirming.
 ```
 
-Replace or redact flagged items in the draft (e.g., `/home/[user]/code/myproject/` or `[project-path]`).
+If nothing was redacted, say so:
+
+```
+✓ Sensitivity scan — no patterns matched.
+```
 
 ---
 
@@ -184,53 +219,111 @@ If the user selects "Yes", use AskUserQuestion again with an open prompt to coll
 
 If the user provides input, append it to the body under a `## Additional Notes` section.
 
+### Second sensitivity scan (after notes appended)
+
+If the user added a note, **re-run the full Step 5 sensitivity check against the complete updated body** (description + error + context + steps + environment + additional notes). User-supplied notes never reach `gh issue create` without being scanned. If new patterns are detected, redact them in place and surface a fresh summary:
+
+```
+⚠️  Second sensitivity scan (after Additional Notes) — redacted content:
+  - 1× GitHub PAT
+```
+
+If the user added no note, skip the second scan.
+
 ---
 
 ## Step 7: Confirm and Submit
 
-Use the AskUserQuestion tool to confirm:
+### Render exact final payload
+
+Show the user the **exact** title and body bytes that will be POSTed — not a paraphrase. This must reflect post-Step-5 (and post-Step-6 second-scan) content:
 
 ```
-header: "Confirm"
-question: "Submit this issue to nexus-a1/claude-skills?"
-options: ["Yes, submit", "No, cancel"]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Final payload (post-redaction)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Repo:  nexus-a1/claude-skills (PUBLIC — visible to anyone, indexed by search engines)
+Label: {bug | enhancement}
+
+Title: {final title}
+
+{final body}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### Confirmation
+
+Use the AskUserQuestion tool:
+
+```
+header:   "Confirm"
+question: "Submit this issue to nexus-a1/claude-skills (public GitHub repository — will be publicly visible and indexed by search engines)?"
+options:  ["Yes, submit to public repo", "No, cancel"]
 ```
 
 If **No**: stop and display `Issue cancelled. Draft was not submitted.`
 
-If **Yes**: write the body to a temp file and create the issue:
+### Deterministic pre-submit scan gate (hard block)
+
+If **Yes**: before invoking `gh issue create`, run a deterministic regex scan over the body and title. This is a non-LLM enforcement layer that catches secrets the Step 5 / Step 6 LLM scans may have missed. **A match here hard-blocks submission.**
 
 ```bash
 BODY_FILE=$(mktemp)
 ERROR_FILE=$(mktemp)
-cat > "$BODY_FILE" << 'ISSUE_BODY'
-{full issue body}
-ISSUE_BODY
+cat > "$BODY_FILE" << 'REPORT_ISSUE_BODY_EOF'
+{full issue body, post-redaction}
+REPORT_ISSUE_BODY_EOF
 
+ISSUE_TITLE='{final title, post-redaction}'
+
+SCAN_PATTERNS='AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|ghp_[A-Za-z0-9_]+|gho_[A-Za-z0-9_]+|ghu_[A-Za-z0-9_]+|ghs_[A-Za-z0-9_]+|ghr_[A-Za-z0-9_]+|xox[baprs]-[A-Za-z0-9-]+|-----BEGIN [A-Z ]+-----|sk_live_[A-Za-z0-9]+|rk_live_[A-Za-z0-9]+|sk-ant-[A-Za-z0-9-]+|AIza[0-9A-Za-z_-]{35}'
+
+if grep -qE "$SCAN_PATTERNS" "$BODY_FILE" || echo "$ISSUE_TITLE" | grep -qE "$SCAN_PATTERNS"; then
+  echo "⛔ Submission blocked — deterministic scan detected a high-confidence secret pattern in the draft." >&2
+  echo "Matched categories:" >&2
+  { grep -oE "$SCAN_PATTERNS" "$BODY_FILE"; echo "$ISSUE_TITLE" | grep -oE "$SCAN_PATTERNS"; } \
+    | sed -E 's/(AKIA|ASIA)[0-9A-Z]+/AWS access key/; s/ghp_[A-Za-z0-9_]+/GitHub PAT (ghp_)/; s/gho_[A-Za-z0-9_]+/GitHub PAT (gho_)/; s/ghu_[A-Za-z0-9_]+/GitHub PAT (ghu_)/; s/ghs_[A-Za-z0-9_]+/GitHub PAT (ghs_)/; s/ghr_[A-Za-z0-9_]+/GitHub PAT (ghr_)/; s/xox[baprs]-[A-Za-z0-9-]+/Slack token/; s/-----BEGIN.*-----/PEM key block/; s/sk_live_[A-Za-z0-9]+/Stripe live key/; s/rk_live_[A-Za-z0-9]+/Stripe restricted key/; s/sk-ant-[A-Za-z0-9-]+/Anthropic API key/; s/AIza[0-9A-Za-z_-]+/Google API key/' \
+    | sort -u | sed 's/^/  - /' >&2
+  echo "" >&2
+  echo "The LLM redaction in Steps 5/6 missed at least one secret. Edit the conversation to remove the secret values, then re-run /report-issue." >&2
+  rm -f "$BODY_FILE" "$ERROR_FILE"
+  false
+fi
+```
+
+If the gate hard-blocks, the skill stops here. Do not retry, do not call `gh issue create`. The user must remove the secret from conversation context (or paste a corrected note) and re-invoke.
+
+### Submission
+
+If the deterministic gate passes, create the issue:
+
+```bash
 gh issue create \
   --repo "nexus-a1/claude-skills" \
-  --title "{title}" \
+  --title "$ISSUE_TITLE" \
   --body-file "$BODY_FILE" \
   --label "{bug|enhancement}" 2>"$ERROR_FILE"
 
-if [ $? -ne 0 ]; then
+GH_RC=$?
+if [ $GH_RC -ne 0 ]; then
   if grep -qi "label" "$ERROR_FILE"; then
     # Label doesn't exist — retry without it
     gh issue create \
       --repo "nexus-a1/claude-skills" \
-      --title "{title}" \
+      --title "$ISSUE_TITLE" \
       --body-file "$BODY_FILE"
+    GH_RC=$?
   else
     # Different error — surface it
     cat "$ERROR_FILE" >&2
-    false
   fi
 fi
 
 rm -f "$BODY_FILE" "$ERROR_FILE"
+[ $GH_RC -eq 0 ] || false
 ```
 
-> Using `--body-file` avoids shell quoting issues with error messages, stack traces, and special characters in the body. Stderr is captured to a temp file so label-not-found errors trigger a no-label fallback, while other errors (network, auth, repo not found) are surfaced to the user.
+> Using `--body-file` avoids shell quoting issues with error messages, stack traces, and special characters in the body. The title is passed through `--title "$ISSUE_TITLE"` (argv, never via `bash -c` or string interpolation) to prevent shell-metacharacter injection. Stderr is captured to a temp file so label-not-found errors trigger a no-label fallback; cleanup runs on every path before the final exit.
 
 ---
 
