@@ -231,20 +231,26 @@ if [[ -n "$existing_pr_number" && $update_existing -eq 0 ]]; then
   _die "$EX_AMBIGUOUS" "PR #$existing_pr_number is already open for $release_branch ($existing_pr_url) — pass --update-existing to update"
 fi
 
-emit_plan
-echo
+# Only print the plan when emitting human-readable output; in --json mode the
+# stdout must be a single JSON document (the success object below). Mirrors
+# release-create.sh.
+if (( json == 0 )); then
+  emit_plan
+  echo
+fi
 
-# Step 1 — make sure local branch exists.
+# Step 1 — make sure local branch exists. Capture output so it doesn't bleed
+# into stdout in --json mode.
 if (( release_local_exists == 0 )); then
-  if ! git checkout -q -b "$release_branch" "origin/$release_branch" 2>&1; then
-    _die "$EX_SYSTEM" "Failed to check out local '$release_branch' from origin"
+  if ! checkout_out=$(git checkout -q -b "$release_branch" "origin/$release_branch" 2>&1); then
+    _die "$EX_SYSTEM" "Failed to check out local '$release_branch' from origin: $checkout_out"
   fi
 fi
 
 # Step 2 — push to origin if missing.
 if (( release_remote_exists == 0 )); then
-  if ! git push -u origin "$release_branch" 2>&1; then
-    _die "$EX_SYSTEM" "Failed to push '$release_branch' to origin"
+  if ! push_out=$(git push -u origin "$release_branch" 2>&1); then
+    _die "$EX_SYSTEM" "Failed to push '$release_branch' to origin: $push_out"
   fi
 fi
 

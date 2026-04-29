@@ -173,24 +173,30 @@ fi
 # ---------------------------------------------------------------------------
 # Apply
 # ---------------------------------------------------------------------------
-emit_plan
-echo
+# Only print the plan when emitting human-readable output; in --json mode the
+# stdout must be a single JSON document (the success object below). Mirrors
+# release-create.sh.
+if (( json == 0 )); then
+  emit_plan
+  echo
+fi
 
 # Create the local branch from the resolved sha (most stable — avoids any
-# subtle interpretation differences for branch vs tag refs).
-if ! git checkout -b "$release_branch" "$resolved_sha" 2>&1; then
-  _die "$EX_SYSTEM" "Failed to create local branch '$release_branch'"
+# subtle interpretation differences for branch vs tag refs). Capture output
+# so it doesn't bleed into stdout in --json mode.
+if ! checkout_out=$(git checkout -b "$release_branch" "$resolved_sha" 2>&1); then
+  _die "$EX_SYSTEM" "Failed to create local branch '$release_branch': $checkout_out"
 fi
 
 # Push to origin. The git-mutation-guard.sh hook is on the OUTER Bash call
 # (which is `bash branch-create.sh ...`); the inner `git push` here does not
 # trip the hook. The skill that invoked us is responsible for having called
 # record-audit.sh first so any later push *outside* this script is also OK.
-if ! git push -u origin "$release_branch" 2>&1; then
-  echo "(rolling back local branch $release_branch — push failed)" >&2
+if ! push_out=$(git push -u origin "$release_branch" 2>&1); then
+  echo "(rolling back local branch $release_branch — push failed: $push_out)" >&2
   git checkout - >/dev/null 2>&1 || true
   git branch -D "$release_branch" >/dev/null 2>&1 || true
-  _die "$EX_SYSTEM" "Failed to push '$release_branch' to origin"
+  _die "$EX_SYSTEM" "Failed to push '$release_branch' to origin: $push_out"
 fi
 
 if (( json )); then

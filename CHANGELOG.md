@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.3] - 2026-04-29
+
+## What's Changed
+
+### Bug Fixes
+- [SKILLS-000] fix(release): single-JSON apply + clean MERGED blocking_issues
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.8.2...v1.8.3
+
 ## [1.8.2] - 2026-04-29
 
 ## What's Changed

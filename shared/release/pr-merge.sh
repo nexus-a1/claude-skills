@@ -205,15 +205,21 @@ if [[ "$approved" == "true" && "$no_conflicts" == "true" \
 fi
 
 # Blocking issues — human-readable list, used for diagnostics.
+# For MERGED PRs the per-gate checks are skipped: GitHub reports
+# mergeable=UNKNOWN once a PR is merged, which would otherwise produce a
+# misleading "mergeable: UNKNOWN" entry. The PR is in a terminal state, so
+# the gates no longer apply.
 blocking=()
 case "$pr_state" in
   CLOSED) blocking+=("PR is closed") ;;
-  MERGED) ;;  # not blocking — already done
+  MERGED) ;;  # not blocking — already done; skip gate checks below
 esac
-[[ "$approved"      != "true"  ]] && blocking+=("review decision: ${pr_review:-REVIEW_REQUIRED}")
-[[ "$no_conflicts"  != "true"  ]] && blocking+=("mergeable: $pr_mergeable")
-[[ "$checks_passing" != "true" ]] && blocking+=("status checks failing")
-[[ "$checks_running" == "true" ]] && blocking+=("status checks still running")
+if [[ "$pr_state" != "MERGED" ]]; then
+  [[ "$approved"      != "true"  ]] && blocking+=("review decision: ${pr_review:-REVIEW_REQUIRED}")
+  [[ "$no_conflicts"  != "true"  ]] && blocking+=("mergeable: $pr_mergeable")
+  [[ "$checks_passing" != "true" ]] && blocking+=("status checks failing")
+  [[ "$checks_running" == "true" ]] && blocking+=("status checks still running")
+fi
 
 # ---------------------------------------------------------------------------
 # Emit the report (used by both plan and apply)
