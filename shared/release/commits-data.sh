@@ -103,6 +103,8 @@ fi
 #   [JIRA-123] subject       — anchored to leading bracket
 #   JIRA-123: subject        — at start of subject
 #   ... see JIRA-123 ...     — anywhere in body
+# Single-digit tickets (PROJ-1, JIRA-9) are included. Algorithm names like
+# SHA-1 and SHA-256 are accepted false positives.
 TICKET_RE='[A-Za-z][A-Za-z0-9]+-[0-9]+'
 
 # Walk the records.

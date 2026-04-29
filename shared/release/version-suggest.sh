@@ -15,11 +15,14 @@
 #   bash version-suggest.sh [--json] [--line=v1.8] [--prerelease]
 #
 # Flags:
-#   --json         Emit machine-readable JSON.
-#   --line=vX.Y    Force a "next patch in vX.Y line" suggestion (used when
-#                  the user invokes /release with a partial version like v1.8).
-#   --prerelease   Suggest the next -rc.N for the current/specified version
-#                  rather than a regular bump.
+#   --json              Emit machine-readable JSON.
+#   --base-branch=<ref> Count commits up to this ref instead of HEAD. Pass the
+#                       release target (e.g. origin/master) so suggestions are
+#                       correct when the script is called from a feature branch.
+#   --line=vX.Y         Force a "next patch in vX.Y line" suggestion (used when
+#                       the user invokes /release with a partial version like v1.8).
+#   --prerelease        Suggest the next -rc.N for the current/specified version
+#                       rather than a regular bump.
 #
 # Output (with --json):
 #   { "current":     "v1.2.3",
@@ -43,14 +46,17 @@ source "$(cd "$PLUGIN_RELEASE_DIR/.." && pwd)/resolve-latest-release.sh"
 json=0
 line=""
 prerelease=0
+base_branch=""
 
 while (( $# > 0 )); do
   case "$1" in
-    --json)         json=1; shift ;;
-    --line=*)       line="${1#--line=}"; shift ;;
-    --line)         line="${2:-}"; shift 2 ;;
-    --prerelease)   prerelease=1; shift ;;
-    *)              _die "$EX_SYSTEM" "version-suggest.sh: unknown arg '$1'" ;;
+    --json)              json=1; shift ;;
+    --line=*)            line="${1#--line=}"; shift ;;
+    --line)              line="${2:-}"; shift 2 ;;
+    --prerelease)        prerelease=1; shift ;;
+    --base-branch=*)     base_branch="${1#--base-branch=}"; shift ;;
+    --base-branch)       base_branch="${2:-}"; shift 2 ;;
+    *)                   _die "$EX_SYSTEM" "version-suggest.sh: unknown arg '$1'" ;;
   esac
 done
 
@@ -166,7 +172,7 @@ breaking_count=0
 # Determine the comparison ref for "commits since latest release".
 # - tag: use the tag itself.
 # - branch: use the branch tip.
-# - none: count all commits on HEAD.
+# - none: count all commits on HEAD (or --base-branch tip).
 since_ref=""
 case "$current_kind" in
   tag)    since_ref="$current_ref" ;;
@@ -174,12 +180,22 @@ case "$current_kind" in
   none)   since_ref="" ;;
 esac
 
-# shellcheck disable=SC2155  # declared and assigned separately would lose
-# pipefail context; the assignment can't fail in practice.
+# The head of the range defaults to HEAD, but the caller can override with
+# --base-branch so that suggestions are accurate when run from a feature
+# branch or detached HEAD (skills pass the release target, e.g. origin/master).
+head_ref="HEAD"
+if [[ -n "$base_branch" ]]; then
+  if resolved=$(_resolve_branch_ref "$base_branch" 2>/dev/null); then
+    head_ref="$resolved"
+  else
+    _log "warning: --base-branch '$base_branch' not found; falling back to HEAD"
+  fi
+fi
+
 if [[ -n "$since_ref" ]]; then
-  commits_range="${since_ref}..HEAD"
+  commits_range="${since_ref}..${head_ref}"
 else
-  commits_range="HEAD"
+  commits_range="${head_ref}"
 fi
 
 # Read each subject line and classify. Use process substitution to avoid

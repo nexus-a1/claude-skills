@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.8.2] - 2026-04-29
+
+## What's Changed
+
+### Bug Fixes
+- Restore single-digit ticket support + fix test assertions
+- Split compound context cmd + strengthen base-branch test
+- Fetch remote tags at skill load + fix cached tag check
+- Tighten ticket regex + add --base-branch to version-suggest
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.8.1...v1.8.2
+
 ## [1.8.1] - 2026-04-29
 
 ## What's Changed

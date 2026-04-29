@@ -22,6 +22,8 @@ Latest release: !`bash "${CLAUDE_PLUGIN_ROOT}/shared/resolve-latest-release.sh" 
 
 Available branches: !`git branch -a --list 'master' 'main' 'release/*' 'origin/master' 'origin/main' 'origin/release/*' 2>/dev/null || echo "(no branches)"`
 
+(fetch tags): !`timeout 5 git fetch --tags origin 2>/dev/null || echo "(fetch skipped)"`
+
 Recent tags: !`git for-each-ref --count=10 --sort=-v:refname --format='%(refname:short)' refs/tags 2>/dev/null || echo "(no tags)"`
 
 Arguments provided: $ARGUMENTS
