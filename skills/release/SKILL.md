@@ -3,640 +3,204 @@ name: release
 category: release-management
 model: claude-haiku-4-5
 userInvocable: true
-description: Create a GitHub release with a version tag and auto-generated changelog. Supports pre-releases. Final step of the release workflow.
-argument-hint: "[version] [branch] [--pre-release] [--fasttrack|-y]"
-allowed-tools: "Bash(git tag:*), Bash(git fetch:*), Bash(git log:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git status:*), Bash(bash:*), Bash(gh release create:*), Bash(gh pr list:*), AskUserQuestion, Skill"
+description: Create a GitHub release with a version tag and LLM-authored release notes. Supports pre-releases. Final step of the release workflow.
+argument-hint: "[version] [branch] [--pre-release] [--fasttrack|-y|--yes]"
+allowed-tools: "Bash(pwd:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git fetch:*), Bash(git tag:*), Bash(git log:*), Bash(bash:*), Bash(gh pr list:*), Bash(gh release view:*), AskUserQuestion, Skill, Write"
 ---
 
 # Release Command
 
+> Workflow: `/create-release-branch` → `/create-release` → `/merge-release` → **`/release`**
+
 ## Context
+
+Working directory: !`pwd`
 
 Current branch: !`git branch --show-current 2>/dev/null || echo "(not in a git repository)"`
 
-Git status: !`git status -sb 2>/dev/null || echo "(not in a git repository)"`
+Latest release: !`bash "${CLAUDE_PLUGIN_ROOT}/shared/resolve-latest-release.sh" 2>/dev/null || echo "(resolver unavailable)"`
+
+Available branches: !`git branch -a --list 'master' 'main' 'release/*' 'origin/master' 'origin/main' 'origin/release/*' 2>/dev/null || echo "(no branches)"`
+
+Recent tags: !`git for-each-ref --count=10 --sort=-v:refname --format='%(refname:short)' refs/tags 2>/dev/null || echo "(no tags)"`
 
 Arguments provided: $ARGUMENTS
 
-Available tags: !`git tag --sort=-version:refname 2>/dev/null || echo "(no tags)"`
-
-Available branches: !`git branch -a --list 'master' 'main' 'release/*' 'origin/master' 'origin/main' 'origin/release/*' 2>/dev/null || echo "(no branches listed)"`
-
-Latest release (deterministic — `<kind> <ref> <version>`): !`bash "${CLAUDE_PLUGIN_ROOT}/shared/resolve-latest-release.sh" 2>/dev/null || echo "(resolver unavailable)"`
-
-**Release terminology** — use the definitions in `${CLAUDE_PLUGIN_ROOT}/shared/release-concepts.md`. In particular: "latest release" is the value printed above, not your own interpretation of the tag/branch lists.
+**Release terminology** — see `${CLAUDE_PLUGIN_ROOT}/shared/release-concepts.md`.
 
 ## Your Task
 
-**IMPORTANT**: This command creates GitHub releases using an interactive wizard. You MUST use the AskUserQuestion tool to gather all required information. **The user makes all final decisions** - you suggest, they decide.
+Thin dispatcher over `${CLAUDE_PLUGIN_ROOT}/shared/release/`. Run all steps in a single message; use parallel tool calls where independent. Do not re-derive parsing, version normalization, RC bumping, tag-existence checks, or workflow-case detection — call the scripts and surface their structured output.
 
-### Workflow Overview
+The default release source is `origin/master`. Users can override by passing a branch as the second argument (e.g. `/release v1.2.0-rc.1 release/v1.2.0` for an RC off a release branch). Note: passing a `release/*` branch as the target automatically implies `--pre-release`; stable releases must target master/main. When no branch arg is given and the user appears to want something other than master, hint that they can pass one explicitly.
 
-There are two release workflows:
-
-1. **Regular Release** (from `origin/master`):
-   - Only allowed from `origin/master` branch
-   - Look for "merged release/vX.Y.Z" in recent commit messages
-   - Extract version from the merged branch name
-   - Create a regular GitHub release
-
-2. **Pre-Release (RC)** (from `release/*` branches):
-   - Usually from a `release/vX.Y.Z` branch
-   - Extract version from branch name
-   - Append `-rc.N` suffix (increment N if previous RCs exist)
-   - Create a GitHub pre-release
-
-### Step 0: Pre-flight: Verify Git Repository
-
-Before doing anything else, verify the current directory is inside a git working tree:
+### Step 0 — Pre-flight: verify git repo
 
 ```bash
 git rev-parse --is-inside-work-tree 2>/dev/null
 ```
 
-**If this returns non-zero or empty** (CWD is not a git repository — e.g., a monorepo root that only contains service repos as subdirectories), stop immediately with:
+If non-zero, stop with the standard "not in a git repository" message instructing the user to `cd` into a service repo.
 
-```
-✗ Not in a git repository
-
-/release must be run from inside a git repository.
-
-If you're in a monorepo root with service repos as subdirectories,
-cd into a specific service repo first:
-
-    cd <service-name>
-    /release v1.2.0
-
-To create releases across multiple services, run the skill
-individually in each service directory.
-```
-
-Do NOT proceed to any other step.
-
-### Step 1: Parse Arguments and Understand Intent
-
-Arguments in $ARGUMENTS are OPTIONAL hints that guide version suggestion:
-
-**Argument patterns:**
-- Exact version: `v1.2.3` or `1.2.3` → Use this exact version
-- Version line: `v1.8` or `v1.8.x` or `1.8` → Find latest v1.8.* tag and suggest next patch
-- Branch: `release/v1.0.2` → Extract version from branch
-- Flag: `--pre-release` → Mark as pre-release
-- Flag: `--fasttrack` (alias: `-y`, `--yes`) → Non-interactive mode. Skip every AskUserQuestion and apply the "Recommended" default. See **Fasttrack Mode** below.
-
-#### Fasttrack Mode
-
-When `--fasttrack` (or `-y` / `--yes`) is present, set `FASTTRACK=true` and follow these rules throughout the rest of the workflow:
-
-1. **Do NOT call AskUserQuestion.** For every wizard question in Step 5 and the confirmation in Step 8, automatically choose the option marked "(Recommended)" — i.e., the value computed by the analysis in steps 2–4. Print a one-line summary of each auto-selected answer instead of asking.
-2. **Version** — Use the single suggested version from Step 4 (next patch of the requested version line, or the bump inferred from commit scope, or the `-rc.N` increment for pre-releases). If the analysis yields multiple candidates (e.g. minor vs. major ambiguity from `BREAKING CHANGE:`), abort with an error asking the user to pass an explicit version — do not guess.
-3. **Branch** — Use the default branch from Step 2 (`origin/master` unless overridden by an argument).
-4. **Pre-release flag** — Use the default from Step 3 (derived from branch / `--pre-release`).
-5. **Release branch / PR checks (Step 6)** — Fasttrack only proceeds on the happy path:
-   - Case A (release branch exists, no PR) → **Abort.** Do not invoke `/create-release`. Print the error and exit.
-   - Case B (release branch PR open) → **Abort.** Do not invoke `/merge-release`. Print the error and exit.
-   - Case C (PR merged, or no release branch) → Proceed.
-6. **Validation warnings (Step 7)** — If a validation step would normally ask for confirmation (e.g. regular release from a non-master branch), abort with an error instead.
-7. **Final confirmation (Step 8)** — Skip. Print the summary and proceed directly to tag + release creation.
-
-Fasttrack is designed for the common case where the operator has already merged the release PR (or is tagging directly from `origin/master`) and just wants the tag + GitHub release created. Anything off the happy path must stop and require manual intervention.
-
-**Version line interpretation:**
-When user provides a partial version like `v1.8`, `v1.8.x`, `1.8`, or says "patch for v1.8":
-1. Search for all tags matching `v1.8.*`: `git tag -l "v1.8.*" --sort=-version:refname`
-2. Find the latest one (e.g., `v1.8.5`)
-3. Suggest next patch: `v1.8.6`
-4. **Always confirm with user** before proceeding
-
-**Examples:**
-- User says "v1.8" → Find latest v1.8.* (e.g., v1.8.5) → Suggest v1.8.6
-- User says "v1.8.x" → Same as above
-- User says "patch for 1.8" → Same as above
-- User says "v2.0.0" → Use exact version v2.0.0
-
-### Step 2: Determine Default Branch
-
-**Default branch logic:**
-- If no branch argument provided, default to `origin/master`
-- Normalize the branch name (same as /pr command):
-  - Check if exact branch exists: `git rev-parse --verify <branch> 2>/dev/null`
-  - If doesn't exist, try alternatives:
-    - "main" → try "origin/main"
-    - "origin/main" → try "main"
-    - "master" → try "origin/master"
-    - "origin/master" → try "master"
-    - "release/vX.Y.Z" → try "origin/release/vX.Y.Z"
-  - Use first valid branch reference found
-  - If no valid branch, show error with available branches
-
-### Step 3: Determine Default Pre-Release Flag
-
-**Default pre-release logic:**
-- If branch is `origin/master` or `origin/main` → default is NO (regular release)
-- If branch matches `release/*` or `origin/release/*` → default is YES (pre-release)
-- If `--pre-release` flag in arguments → default is YES
-
-### Step 4: Analyze Tags and Determine Version Suggestions
-
-**IMPORTANT**: Always analyze existing tags and commits to provide informed suggestions, but **let the user decide**.
-
-#### 4.1 Fetch and Analyze Existing Tags
+### Step 1 — Parse arguments
 
 ```bash
-# Fetch all tags
-git fetch --tags origin 2>/dev/null
+bash "${CLAUDE_PLUGIN_ROOT}/shared/release/parse-args.sh" \
+  --skill=release-create --json -- $ARGUMENTS
+```
 
-# Get latest stable release (no -rc suffix)
-git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1
+Outcomes:
+- **Exit 0** — `version` populated; `target` (branch) populated; `prerelease` may be `true`/`false`/`null`; `fasttrack` is bool.
+- **Exit 10** — `missing` contains `version`. See **Resolving the version** below.
+- **Exit 20** — surface errors and stop.
 
-# Get all recent tags
+#### Resolving the version
+
+When `version` is missing, suggest a concrete version. Run in parallel:
+
+```bash
+# Latest stable tag (deterministic resolver, RC-aware).
+bash "${CLAUDE_PLUGIN_ROOT}/shared/resolve-latest-release.sh"
+# Recent tags as fallback / ladder.
 git tag --sort=-version:refname | head -10
 ```
 
-#### 4.2 Handle Version Line Arguments
-
-If user provided a version line (e.g., `v1.8`, `v1.8.x`, `1.8`):
+Then propose a bump based on conventional-commit scope using `commits-data.sh` against the resolved branch:
 
 ```bash
-# Find all tags in this version line
-git tag -l "v1.8.*" --sort=-version:refname | head -5
-
-# Example output:
-# v1.8.5
-# v1.8.4
-# v1.8.3
+bash "${CLAUDE_PLUGIN_ROOT}/shared/release/commits-data.sh" \
+  --base=<latest-tag> --head=<branch> --json
 ```
 
-Then suggest: `v1.8.6` (increment patch of latest)
+The JSON gives `breakdown.feat / fix / chore / …` and `has_breaking_change`. Map to a bump:
 
-**Show user what was found:**
-```
-Found existing v1.8.x releases:
-  - v1.8.5 (latest)
-  - v1.8.4
-  - v1.8.3
+| Signal | Bump | Example |
+|---|---|---|
+| `has_breaking_change == true` | major | v1.2.3 → v2.0.0 |
+| `breakdown.feat > 0` (no breaking) | minor | v1.2.3 → v1.3.0 |
+| only `fix` / `chore` / `docs` / `refactor` | patch | v1.2.3 → v1.2.4 |
 
-Suggested next version: v1.8.6
-```
+Use **AskUserQuestion** to confirm the bump (skip if `fasttrack` and the bump is unambiguous; abort fasttrack if `has_breaking_change` is true and the user did not pass an explicit version). Then re-run the parser with the chosen version.
 
-#### 4.3 Analyze Commit Scope (for new releases)
+For RC bumps (`prerelease == true`): list existing `vX.Y.Z-rc.*` tags and propose `-rc.<N+1>`.
 
-When suggesting a new version, analyze commits since last release to suggest appropriate bump:
+### Step 2 — Plan: validate + detect workflow case
 
 ```bash
-# Get commits since last tag
-git log $(git tag --sort=-version:refname | head -1)..HEAD --oneline --no-merges
+bash "${CLAUDE_PLUGIN_ROOT}/shared/release/release-create.sh" \
+  --version=<version> --branch=<branch> [--prerelease] \
+  --plan --json
 ```
 
-**Suggest version bump based on commit types:**
+The output reports:
+- `workflow_case` — one of: `none-no-release-branch`, `prerelease`, `merged`, `no-pr`, `open-pr`, `closed-not-merged`
+- `release_branch` — `{name, exists}`
+- `existing_pr` — non-null when a PR for `release/<version>` exists
+- `apply_blocked` — non-null if apply would refuse
+- `suggested_skill` — `create-release` or `merge-release` when routing is required
+- `action` — what apply will run
+
+Show a concise summary to the user. Then route based on `workflow_case`:
+
+| `workflow_case` | What to do |
+|---|---|
+| `none-no-release-branch` | OK — proceed to Step 3 |
+| `prerelease` | OK — proceed to Step 3 |
+| `merged` | OK — proceed to Step 3 |
+| `no-pr` | Use **AskUserQuestion**: "Run /create-release now?" → if yes, invoke `Skill(skill: "create-release")` then exit; otherwise stop. **Fasttrack: abort.** |
+| `open-pr` | Use **AskUserQuestion**: "Run /merge-release now?" → if yes, invoke `Skill(skill: "merge-release", args: "release/<version>")` then exit; otherwise stop. **Fasttrack: abort.** |
+| `closed-not-merged` | Use **AskUserQuestion** to confirm proceeding; if yes, re-plan with `--allow-unmerged-pr` for Step 4. **Fasttrack: abort.** |
+
+### Step 3 — Author release notes
+
+The shell library does **not** generate release-note prose. That is your job.
+
+Gather commit data from the previous tag → release branch:
 
-| Commit Pattern | Suggested Bump | Example |
-|----------------|----------------|---------|
-| `BREAKING CHANGE:` or `!:` | Major (X.0.0) | v1.2.3 → v2.0.0 |
-| `feat:` or `feat(` | Minor (X.Y.0) | v1.2.3 → v1.3.0 |
-| `fix:`, `docs:`, `chore:`, etc. | Patch (X.Y.Z) | v1.2.3 → v1.2.4 |
-
-**Show analysis to user:**
-```
-Commits since v1.2.3:
-  - feat: add new export feature
-  - fix: resolve login issue
-  - chore: update dependencies
-
-Suggested bump: Minor (new features detected)
-  - v1.3.0 (Recommended - new features)
-  - v1.2.4 (Patch only)
-  - v2.0.0 (Major - breaking changes)
-```
-
-#### 4.4 For Pre-Release (from release/* branch)
-
-1. Extract version from branch name:
-   - Branch `release/v1.0.2` → version `v1.0.2`
-   - Branch `origin/release/v1.0.2` → version `v1.0.2`
-2. Check for existing RC tags for this version:
-   ```bash
-   git tag --list "v1.0.2-rc.*" --sort=-version:refname
-   ```
-3. If RCs exist, suggest next RC number:
-   - Found: `v1.0.2-rc.2` → suggest `v1.0.2-rc.3`
-   - Found: `v1.0.2-rc.1` → suggest `v1.0.2-rc.2`
-4. If no RCs exist, suggest: `v1.0.2-rc.1`
-
-**Version format:**
-- Always use `v` prefix (e.g., `v1.0.2`, not `1.0.2`)
-- Pre-release format: `vX.Y.Z-rc.N` (e.g., `v1.0.2-rc.1`)
-
-### Step 5: Interactive Wizard
-
-**CRITICAL**: Use AskUserQuestion to gather input. **Always present analysis and let user decide** - do not make version decisions automatically.
-
-**If `FASTTRACK=true` (set in Step 1):** skip this entire step. Use the Recommended values from the analysis (version from Step 4, branch from Step 2, pre-release from Step 3) and print a short summary of the auto-selected answers. Proceed to Step 6.
-
-#### Question 1: Show Analysis and Select Version
-
-First, show the analysis summary, then ask:
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Release Version Analysis
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Latest stable release: v1.2.3
-{If version line requested: "Found v1.8.x releases: v1.8.5 (latest), v1.8.4, v1.8.3"}
-
-Commits since v1.2.3: 12
-  - 3 feat: (new features)
-  - 7 fix: (bug fixes)
-  - 2 chore: (maintenance)
-
-Suggested version based on changes: Minor bump → v1.3.0
-```
-
-- header: "Version"
-- question: "What version should be released?"
-- options (based on analysis):
-  1. Suggested version with reason - mark as "(Recommended)" with description
-  2. Alternative versions with explanations
-  3. User can always select "Other" for custom version
-- multiSelect: false
-
-**Example options for new release:**
-```
-options:
-  - label: "v1.3.0 (Recommended)"
-    description: "Minor bump - includes new features (3 feat commits)"
-  - label: "v1.2.4"
-    description: "Patch only - bug fixes without new features"
-  - label: "v2.0.0"
-    description: "Major bump - if there are breaking changes"
-```
-
-**Example options for version line (v1.8.x):**
-```
-options:
-  - label: "v1.8.6 (Recommended)"
-    description: "Next patch for v1.8.x line (latest: v1.8.5)"
-  - label: "v1.8.5"
-    description: "Re-release v1.8.5 (already exists - will fail if tag exists)"
-```
-
-#### Question 2: Select Branch
-
-- header: "Branch"
-- question: "Which branch should this release be created from?"
-- options:
-  1. Default branch (determined in step 2) - mark as "(Recommended)"
-  2. Other common branches if applicable
-- multiSelect: false
-
-#### Question 3: Is this a pre-release?
-
-- header: "Pre-release"
-- question: "Is this a pre-release (RC) or a regular release?"
-- options:
-  1. Based on default from step 3 - mark as "(Recommended)"
-  2. Opposite of default
-- multiSelect: false
-
-### Step 6: Check Release Branch PR Status
-
-**If `FASTTRACK=true`:** Cases A and B abort immediately (see Fasttrack Mode rules in Step 1). Only Case C proceeds — do not call `AskUserQuestion` in this step.
-
-**IMPORTANT**: This step ensures the proper release workflow is followed when a release branch exists.
-
-After receiving the version from the wizard, check if a corresponding release branch exists and validate its PR status:
-
-1. **Check if release branch exists:**
-   ```bash
-   # Try both local and remote branches
-   git rev-parse --verify release/v<version> 2>/dev/null || \
-   git rev-parse --verify origin/release/v<version> 2>/dev/null
-   ```
-
-   Example: If version is `v1.4.0`, check for `release/v1.4.0` or `origin/release/v1.4.0`
-
-2. **If release branch exists, check for PR:**
-   ```bash
-   # Find PRs from release branch to master
-   gh pr list --head release/v<version> --base master --json state,title,number,url,mergeable
-   ```
-
-   Example output (merged PR):
-   ```json
-   [
-     {
-       "number": 123,
-       "state": "MERGED",
-       "title": "Release v1.4.0",
-       "url": "https://github.com/owner/repo/pull/123"
-     }
-   ]
-   ```
-
-3. **Handle PR status:**
-
-   **Case A: No PR found (empty array `[]`)**
-   - Show error and suggest creating PR:
-   ```
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   ⚠️  Release Branch Found, No PR
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-   Release branch exists: release/v1.4.0
-
-   However, there is no Pull Request from this branch to master.
-
-   To follow the proper release workflow, you should:
-   1. Create a PR: /create-release
-   2. Review and merge the PR
-   3. Then create the GitHub release
-
-   Would you like to:
-     • Create PR now (run /create-release)
-     • Cancel release creation
-   ```
-
-   Use AskUserQuestion:
-   - header: "Action"
-   - question: "Release branch exists without PR. What would you like to do?"
-   - options:
-     - "Create PR with /create-release (Recommended)" - description: "Creates PR from release/v1.4.0 to master"
-     - "Cancel release" - description: "Stop and handle the PR manually"
-
-   If user selects "Create PR", invoke the `/create-release` skill using the Skill tool:
-   ```
-   Skill(skill: "create-release")
-   ```
-   Then show: "Please merge the PR and run /release again after it's merged."
-
-   **Case B: PR is OPEN (not merged)**
-   - Show information and offer to merge:
-   ```
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   ⚠️  Release PR Not Merged Yet
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-   Release branch: release/v1.4.0
-   PR: #123 - "Release v1.4.0"
-   Status: OPEN (not merged)
-   URL: https://github.com/owner/repo/pull/123
-
-   The release PR must be merged to master before creating the GitHub release.
-
-   What would you like to do?
-   ```
-
-   Use AskUserQuestion:
-   - header: "Action"
-   - question: "Release PR is not merged yet. What would you like to do?"
-   - options:
-     - "Merge PR with /merge-release (Recommended)" - description: "Check approvals, CI status, and merge the PR automatically"
-     - "Review PR manually" - description: "Review the PR on GitHub before merging"
-     - "Cancel release" - description: "Stop and handle the merge later"
-
-   **Handle responses:**
-   - **"Merge PR with /merge-release"**: Invoke the skill using `Skill(skill: "merge-release", args: "release/v1.4.0")`
-     - The merge-release skill will handle approval checks, CI status, and merge
-     - After successful merge, show: "✓ PR merged! You can now run /release again to create the GitHub release."
-     - Exit the skill
-   - **"Review PR manually"**: Show: "Please review and merge the PR at: <url>, then run /release again."
-     - Exit the skill
-   - **"Cancel release"**: Show: "Release creation cancelled."
-     - Exit the skill
-
-   **Case C: PR is MERGED or CLOSED**
-   - Check if the state is "MERGED":
-   ```
-   ✓ Release branch PR is merged: #123
-   ```
-   - Proceed with release creation (continue to Step 8)
-   - If state is "CLOSED" (but not merged), show warning:
-   ```
-   ⚠️  Warning: Release PR was closed without merging
-
-   PR: #123 - "Release v1.4.0"
-   Status: CLOSED (not merged)
-
-   This may indicate the release was cancelled or the changes
-   were incorporated differently.
-   ```
-   - Ask for confirmation to proceed anyway
-
-4. **If release branch does NOT exist:**
-   - This is normal for direct releases from master
-   - Proceed to Step 8 (no additional checks needed)
-   - Show info message:
-   ```
-   ℹ️  No release branch found - creating direct release from master
-   ```
-
-**Key Points:**
-- Release branch name format: `release/v<version>` (e.g., `release/v1.4.0`)
-- Only check for PR if release branch exists
-- Enforce proper workflow: branch → PR → merge → release
-- Use `/create-release` skill to create the PR if needed
-- Allow direct releases from master if no release branch exists
-
-### Step 7: Validate User Input
-
-After receiving answers from the wizard and checking release branch PR status:
-
-1. **Validate branch exists:**
-   ```bash
-   git rev-parse --verify <selected-branch> 2>/dev/null
-   ```
-   - If not found, error: "Branch not found: <branch>"
-
-2. **Validate version format:**
-   - Must match: `vX.Y.Z` or `vX.Y.Z-rc.N`
-   - If user provided version without `v` prefix, add it automatically
-   - If pre-release is YES, ensure version has `-rc.N` suffix
-   - If pre-release is NO, ensure version does NOT have `-rc` suffix
-
-3. **Check if tag already exists:**
-   ```bash
-   git tag --list "<version>"
-   ```
-   - If tag exists, error: "Tag <version> already exists. Please choose a different version."
-
-4. **Validate release workflow:**
-   - If pre-release is NO and branch is NOT `origin/master` or `origin/main`:
-     - Show warning: "⚠️  Regular releases are typically created from origin/master. Current branch: <branch>"
-     - Ask for confirmation to proceed
-
-### Step 8: Show Confirmation Summary
-
-Before creating the release, show a summary and ask for final confirmation:
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Release Summary
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Version: <version>
-Branch: <branch>
-Type: <Regular Release | Pre-Release (RC)>
-
-This will:
-  • Create tag: <version>
-  • Create GitHub release from: <branch>
-  • Generate release notes automatically
-
-Proceed with release creation? (yes/no)
-```
-
-Use AskUserQuestion with:
-- header: "Confirm"
-- question: "Proceed with release creation?"
-- options: ["Yes, create release", "No, cancel"]
-
-If user selects "No, cancel", stop and show: "Release cancelled."
-
-**If `FASTTRACK=true`:** skip the AskUserQuestion confirmation. Print the summary with a `(--fasttrack: auto-confirmed)` marker and continue to Step 9.
-
-### Step 9: Generate Release Notes
-
-Auto-generate release notes from commits:
-
-1. **Find previous release tag:**
-   ```bash
-   git tag --sort=-version:refname | grep -v "rc" | head -1
-   ```
-   - For pre-releases, include RC tags: `git tag --sort=-version:refname | head -1`
-
-2. **Get commits since last release:**
-   ```bash
-   git log <previous-tag>..<branch> --oneline --no-merges
-   ```
-   - If no previous tag, use: `git log <branch> --oneline --no-merges -20`
-
-3. **Generate release notes:**
-   - Group commits by type (if using conventional commits):
-     - feat: → Features
-     - fix: → Bug Fixes
-     - docs: → Documentation
-     - perf: → Performance
-     - Other → Other Changes
-   - Format as markdown:
-     ```markdown
-     ## What's Changed
-
-     ### Features
-     - Commit message 1
-     - Commit message 2
-
-     ### Bug Fixes
-     - Fix message 1
-
-     ### Other Changes
-     - Other message 1
-
-     **Full Changelog**: https://github.com/OWNER/REPO/compare/<previous-tag>...<version>
-     ```
-
-### Step 10: Create GitHub Release
-
-Use `gh release create` to create the release.
-
-**CRITICAL: Release Title Format**
-
-The GitHub release title MUST be the tag/version only (e.g., `v1.4.0`). Do NOT prefix it with the word `Release` or any other label.
-
-- Correct: `v1.4.0`, `v2.1.0-rc.1`
-- Wrong: `Release v1.4.0`, `Version 1.4.0`, `v1.4.0 Release`
-
-Always pass `--title "<version>"` explicitly — omitting it lets `gh`/GitHub fall back to a "Release …" default.
-
-**CRITICAL: Branch Name Format**
-
-The `--target` option requires the branch name **without** the `origin/` prefix:
-- Use `master` NOT `origin/master`
-- Use `main` NOT `origin/main`
-- Use `release/v1.0.0` NOT `origin/release/v1.0.0`
-
-Using `origin/` prefix will cause error: `HTTP 422: Validation Failed - Release.target_commitish is invalid`
-
-**For Regular Release:**
 ```bash
-gh release create "<version>" \
-  --target "master" \
-  --title "<version>" \
-  --notes "$(cat <<'EOF'
-<generated-release-notes>
-EOF
-)"
+# Find the previous stable tag (or the previous RC if --prerelease).
+prev_tag="$(git tag --sort=-version:refname \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
+bash "${CLAUDE_PLUGIN_ROOT}/shared/release/commits-data.sh" \
+  --base="$prev_tag" --head=<branch> --json
 ```
 
-**For Pre-Release:**
+Author a markdown release-notes file. A good shape:
+
+```markdown
+## What's Changed
+
+<one-paragraph summary derived from breakdown — e.g. "12 commits: 4 feat, 6 fix, 1 chore. No breaking changes.">
+
+### Features
+
+- **api**: <subject from a feat commit> — JIRA-123
+- ...
+
+### Bug Fixes
+
+- **ui**: <subject from a fix commit> — JIRA-456
+- ...
+
+### Other Changes
+
+- <docs / chore / refactor commits>
+
+**Full Changelog**: https://github.com/OWNER/REPO/compare/<prev-tag>...<version>
+```
+
+If `has_breaking_change == true`, surface a **⚠️ Breaking Changes** section at the top.
+
+Write the notes to a tempfile under `.claude/session-state/` (or `/tmp/` if the workspace path isn't available):
+
 ```bash
-gh release create "<version>" \
-  --target "master" \
-  --title "<version>" \
-  --notes "$(cat <<'EOF'
-<generated-release-notes>
-EOF
-)" \
-  --prerelease
+# Use the Write tool to create the file at e.g.
+#   .claude/session-state/release-notes-<version>.md
 ```
 
-**Important:**
-- `--target` requires branch name WITHOUT `origin/` prefix (e.g., `master` not `origin/master`)
-- `--title` is the release title — MUST be the version tag only (e.g., `v1.4.0`), never prefixed with `Release`
-- `--notes` contains the auto-generated release notes
-- `--prerelease` flag marks it as a pre-release in GitHub
-- The command will automatically create the git tag
-- Use HEREDOC syntax for multi-line notes
+### Step 4 — Confirm and apply
 
-### Step 11: Report Results
+Use **AskUserQuestion** to confirm: **Create release `<version>` from `<branch>` now?**
 
-Show success message with release information:
+Skip the prompt if `fasttrack == true`; print a one-line auto-confirm marker instead.
 
-**For Regular Release:**
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✓ Release Created Successfully
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Then record the audit gate. `gh release create` is not covered by `git-mutation-guard.sh` (the hook only matches `git push`), but this skill mutates remote state — recording the audit keeps the trail consistent with the other release skills:
 
-Version: <version>
-Type: Regular Release
-Branch: <branch>
-Tag: <version>
-
-Release URL: <github-release-url>
-
-Next steps:
-  • Review release notes on GitHub
-  • Announce the release to your team
-  • Monitor for any issues
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
 ```
 
-**For Pre-Release:**
+Immediately followed by apply:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/release/release-create.sh" \
+  --version=<version> --branch=<branch> [--prerelease] \
+  --notes-file=<tempfile> [--allow-unmerged-pr] \
+  --apply --json
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✓ Pre-Release Created Successfully
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Version: <version>
-Type: Pre-Release (RC)
-Branch: <branch>
-Tag: <version>
+If apply exits non-zero, surface stderr verbatim and stop.
 
-Release URL: <github-release-url>
+### Step 5 — Report
 
-⚠️  This is a pre-release and will be marked as such on GitHub.
+On success:
 
-Next steps:
-  • Test the release candidate
-  • Gather feedback
-  • Create regular release when ready
+```
+✓ Release <created>
+  version: <version>
+  branch:  <branch>
+  url:     <url>
+
+<For pre-releases:>
+⚠️  This is a pre-release and is marked as such on GitHub.
 ```
 
 ## Important Notes
 
-- **User makes all final decisions** — analyze, suggest, explain; user decides. Never auto-select versions.
-- **Version lines** (`v1.8`, `v1.8.x`, `1.8`) → Find latest v1.8.* and suggest next patch. Always show existing tags first.
-- **Version bumps** — Analyze commits: `BREAKING CHANGE:`/`!:` → Major, `feat:` → Minor, `fix:`/`docs:`/`chore:` → Patch. Explain reasoning.
-- **Release branch workflow** — If `release/v<version>` exists, enforce PR to master: no PR → `/create-release`, open PR → `/merge-release`, merged → proceed.
-- **Version format** — Always `v` prefix. Pre-releases: `vX.Y.Z-rc.N`. Default branch: `origin/master`.
-- **Always use AskUserQuestion** for user input and final confirmation before creating release — except when `--fasttrack` (alias `-y` / `--yes`) is passed, in which case all questions are auto-answered with the Recommended default and the release proceeds straight to tag + release creation. Fasttrack aborts (never auto-advances) if the release branch has no PR, has an unmerged PR, or if any validation warning would normally require confirmation.
+- **Single message execution** — all steps in one assistant turn.
+- **No re-derived gh/git logic in prose** — every gh/git operation goes through the shared scripts.
+- **Default branch is `origin/master`** — if the user appears to want a different source (e.g. an RC off a release branch), ask them to pass it as the second argument: `/release <version> <branch>`.
+- **Workflow gate** — when `release/<version>` exists, the action script enforces "no-pr → /create-release", "open-pr → /merge-release", "closed-not-merged → confirm with --allow-unmerged-pr". Do not bypass.
+- **Fasttrack** (`--fasttrack | -y | --yes`) — auto-confirm the recommended version/branch/prerelease and skip the final confirmation. **Abort** (do not auto-route) if the workflow case is `no-pr`, `open-pr`, or `closed-not-merged`, or if `has_breaking_change` is true and no explicit version was supplied.
+- **Notes authoring is your job** — the shell scripts deliberately don't template prose; the JSON from `commits-data.sh` is what you have to work with. Keep it factual and grouped, no marketing voice.
+- **Title format** — the GitHub release title MUST be the bare version (e.g. `v1.4.0`). The script handles this; do not pass `--title` unless the user explicitly asked for a custom title.

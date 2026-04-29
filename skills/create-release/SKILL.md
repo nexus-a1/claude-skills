@@ -5,527 +5,161 @@ model: claude-haiku-4-5
 userInvocable: true
 description: Push a release branch and open a PR to the target branch. Step 2 of the release workflow — runs after branching, before merging.
 argument-hint: "[target-branch] [version]"
-allowed-tools: "Bash(GIT_AUTHORIZED=1 git push:*), Bash(GIT_AUTHORIZED=1 git checkout:*), Bash(git ls-remote:*), Bash(git branch:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-parse:*), Bash(git fetch:*), Bash(git remote:*), Bash(git tag:*), Bash(bash:*), Bash(gh pr create:*), Bash(gh pr list:*), Bash(gh pr edit:*), Bash(gh pr comment:*), AskUserQuestion"
+allowed-tools: "Bash(pwd:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git fetch:*), Bash(git log:*), Bash(git remote:*), Bash(bash:*), Bash(gh pr list:*), Bash(gh pr view:*), AskUserQuestion, Write"
 ---
 
 # Create Release PR Command
 
+> Workflow: `/create-release-branch` → **`/create-release`** → `/merge-release` → `/release`
+
 ## Context
+
+Working directory: !`pwd`
 
 Current branch: !`git branch --show-current 2>/dev/null || echo "(not in a git repository)"`
 
+Available branches: !`git branch -a --list 'master' 'main' 'develop' 'release/*' 'origin/master' 'origin/main' 'origin/release/*' 2>/dev/null || echo "(no branches)"`
+
 Arguments provided: $ARGUMENTS
 
-Remote status: !`git remote -v 2>/dev/null || echo "(no remotes configured)"`
-
-Available branches: !`git branch -a --list 'master' 'main' 'develop' 'release/*' 'origin/master' 'origin/main' 'origin/develop' 'origin/release/*' 2>/dev/null || echo "(no branches listed)"`
-
-Recent commits: !`git log --oneline -10 2>/dev/null || echo "(no commits)"`
-
-Latest release (deterministic — `<kind> <ref> <version>`): !`bash "${CLAUDE_PLUGIN_ROOT}/shared/resolve-latest-release.sh" 2>/dev/null || echo "(resolver unavailable)"`
-
-**Release terminology** — use the definitions in `${CLAUDE_PLUGIN_ROOT}/shared/release-concepts.md`. In particular: "latest release" is the value printed above, not your own interpretation of the tag/branch lists.
+**Release terminology** — see `${CLAUDE_PLUGIN_ROOT}/shared/release-concepts.md`.
 
 ## Your Task
 
-**IMPORTANT**: You MUST complete all steps in a single message using parallel tool calls where possible. Do not send multiple messages.
+Thin dispatcher over `${CLAUDE_PLUGIN_ROOT}/shared/release/`. Run all steps in a single message; use parallel tool calls where independent. Do not re-derive parsing, ref resolution, ticket extraction, or gh-CLI mechanics — call the scripts and surface their structured output.
 
-This command creates a Pull Request from a release branch (e.g., `release/v1.0.2`) to a target branch (default: master). It's designed for the release workflow where you create a PR, get it approved, then merge using `/merge-release`.
-
-### 0. Pre-flight: Verify Git Repository
-
-Before doing anything else, verify the current directory is inside a git working tree:
+### Step 0 — Pre-flight: verify git repo
 
 ```bash
 git rev-parse --is-inside-work-tree 2>/dev/null
 ```
 
-**If this returns non-zero or empty** (CWD is not a git repository — e.g., a monorepo root that only contains service repos as subdirectories), stop immediately with:
+If non-zero, stop with the standard "not in a git repository" message instructing the user to `cd` into a service repo.
 
-```
-✗ Not in a git repository
-
-/create-release must be run from inside a git repository.
-
-If you're in a monorepo root with service repos as subdirectories,
-cd into a specific service repo first:
-
-    cd <service-name>
-    /create-release master v1.2.0
-
-To create release PRs across multiple services, run the skill
-individually in each service directory.
-```
-
-Do NOT proceed to any other step.
-
-### 1. Parse Arguments
-
-Arguments are provided in $ARGUMENTS with these possible formats:
-
-**Format:** `/create-release [target-branch] [version]`
-
-**Examples:**
-- `/create-release` - Interactive mode (prompts for everything)
-- `/create-release master` - Target master, prompt for version
-- `/create-release master v1.0.2` - Target master, release v1.0.2
-- `/create-release v1.0.2` - If first arg looks like version, target master
-- `/create-release master 1.0.2` - Version without 'v' prefix works too
-
-**Parsing logic:**
-1. If no arguments: Interactive mode
-2. If one argument:
-   - If starts with 'v' or matches X.Y.Z pattern: It's a version (target = master)
-   - Otherwise: It's a target branch (prompt for version)
-3. If two arguments: First is target, second is version
-
-**Version normalization:**
-- `v1.0.2` → `v1.0.2`
-- `1.0.2` → `v1.0.2`
-- Always ensure 'v' prefix
-
-### 2. Interactive Mode: Detect Available Release Branches
-
-If no version was provided, list available release branches:
+### Step 1 — Parse arguments
 
 ```bash
-# Find all release branches (local and remote)
-git branch -a | grep 'release/' | sed 's|remotes/origin/||' | sed 's|^[* ]*||' | sort -u -V -r
+bash "${CLAUDE_PLUGIN_ROOT}/shared/release/parse-args.sh" \
+  --skill=pr-create --json -- $ARGUMENTS
 ```
 
-**If release branches found:**
+Outcomes:
+- **Exit 0** — `target` and `version`/`release_branch` populated; proceed.
+- **Exit 10** — `missing` contains `version`. Run `version-suggest.sh --json` and use AskUserQuestion to pick. Re-run parser with the chosen version.
+- **Exit 20** — surface errors and stop.
 
-Use AskUserQuestion to present options:
-```
-Which release branch would you like to create a PR for?
-
-Available release branches:
-- release/v1.0.2
-- release/v1.0.1
-- release/v0.9.5
-
-[Or specify a new version]
-```
-
-**If no release branches found:**
-
-Ask user to provide version:
-```
-No existing release branches found.
-
-What version would you like to release?
-(Format: v1.0.2 or 1.0.2)
-```
-
-### 3. Validate Target Branch
-
-- Default target: `master`
-- If user provided different target, validate it exists
-- **Normalize the branch name:**
-  - Check if exact branch exists: `git rev-parse --verify <target> 2>/dev/null`
-  - If not, try alternative forms:
-    - If target is "main", try "origin/main"
-    - If target is "origin/main", try "main"
-    - If target is "master", try "origin/master"
-    - If target is "origin/master", try "master"
-  - Use the first valid branch reference found
-
-**If target branch doesn't exist:**
-```
-✗ Target branch '<target>' not found
-
-Available branches:
-<list branches>
-```
-
-Stop execution
-
-### 4. Determine Release Branch Name
-
-Construct release branch name from version:
-
-```
-release_branch = "release/${version}"
-```
-
-Examples:
-- `v1.0.2` → `release/v1.0.2`
-- `1.0.2` → `release/v1.0.2`
-
-### 5. Checkout Release Branch
-
-Check if release branch exists:
+### Step 2 — Gather commit data
 
 ```bash
-# Check if local branch exists
-git rev-parse --verify ${release_branch} 2>/dev/null
-
-# If not, check remote
-git rev-parse --verify origin/${release_branch} 2>/dev/null
+bash "${CLAUDE_PLUGIN_ROOT}/shared/release/commits-data.sh" \
+  --base=<target> --head=<release_branch> --json
 ```
 
-**If branch exists locally:**
-```bash
-GIT_AUTHORIZED=1 git checkout ${release_branch}
-```
+If the resolver can't find `<release_branch>` locally, try `origin/<release_branch>` for the head ref. The output JSON has:
+- `commit_count`, `file_count`
+- `tickets[]` — uppercased, deduped ticket IDs (e.g. `JIRA-123`)
+- `breakdown` — counts by conventional-commit type (`feat`, `fix`, `chore`, …)
+- `has_breaking_change`
+- `commits[]` — per-commit `{sha, short, subject, type, scope, tickets, breaking}`
 
-**If branch exists on remote only:**
-```bash
-GIT_AUTHORIZED=1 git checkout -b ${release_branch} origin/${release_branch}
-```
+If `commit_count == 0`, stop with: "No commits to release — release branch matches the target."
 
-**If branch doesn't exist anywhere:**
+### Step 3 — Author PR title and body
 
-Use AskUserQuestion to ask:
-```
-Release branch '${release_branch}' doesn't exist.
+The shell library does **not** generate the PR body. That is your job.
 
-Would you like to:
-[c] Create it from ${target_branch}
-[a] Abort
-```
+**Title**: defaults to `Release <version>` (the script will use this if you pass `--title=""` or omit it). Override only if the user asked for something custom.
 
-**Handle responses:**
+**Body**: write a concise, well-organized markdown PR body using the JSON from Step 2. A good shape:
 
-- **'c' or 'create'**:
-  ```bash
-  GIT_AUTHORIZED=1 git checkout -b ${release_branch} ${target_branch}
-  ```
-  Show:
-  ```
-  ✓ Created release branch: ${release_branch}
-  ```
-  Continue
-
-- **'a' or 'abort'**:
-  ```
-  Release PR creation cancelled
-  ```
-  Stop execution
-
-### 6. Ensure Branch is Pushed
-
-Push release branch to remote if needed:
-
-```bash
-# Check if remote branch exists
-git ls-remote --heads origin ${release_branch}
-```
-
-**If remote branch doesn't exist:**
-```bash
-GIT_AUTHORIZED=1 git push -u origin ${release_branch}
-```
-
-**If remote branch exists but is behind:**
-```bash
-GIT_AUTHORIZED=1 git push origin ${release_branch}
-```
-
-### 7. Analyze Changes
-
-Get commits and changes between target and release branch:
-
-```bash
-# Get commit history
-git log ${normalized_target}..${release_branch} --oneline
-
-# Get changed files
-git diff --name-status ${normalized_target}..${release_branch}
-
-# Get statistics
-git diff --stat ${normalized_target}..${release_branch}
-```
-
-### 8. Extract Ticket Numbers from Commits
-
-Parse commit messages to extract ticket numbers:
-
-```bash
-# Get all commit messages
-git log ${normalized_target}..${release_branch} --format="%s"
-```
-
-**Extraction logic:**
-- Look for patterns: `[JIRA-123]`, `[jira-123]`, `JIRA-123`, `jira-123:`
-- Common formats:
-  - `[JIRA-123] commit message`
-  - `jira-123: commit message`
-  - Ticket numbers in commit body
-- Extract all unique ticket numbers
-- Convert to uppercase for consistency
-- Sort and deduplicate
-
-**Example output:**
-```
-Tickets in this release:
-- JIRA-456
-- JIRA-789
-- JIRA-890
-```
-
-### 9. Generate PR Title
-
-Create title for the release PR:
-
-**Format:** `Release ${version}`
-
-**Examples:**
-- `Release v1.0.2`
-- `Release v2.1.0-rc.1`
-
-Keep it simple and clear.
-
-### 10. Generate PR Description
-
-Create a detailed description for the release PR:
-
-**Structure:**
 ```markdown
-## Release ${version}
+## Release v1.2.0
 
-This PR prepares release ${version} for deployment to production.
-
-## Changes
-
-${summary_of_changes}
+<one-paragraph summary derived from breakdown — e.g. "12 commits: 4 feat, 6 fix, 1 chore. No breaking changes.">
 
 ## Tickets
 
-${list_of_tickets}
+- JIRA-123, JIRA-456 …
+
+## Highlights
+
+- **feat(api)**: <subject from a feat commit>
+- **fix(ui)**: <subject from a fix commit>
+- (group by type, surface the most user-visible items)
 
 ## Commits
 
-${commit_list}
+- abcd123 feat(api): subject — JIRA-123
+- (full list, oldest-first or newest-first; pick whichever reads better)
 
-## Testing Checklist
+## Testing checklist
 
-- [ ] All tests passing
-- [ ] Manual testing completed
+- [ ] Manual smoke test
 - [ ] Release notes reviewed
 - [ ] Breaking changes documented (if any)
-- [ ] Migration steps documented (if any)
-
-## Deployment Notes
-
-${any_special_deployment_instructions}
 ```
 
-**Guidelines:**
-- Summarize major changes from commits
-- List all ticket numbers extracted from commits
-- Include commit history for reference
-- Add testing checklist
-- Note any special deployment considerations
-- Keep it professional and clear
+If `has_breaking_change` is true, surface it prominently at the top.
 
-### 11. Check for Existing PR
-
-Before creating a new PR, check if one already exists:
+Write the body to a tempfile under `.claude/session-state/` (or `/tmp/` if the workspace path isn't available):
 
 ```bash
-gh pr list --head ${release_branch} --json number,state,title,url
+# Use the Write tool to create the file at e.g.
+#   .claude/session-state/release-pr-body-<version>.md
 ```
 
-**If PR exists and is OPEN:**
-```
-ℹ️  Existing PR found for ${release_branch}
-
-PR #${number}: ${title}
-Status: Open
-URL: ${url}
-
-Would you like to update it? [y/n]
-```
-
-Use AskUserQuestion to ask.
-
-**If user says yes:**
-- Update PR title and description
-- Add comment with update notification
-
-**If user says no:**
-- Show existing PR info and exit
-
-**If PR exists but is CLOSED or MERGED:**
-```
-ℹ️  Previous PR for ${release_branch} was ${state}
-
-PR #${number}: ${title}
-URL: ${url}
-
-Creating new PR...
-```
-
-### 12. Create Pull Request
-
-Use GitHub CLI to create the PR:
+### Step 4 — Plan: validate via pr-create.sh
 
 ```bash
-gh pr create \
-  --base ${normalized_target} \
-  --head ${release_branch} \
-  --title "Release ${version}" \
-  --label "release" \
-  --body "$(cat <<'EOF'
-${pr_description}
-EOF
-)"
+bash "${CLAUDE_PLUGIN_ROOT}/shared/release/pr-create.sh" \
+  --target=<target> --release-branch=<release_branch> \
+  --plan --json
 ```
 
-**Important:**
-- Use `--base` with normalized target branch
-- Use `--head` with release branch name
-- Add `--label "release"` to tag it as a release PR
-- Use HEREDOC for multi-line description
+The output reports:
+- `actions` — what apply will do (push branch, run gh pr create, etc.)
+- `existing_pr` — non-null if an open PR exists for this head branch
 
-**On success:**
+Show the plan summary to the user. If `existing_pr.state == "OPEN"`, surface the URL and use AskUserQuestion to ask whether to **update** that PR (re-run apply with `--update-existing`) or abort.
 
-Show PR URL and next steps
+### Step 5 — Confirm and apply
 
-### 13. Report Results
+Use AskUserQuestion to confirm: **Open release PR now?**.
 
-After successful PR creation:
+If the user confirms, record the audit gate (this script issues `git push`):
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Release PR Created
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-PR: Release ${version}
-URL: ${pr_url}
-
-${release_branch} → ${target_branch}
-
-Changes:
-  ${commit_count} commits
-  ${file_count} files changed
-
-Tickets:
-  ${ticket_list}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Next Steps
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-1. Review the PR on GitHub
-2. Request approvals from required reviewers
-3. Address any feedback or required changes
-4. Once approved, merge using: /merge-release
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
 ```
 
-### 14. Error Handling
+Immediately followed by apply:
 
-Handle these cases gracefully:
-
-**Release branch doesn't exist and user declines to create:**
-```
-Release PR creation cancelled. Create the release branch first:
-  git checkout -b ${release_branch} ${target_branch}
-```
-
-**Target branch doesn't exist:**
-```
-✗ Target branch '${target_branch}' not found
-
-Available branches:
-${list branches}
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/release/pr-create.sh" \
+  --target=<target> --release-branch=<release_branch> \
+  --body-file=<tempfile> [--title="<custom>"] \
+  --apply [--update-existing] --json
 ```
 
-**No commits between branches:**
-```
-✗ No changes to release
+If apply exits non-zero, surface stderr verbatim and stop.
 
-${release_branch} is up-to-date with ${target_branch}
-No commits to include in release PR.
-```
+### Step 6 — Report
 
-**GitHub CLI error:**
-```
-✗ Failed to create PR: ${error_message}
+On success:
 
-Check:
-  - GitHub authentication: gh auth status
-  - Repository access: gh repo view
-  - Network connection
 ```
+✓ Release PR <created|updated>
+  PR:     #<n>
+  url:    <url>
+  branch: <release_branch> → <target>
 
-**Not a git repository:**
-```
-✗ Not a git repository
-
-Initialize: git init
+Next:
+  /merge-release   # merge once approved
 ```
 
 ## Important Notes
 
-- **Single message execution**: Complete all operations in ONE response
-- **Interactive wizard**: Guide user through the process
-- **Release label**: Always add "release" label to PR
-- **Ticket extraction**: Parse all commits for ticket numbers
-- **Approval required**: This creates the PR; use `/merge-release` to merge after approval
-- **Branch management**: Handles both existing and new release branches
-- **Clear communication**: Show what will happen before doing it
-- **Error recovery**: Provide helpful suggestions when things go wrong
-
-## Examples
-
-**Example 1: Simple release**
-```
-User: /create-release master v1.0.2
-
-✓ Found release branch: release/v1.0.2
-✓ Checked out release/v1.0.2
-✓ Pushed to remote
-
-Analyzing changes...
-
-Found 15 commits
-Changed 47 files
-
-Tickets in this release:
-  JIRA-123, JIRA-456, JIRA-789
-
-Creating PR...
-✓ Created PR #42: Release v1.0.2
-
-Next steps:
-1. Review PR
-2. Get approvals
-3. Merge with /merge-release
-```
-
-**Example 2: Interactive mode**
-```
-User: /create-release
-
-Available release branches:
-- release/v1.0.2
-- release/v1.0.1
-- release/v0.9.5
-
-User: release/v1.0.2
-
-Target branch (default: master): master
-
-✓ Creating PR from release/v1.0.2 to master...
-```
-
-**Example 3: New release branch**
-```
-User: /create-release master v2.0.0
-
-✗ Release branch 'release/v2.0.0' doesn't exist
-
-Would you like to:
-[c] Create it from master
-[a] Abort
-
-User: c
-
-✓ Created release/v2.0.0 from master
-✓ Pushed to remote
-
-Note: New release branch has no changes yet.
-Add commits to release/v2.0.0, then run /create-release again.
-```
+- **Single message execution** — all steps in one assistant turn.
+- **No re-derived gh/git logic in prose** — every gh/git operation goes through the shared scripts.
+- **Audit gate** — `record-audit.sh` must run *immediately before* `pr-create.sh --apply`, since the script issues `git push`. Do not run anything between them that could change HEAD or branch.
+- **Body authoring is your job** — the shell scripts deliberately don't template prose; the JSON from `commits-data.sh` is what you have to work with. Keep it factual and grouped, no marketing voice.

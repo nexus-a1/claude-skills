@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.8.1] - 2026-04-29
+
+## What's Changed
+
+This patch release includes shell library refactoring, quality improvements, and bug fixes across the release management skills.
+
+### Release Engineering
+- **Shell Library Migration** — All three release skills (`/create-release-branch`, `/create-release`, `/merge-release`, `/release`) converted to shell-backed dispatchers. This consolidates release logic into reusable, testable shell scripts.
+- **Bug Fixes** — Corrected version suggestion base-branch handling, fixed duplicate "release/" prefix in error messages, hardened permission validation for security.
+
+### Testing & Quality
+- **Integration Tests** — Fixed invalid jq syntax in pr-merge test assertions.
+- **CI Linting** — Resolved shellcheck warnings (SC2034, SC2317, SC1091) across scripts.
+- **Ticket Extraction** — Made commit ticket pattern matching case-insensitive.
+
+### Documentation
+- **Release Workflow Guide** — Added comprehensive `docs/workflows/release/README.md` with step-by-step process and architecture diagram.
+- **Scripts Reference** — Updated documentation to list all shell scripts and their roles.
+
+### Security
+- **Input Validation** — Tightened permission glob in release scripts to require `--` prefix for safety.
+- **PII/Sensitive Data** — Hardened `report-issue` skill to prevent accidental sensitive data exfiltration.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.8.0...v1.8.1
+
 ## [1.7.1] - 2026-04-25
 
 ## What's Changed
