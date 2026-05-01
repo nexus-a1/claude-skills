@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.8.7] - 2026-05-01
+
+## What's Changed
+
+1 commit: 1 perf. No breaking changes.
+
+### Performance
+
+- **release**: cap commits-data output and drop full sha — reduces token waste in release notes generation by eliminating redundant full commit SHAs.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.8.6...v1.8.7
+
 ## [1.8.6] - 2026-05-01
 
 ## What's Changed

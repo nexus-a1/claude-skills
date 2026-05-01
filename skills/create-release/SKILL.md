@@ -64,11 +64,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/shared/release/commits-data.sh" \
 ```
 
 If the resolver can't find `<release_branch>` locally, try `origin/<release_branch>` for the head ref. The output JSON has:
-- `commit_count`, `file_count`
+- `commit_count` — true count across the full range
+- `commits_returned`, `truncated` — how many entries `commits[]` actually holds; `true` when the range exceeds `--limit` (default 500). Aggregates are full-range; only `commits[]` is sliced (oldest dropped). When `truncated`, disclose "showing N of M commits" in the PR body.
+- `file_count`
 - `tickets[]` — uppercased, deduped ticket IDs (e.g. `JIRA-123`)
 - `breakdown` — counts by conventional-commit type (`feat`, `fix`, `chore`, …)
 - `has_breaking_change`
-- `commits[]` — per-commit `{sha, short, subject, type, scope, tickets, breaking}`
+- `commits[]` — per-commit `{short, subject, type, scope, tickets, breaking}` (full sha is intentionally omitted; `short` is what release notes render and GitHub auto-links)
 
 If `commit_count == 0`, stop with: "No commits to release — release branch matches the target."
 

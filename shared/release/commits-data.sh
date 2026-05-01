@@ -7,22 +7,32 @@
 # making it re-derive the data from raw git output.
 #
 # Usage:
-#   bash commits-data.sh --base=<ref> --head=<ref> [--json]
+#   bash commits-data.sh --base=<ref> --head=<ref> [--limit=N] [--json]
 #
 # Output (with --json — default and only mode for now):
 #   {
 #     "base": "master",
 #     "head": "release/v1.2.0",
-#     "commit_count": 12,
+#     "commit_count": 12,         # true count across the full range
+#     "commits_returned": 12,     # number of entries actually emitted
+#     "truncated": false,         # true when commits_returned < commit_count
 #     "file_count": 47,
 #     "tickets": ["JIRA-123", "JIRA-456"],
 #     "breakdown": { "feat": 4, "fix": 6, "chore": 1, "docs": 1, "other": 0 },
 #     "has_breaking_change": false,
 #     "commits": [
-#       { "sha": "abcd1234", "subject": "feat: ...", "type": "feat",
+#       { "short": "abcd123", "subject": "feat: ...", "type": "feat",
 #         "scope": "...", "tickets": [...], "breaking": false }
 #     ]
 #   }
+#
+# --limit caps the number of per-commit entries emitted in `commits[]`
+# (default 500). When the range exceeds the limit, the OLDEST commits are
+# dropped — release notes care about what's new. Aggregates (commit_count,
+# breakdown, tickets, has_breaking_change, file_count) are always computed
+# over the full range so the caller can disclose "showing N of M commits".
+# The full sha is intentionally not emitted; `short` (7 chars) is what
+# release notes / PR bodies render and GitHub auto-links.
 #
 # Conventional commit detection follows the standard regex
 # `^<type>(\(<scope>\))?(!)?: <subject>` with `!` or a `BREAKING CHANGE:`
@@ -43,17 +53,24 @@ source "$PLUGIN_RELEASE_DIR/lib.sh"
 
 base=""
 head=""
+limit=500
 
 while (( $# > 0 )); do
   case "$1" in
-    --base=*) base="${1#--base=}"; shift ;;
-    --base)   base="${2:-}"; shift 2 ;;
-    --head=*) head="${1#--head=}"; shift ;;
-    --head)   head="${2:-}"; shift 2 ;;
-    --json)   shift ;;
+    --base=*)  base="${1#--base=}"; shift ;;
+    --base)    base="${2:-}"; shift 2 ;;
+    --head=*)  head="${1#--head=}"; shift ;;
+    --head)    head="${2:-}"; shift 2 ;;
+    --limit=*) limit="${1#--limit=}"; shift ;;
+    --limit)   limit="${2:-}"; shift 2 ;;
+    --json)    shift ;;
     *) _die "$EX_SYSTEM" "commits-data.sh: unknown arg '$1'" ;;
   esac
 done
+
+if ! [[ "$limit" =~ ^[0-9]+$ ]] || (( limit < 1 )); then
+  _die "$EX_USER" "commits-data.sh: --limit must be a positive integer (got '$limit')"
+fi
 
 [[ -z "$base" ]] && _die "$EX_USER" "commits-data.sh: --base is required"
 [[ -z "$head" ]] && _die "$EX_USER" "commits-data.sh: --head is required"
@@ -187,8 +204,10 @@ while IFS= read -r -d "$RS" record; do
   # Build the per-commit JSON object.
   tickets_json=$(printf '%s\n' "${commit_tickets[@]+"${commit_tickets[@]}"}" \
     | jq -R . | jq -s 'map(select(. != ""))')
+  # Per-commit object: full sha is intentionally omitted. `short` is what
+  # PR bodies / release notes render; GitHub auto-links it. Saves ~33 bytes
+  # per commit, which matters on long ranges.
   commit_json=$(jq -nc \
-    --arg sha      "$sha" \
     --arg short    "${sha:0:7}" \
     --arg subject  "$subject" \
     --arg type     "$type" \
@@ -196,7 +215,7 @@ while IFS= read -r -d "$RS" record; do
     --argjson tickets "$tickets_json" \
     --arg breaking "$breaking" \
     '{
-      sha: $sha, short: $short, subject: $subject,
+      short: $short, subject: $subject,
       type:    (if $type    == "" then null else $type    end),
       scope:   (if $scope   == "" then null else $scope   end),
       tickets: $tickets,
@@ -205,9 +224,19 @@ while IFS= read -r -d "$RS" record; do
   commits_jsonl="$commits_jsonl$commit_json"$'\n'
 done < <(printf '%s' "$raw")
 
-# Build commits array and unique tickets list via jq.
-commits_array=$(printf '%s' "$commits_jsonl" | jq -s '.')
-commit_count=$(printf '%s' "$commits_array" | jq 'length')
+# Build commits array and unique tickets list via jq. Aggregates (counts,
+# tickets, breakdown, breaking flag) are derived from the full unbounded
+# array — only the emitted `commits[]` slice is truncated to --limit. Drop
+# from the tail because git log is newest-first; the newest entries are the
+# ones release notes care about.
+commits_array_full=$(printf '%s' "$commits_jsonl" | jq -s '.')
+commit_count=$(printf '%s' "$commits_array_full" | jq 'length')
+commits_array=$(printf '%s' "$commits_array_full" | jq --argjson n "$limit" '.[0:$n]')
+commits_returned=$(printf '%s' "$commits_array" | jq 'length')
+truncated="false"
+if (( commit_count > commits_returned )); then
+  truncated="true"
+fi
 
 unique_tickets=$(printf '%s' "$all_tickets" \
   | { grep -v '^$' || true; } \
@@ -221,11 +250,13 @@ fi
 jq -n \
   --arg base "$base_resolved" \
   --arg head "$head_resolved" \
-  --argjson commit_count "$commit_count" \
-  --argjson file_count   "$file_count" \
-  --argjson tickets      "$unique_tickets" \
-  --argjson commits      "$commits_array" \
-  --arg has_breaking     "$has_breaking" \
+  --argjson commit_count     "$commit_count" \
+  --argjson commits_returned "$commits_returned" \
+  --arg     truncated        "$truncated" \
+  --argjson file_count       "$file_count" \
+  --argjson tickets          "$unique_tickets" \
+  --argjson commits          "$commits_array" \
+  --arg has_breaking         "$has_breaking" \
   --argjson b_feat       "$breakdown_feat" \
   --argjson b_fix        "$breakdown_fix" \
   --argjson b_chore      "$breakdown_chore" \
@@ -239,9 +270,11 @@ jq -n \
   --argjson b_other      "$breakdown_other" \
   '{
     base: $base, head: $head,
-    commit_count: $commit_count,
-    file_count:   $file_count,
-    tickets:      $tickets,
+    commit_count:     $commit_count,
+    commits_returned: $commits_returned,
+    truncated:        ($truncated == "true"),
+    file_count:       $file_count,
+    tickets:          $tickets,
     has_breaking_change: ($has_breaking == "true"),
     breakdown: {
       feat: $b_feat, fix: $b_fix, chore: $b_chore, docs: $b_docs,
