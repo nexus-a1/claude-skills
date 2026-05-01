@@ -68,8 +68,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/shared/release/pr-merge.sh" \
 ```
 
 The output JSON has:
-- `pr` — number, title, url, state, mergeable, reviewDecision
+- `pr` — number, title, url, state, mergeable, reviewDecision (raw `statusCheckRollup` is stripped — already aggregated below)
 - `gates` — `approved`, `no_conflicts`, `checks_passing`, `checks_running`, `ready`
+- `failing_checks[]` — slim `{name, conclusion}` per failed check, used to name what failed
+- `running_checks_count` — count of checks still pending/in-progress (no per-check detail)
 - `blocking_issues` — human-readable list of why it's not ready (empty when ready)
 
 Render a short summary to the user (one section per gate, ✓ / ✗).

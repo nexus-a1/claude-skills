@@ -175,6 +175,9 @@ fi
 
 # Checks: aggregate statusCheckRollup. Each entry has a `state` (CheckRun)
 # or `conclusion` (CommitStatus); empty rollup = no checks configured = pass.
+# We keep failing entries (slimmed to {name, conclusion}) so the LLM can name
+# the failed check; running entries collapse to a count since they aren't
+# individually actionable until they finish.
 checks_passing="true"
 checks_running="false"
 failing_checks_json=$(printf '%s' "$pr_json" | jq '[.statusCheckRollup // []
@@ -184,18 +187,26 @@ failing_checks_json=$(printf '%s' "$pr_json" | jq '[.statusCheckRollup // []
       | $r != "SUCCESS" and $r != "NEUTRAL" and $r != "SKIPPED"
         and $r != "PENDING" and $r != "QUEUED" and $r != "IN_PROGRESS"
         and $r != ""
-    )]')
-running_checks_json=$(printf '%s' "$pr_json" | jq '[.statusCheckRollup // []
+    )
+  | { name: (.name // .context // ""),
+      conclusion: ((.conclusion // .status // .state // "") | ascii_upcase) }]')
+running_checks_count=$(printf '%s' "$pr_json" | jq '[.statusCheckRollup // []
   | .[]
   | select(((.conclusion // .status // .state // "") | ascii_upcase) as $r
-      | $r == "PENDING" or $r == "QUEUED" or $r == "IN_PROGRESS")]')
+      | $r == "PENDING" or $r == "QUEUED" or $r == "IN_PROGRESS")] | length')
 
 if [[ "$(printf '%s' "$failing_checks_json" | jq 'length')" != "0" ]]; then
   checks_passing="false"
 fi
-if [[ "$(printf '%s' "$running_checks_json" | jq 'length')" != "0" ]]; then
+if [[ "$running_checks_count" != "0" ]]; then
   checks_running="true"
 fi
+
+# Build a slim PR object for downstream emission. The full statusCheckRollup
+# is dropped — gates and failing_checks already capture everything callers
+# (skill prompts, tests) reference. Keeping it would double-ship every check
+# entry on every plan/apply response.
+pr_summary_json=$(printf '%s' "$pr_json" | jq 'del(.statusCheckRollup)')
 
 # Aggregate: ready means all gates green AND no checks still running.
 ready="false"
@@ -227,16 +238,16 @@ fi
 emit_report() {
   if (( json )); then
     jq -n \
-      --argjson pr             "$pr_json" \
-      --arg     approved       "$approved" \
-      --arg     no_conflicts   "$no_conflicts" \
-      --arg     checks_passing "$checks_passing" \
-      --arg     checks_running "$checks_running" \
-      --arg     ready          "$ready" \
-      --argjson failing_checks "$failing_checks_json" \
-      --argjson running_checks "$running_checks_json" \
-      --argjson blocking       "$(printf '%s\n' "${blocking[@]+"${blocking[@]}"}" | jq -R . | jq -s 'map(select(. != ""))')" \
-      --arg     mode           "$mode" \
+      --argjson pr                   "$pr_summary_json" \
+      --arg     approved             "$approved" \
+      --arg     no_conflicts         "$no_conflicts" \
+      --arg     checks_passing       "$checks_passing" \
+      --arg     checks_running       "$checks_running" \
+      --arg     ready                "$ready" \
+      --argjson failing_checks       "$failing_checks_json" \
+      --argjson running_checks_count "$running_checks_count" \
+      --argjson blocking             "$(printf '%s\n' "${blocking[@]+"${blocking[@]}"}" | jq -R . | jq -s 'map(select(. != ""))')" \
+      --arg     mode                 "$mode" \
       '{
         mode: $mode,
         pr: $pr,
@@ -247,9 +258,9 @@ emit_report() {
           checks_running: ($checks_running == "true"),
           ready:          ($ready          == "true")
         },
-        failing_checks: $failing_checks,
-        running_checks: $running_checks,
-        blocking_issues: $blocking
+        failing_checks:       $failing_checks,
+        running_checks_count: $running_checks_count,
+        blocking_issues:      $blocking
       }'
   else
     local conflicts_line
@@ -291,7 +302,7 @@ case "$pr_state" in
   MERGED)
     if (( json )); then
       jq -n \
-        --argjson pr "$pr_json" \
+        --argjson pr "$pr_summary_json" \
         '{ ok: true, already_merged: true, pr: $pr }'
     else
       echo "PR #$pr_number is already merged. Nothing to do."
@@ -333,7 +344,7 @@ fi
 
 if (( json )); then
   jq -n \
-    --argjson pr "$pr_json" \
+    --argjson pr "$pr_summary_json" \
     --arg strategy "$merge_strategy" \
     --arg deleted_branch "$([[ $delete_branch -eq 1 ]] && echo true || echo false)" \
     '{

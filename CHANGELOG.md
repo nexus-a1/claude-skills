@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.6] - 2026-05-01
+
+## What's Changed
+
+### Performance
+- Trim pr-merge --plan output for token cost (#215)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.8.5...v1.8.6
+
 ## [1.8.5] - 2026-05-01
 
 ## What's Changed
