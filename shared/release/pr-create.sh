@@ -160,35 +160,38 @@ fi
 # Plan output
 # ---------------------------------------------------------------------------
 emit_plan() {
-  local actions_arr=()
-  if (( release_local_exists == 0 )); then
-    actions_arr+=("checkout local release branch from origin/$release_branch")
-  fi
+  # Derived booleans replace the rendered command-string list. The skill
+  # prompt has every field it needs (target, release_branch, existing_pr,
+  # commit_count) to phrase the plan; shipping the literal `gh pr create
+  # --base ... --head ...` strings to the LLM was duplication.
+  local will_push_branch="false"
+  local will_update_existing="false"
+  local will_refuse_existing="false"
   if (( release_remote_exists == 0 )); then
-    actions_arr+=("git push -u origin $release_branch")
+    will_push_branch="true"
   fi
   if [[ -n "$existing_pr_number" ]]; then
     if (( update_existing )); then
-      actions_arr+=("gh pr edit $existing_pr_number --title=... --body-file=...")
+      will_update_existing="true"
     else
-      actions_arr+=("(would refuse — PR #$existing_pr_number already open; pass --update-existing to update)")
+      will_refuse_existing="true"
     fi
-  else
-    actions_arr+=("gh pr create --base $target_local --head $release_branch --title='$title' --label=$label --body-file=...")
   fi
 
   if (( json )); then
     jq -n \
-      --arg     target          "$target_local" \
-      --arg     release_branch  "$release_branch" \
-      --arg     title           "$title" \
-      --arg     label           "$label" \
-      --arg     existing_state  "$existing_pr_state" \
-      --arg     existing_number "$existing_pr_number" \
-      --arg     existing_url    "$existing_pr_url" \
-      --argjson commit_count    "$commit_count" \
-      --arg     mode            "$mode" \
-      --argjson actions         "$(printf '%s\n' "${actions_arr[@]+"${actions_arr[@]}"}" | jq -R . | jq -s 'map(select(. != ""))')" \
+      --arg     target               "$target_local" \
+      --arg     release_branch       "$release_branch" \
+      --arg     title                "$title" \
+      --arg     label                "$label" \
+      --arg     existing_state       "$existing_pr_state" \
+      --arg     existing_number      "$existing_pr_number" \
+      --arg     existing_url         "$existing_pr_url" \
+      --argjson commit_count         "$commit_count" \
+      --arg     mode                 "$mode" \
+      --arg     will_push_branch     "$will_push_branch" \
+      --arg     will_update_existing "$will_update_existing" \
+      --arg     will_refuse_existing "$will_refuse_existing" \
       '{
         mode:           $mode,
         target:         $target,
@@ -201,9 +204,25 @@ emit_plan() {
           number: (if $existing_number == "" then null else ($existing_number | tonumber) end),
           url:    (if $existing_url    == "" then null else $existing_url    end)
         },
-        actions: $actions
+        will_push_branch:     ($will_push_branch     == "true"),
+        will_update_existing: ($will_update_existing == "true"),
+        will_refuse_existing: ($will_refuse_existing == "true")
       }'
   else
+    local actions_arr=()
+    if (( release_local_exists == 0 )); then
+      actions_arr+=("checkout local release branch from origin/$release_branch")
+    fi
+    if [[ "$will_push_branch" == "true" ]]; then
+      actions_arr+=("git push -u origin $release_branch")
+    fi
+    if [[ "$will_update_existing" == "true" ]]; then
+      actions_arr+=("gh pr edit $existing_pr_number --title=... --body-file=...")
+    elif [[ "$will_refuse_existing" == "true" ]]; then
+      actions_arr+=("(would refuse — PR #$existing_pr_number already open; pass --update-existing to update)")
+    else
+      actions_arr+=("gh pr create --base $target_local --head $release_branch --title='$title' --label=$label --body-file=...")
+    fi
     cat <<EOF
 Plan:
   target:           $target_local

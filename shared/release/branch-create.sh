@@ -144,10 +144,6 @@ emit_plan() {
           sha:     $resolved_sha,
           subject: $resolved_subject
         },
-        actions: [
-          ("create local branch " + $release_branch + " from " + $resolved_ref),
-          ("push -u origin " + $release_branch)
-        ],
         mode: $mode
       }'
   else

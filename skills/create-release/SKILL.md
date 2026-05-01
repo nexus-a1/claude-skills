@@ -127,8 +127,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/shared/release/pr-create.sh" \
 ```
 
 The output reports:
-- `actions` — what apply will do (push branch, run gh pr create, etc.)
 - `existing_pr` — non-null if an open PR exists for this head branch
+- `will_push_branch` (bool) — apply will run `git push -u origin <release_branch>` first
+- `will_update_existing` (bool) — apply will edit the existing PR rather than create a new one (requires `--update-existing`)
+- `will_refuse_existing` (bool) — apply would refuse because a PR is already open and `--update-existing` was not passed
 
 Show the plan summary to the user. If `existing_pr.state == "OPEN"`, surface the URL and use AskUserQuestion to ask whether to **update** that PR (re-run apply with `--update-existing`) or abort.
 

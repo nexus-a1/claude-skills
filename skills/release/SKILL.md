@@ -100,7 +100,6 @@ The output reports:
 - `existing_pr` — non-null when a PR for `release/<version>` exists
 - `apply_blocked` — non-null if apply would refuse
 - `suggested_skill` — `create-release` or `merge-release` when routing is required
-- `action` — what apply will run
 
 Show a concise summary to the user. Then route based on `workflow_case`:
 

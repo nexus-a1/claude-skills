@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.8] - 2026-05-01
+
+## What's Changed
+
+### Performance
+- Strip rendered command strings from plan JSON (#217)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.8.7...v1.8.8
+
 ## [1.8.7] - 2026-05-01
 
 ## What's Changed

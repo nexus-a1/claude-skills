@@ -250,15 +250,6 @@ esac
 # Plan output
 # ---------------------------------------------------------------------------
 emit_plan() {
-  local action_str
-  if [[ -n "$apply_blocked" ]]; then
-    action_str="(blocked: $apply_blocked)"
-  elif (( prerelease )); then
-    action_str="gh release create $version --target $target_local --title '$title' --prerelease --notes-file=..."
-  else
-    action_str="gh release create $version --target $target_local --title '$title' --notes-file=..."
-  fi
-
   if (( json )); then
     jq -n \
       --arg version          "$version" \
@@ -275,7 +266,6 @@ emit_plan() {
       --arg apply_blocked    "$apply_blocked" \
       --arg suggested_skill  "$suggested_skill" \
       --arg mode             "$mode" \
-      --arg action           "$action_str" \
       '{
         mode:           $mode,
         version:        $version,
@@ -294,10 +284,17 @@ emit_plan() {
         },
         workflow_case:    $workflow_case,
         apply_blocked:    (if $apply_blocked   == "" then null else $apply_blocked   end),
-        suggested_skill:  (if $suggested_skill == "" then null else $suggested_skill end),
-        action:           $action
+        suggested_skill:  (if $suggested_skill == "" then null else $suggested_skill end)
       }'
   else
+    local action_str
+    if [[ -n "$apply_blocked" ]]; then
+      action_str="(blocked: $apply_blocked)"
+    elif (( prerelease )); then
+      action_str="gh release create $version --target $target_local --title '$title' --prerelease --notes-file=..."
+    else
+      action_str="gh release create $version --target $target_local --title '$title' --notes-file=..."
+    fi
     cat <<EOF
 Plan:
   version:        $version
