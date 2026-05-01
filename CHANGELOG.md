@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.9] - 2026-05-01
+
+## What's Changed
+
+### Performance
+- drop Step 1 re-runs of resolve-latest-release (#218) - Reduces token spend in release skill workflow by skipping redundant resolve-latest-release invocations
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.8.8...v1.8.9
+
 ## [1.8.8] - 2026-05-01
 
 ## What's Changed

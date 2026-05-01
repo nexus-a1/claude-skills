@@ -58,14 +58,7 @@ Outcomes:
 
 #### Resolving the version
 
-When `version` is missing, suggest a concrete version. Run in parallel:
-
-```bash
-# Latest stable tag (deterministic resolver, RC-aware).
-bash "${CLAUDE_PLUGIN_ROOT}/shared/resolve-latest-release.sh"
-# Recent tags as fallback / ladder.
-git tag --sort=-version:refname | head -10
-```
+When `version` is missing, suggest a concrete version. The Context block above already loaded `Latest release` (from `resolve-latest-release.sh`) and `Recent tags` (top 10). **Use those values directly** — do not re-shell `resolve-latest-release.sh` or `git tag --sort=-version:refname | head -10`. The fetch-tags ran in Context, so the values are fresh.
 
 Then propose a bump based on conventional-commit scope using `commits-data.sh` against the resolved branch:
 
@@ -84,7 +77,7 @@ The JSON gives `breakdown.feat / fix / chore / …` and `has_breaking_change`. M
 
 Use **AskUserQuestion** to confirm the bump (skip if `fasttrack` and the bump is unambiguous; abort fasttrack if `has_breaking_change` is true and the user did not pass an explicit version). Then re-run the parser with the chosen version.
 
-For RC bumps (`prerelease == true`): list existing `vX.Y.Z-rc.*` tags and propose `-rc.<N+1>`.
+For RC bumps (`prerelease == true`): scan the **Recent tags** Context value above for `vX.Y.Z-rc.*` matches and propose `-rc.<N+1>`. If the ladder doesn't go deep enough (rare — would need >10 RCs of the same X.Y.Z), only then re-run `git tag --sort=-version:refname | grep "^v<X.Y.Z>-rc"` for that specific stem.
 
 ### Step 2 — Plan: validate + detect workflow case
 
