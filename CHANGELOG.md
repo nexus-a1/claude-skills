@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.8.4] - 2026-05-01
+
+## What's Changed
+
+### Bug Fixes
+- **fix(skills)**: Fetch origin target before PR description generation ([8e1ee30](https://github.com/nexus-a1/claude/commit/8e1ee30a6c29687ae2f5c4c9ea96b68a059ce76c))
+
+Ensures commit ranges for PR bodies reflect current upstream state, not stale local refs. Fixes `/create-release`, `/implement`, and `pr-create.sh` to fetch the target branch before computing commit deltas.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.8.3...v1.8.4
+
 ## [1.8.3] - 2026-04-29
 
 ## What's Changed

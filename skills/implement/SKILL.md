@@ -1564,6 +1564,12 @@ Create PR to {base_branch}? [y/change/skip]
 
 #### 5.3 Create PR
 
+Fetch the target branch before computing the commit range so the PR body reflects the real delta against current upstream:
+
+```bash
+git fetch -q origin {target_branch} 2>/dev/null || true
+```
+
 For a short commit range (≤ 10 commits, a handful of files), author the PR inline with `gh pr create`:
 
 ```bash

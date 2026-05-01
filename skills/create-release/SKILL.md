@@ -48,7 +48,15 @@ Outcomes:
 - **Exit 10** — `missing` contains `version`. Run `version-suggest.sh --json` and use AskUserQuestion to pick. Re-run parser with the chosen version.
 - **Exit 20** — surface errors and stop.
 
-### Step 2 — Gather commit data
+### Step 2 — Sync target branch from origin
+
+Fetch the target branch before computing the commit range so the PR description reflects the real delta, not a stale local ref:
+
+```bash
+git fetch origin <target> 2>/dev/null || true
+```
+
+### Step 3 — Gather commit data
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/shared/release/commits-data.sh" \
@@ -64,13 +72,13 @@ If the resolver can't find `<release_branch>` locally, try `origin/<release_bran
 
 If `commit_count == 0`, stop with: "No commits to release — release branch matches the target."
 
-### Step 3 — Author PR title and body
+### Step 4 — Author PR title and body
 
 The shell library does **not** generate the PR body. That is your job.
 
 **Title**: defaults to `Release <version>` (the script will use this if you pass `--title=""` or omit it). Override only if the user asked for something custom.
 
-**Body**: write a concise, well-organized markdown PR body using the JSON from Step 2. A good shape:
+**Body**: write a concise, well-organized markdown PR body using the JSON from Step 3. A good shape:
 
 ```markdown
 ## Release v1.2.0
@@ -108,7 +116,7 @@ Write the body to a tempfile under `.claude/session-state/` (or `/tmp/` if the w
 #   .claude/session-state/release-pr-body-<version>.md
 ```
 
-### Step 4 — Plan: validate via pr-create.sh
+### Step 5 — Plan: validate via pr-create.sh
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/shared/release/pr-create.sh" \
@@ -122,7 +130,7 @@ The output reports:
 
 Show the plan summary to the user. If `existing_pr.state == "OPEN"`, surface the URL and use AskUserQuestion to ask whether to **update** that PR (re-run apply with `--update-existing`) or abort.
 
-### Step 5 — Confirm and apply
+### Step 6 — Confirm and apply
 
 Use AskUserQuestion to confirm: **Open release PR now?**.
 
@@ -143,7 +151,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/shared/release/pr-create.sh" \
 
 If apply exits non-zero, surface stderr verbatim and stop.
 
-### Step 6 — Report
+### Step 7 — Report
 
 On success:
 

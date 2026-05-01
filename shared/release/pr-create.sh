@@ -96,6 +96,11 @@ if [[ -z "$title" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Fetch target branch so commit range reflects current upstream state
+# ---------------------------------------------------------------------------
+git fetch -q origin "$target" 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
 # Resolve target ref
 # ---------------------------------------------------------------------------
 if ! target_ref=$(_resolve_branch_ref "$target"); then
