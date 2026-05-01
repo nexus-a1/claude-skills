@@ -104,7 +104,7 @@ Initialize loop state:
 
 - `MAX_ITERATIONS=10` — hard cap to prevent runaway loops
 - `ITERATION=0`
-- `PROCESSED_COMMENTS={}` — set of comment IDs already addressed
+- `PROCESSED_COMMENTS='[]'` — JSON array of comment IDs already addressed (must be a JSON array string so it can be passed to `jq --argjson` without reshaping; appending uses `jq` not bash)
 - `LAST_PROCESSED_SHA=""` — tracks the SHA we last acted on
 
 **First-iteration bootstrap:** Treat all comments that already exist on the PR as "pre-existing." Use `AskUserQuestion` to confirm whether to address pre-existing unaddressed comments from reviewers (default: **Yes**). If the user says no, seed `PROCESSED_COMMENTS` with all existing comment IDs so only comments posted after this moment are acted on.
@@ -151,31 +151,96 @@ Filter to runs matching `HEAD_SHA`. Group by status:
 
 **Do NOT use `gh run watch`.** It assumes a TTY, streams output with escape
 sequences, and cannot be reliably captured or backgrounded. Use a bounded
-polling loop instead:
+polling loop instead.
+
+**Token discipline:** each `gh run list --json` response is ~750 tokens.
+Up to 80 polls per iteration × 10 iterations = ~600k tokens of polling JSON
+alone if every response goes into the LLM's context. To prevent that,
+**redirect each poll to a tmpfile and emit only a one-line summary to
+stdout**. Re-read the tmpfile only when state changes (a run finishes or a
+new run starts) or when you need detail to fall through to 3.3.
 
 ```bash
 POLL_INTERVAL=15           # seconds between polls
 POLL_MAX=80                # 80 × 15s = 20 minutes hard cap per iteration
 POLL_COUNT=0
+# Tmpfile names include $$ (PID) so concurrent /monitor-pr invocations on
+# the same PR don't clobber each other.
+RUNS_FILE="/tmp/monitor-pr-${PR_NUMBER}-${$}-runs.json"
+PREV_SUMMARY=""
 
 while [ "$POLL_COUNT" -lt "$POLL_MAX" ]; do
-  RUNS_JSON=$(gh run list --repo "$REPO" --branch "$BRANCH" --limit 20 \
+  # Capture full JSON to file; do NOT pipe it to stdout.
+  gh run list --repo "$REPO" --branch "$BRANCH" --limit 20 \
     --json databaseId,name,status,conclusion,headSha \
-    --jq '[.[] | select(.headSha == "'"$HEAD_SHA"'")]')
+    --jq '[.[] | select(.headSha == "'"$HEAD_SHA"'")]' \
+    > "$RUNS_FILE"
 
-  PENDING=$(echo "$RUNS_JSON" \
-    | jq '[.[] | select(.status == "in_progress" or .status == "queued" or .status == "waiting")] | length')
-
-  if [ "$PENDING" -eq 0 ]; then
-    break
+  # Defensive: empty/missing file means gh failed (auth expired, network
+  # blip). Without this check, all jq selectors below return 0 and the
+  # loop would `break` claiming "all green" while CI is unknown.
+  if [ ! -s "$RUNS_FILE" ] || ! jq -e 'type == "array"' "$RUNS_FILE" >/dev/null 2>&1; then
+    echo "WARN poll $POLL_COUNT/$POLL_MAX: gh run list returned no JSON — retrying" >&2
+    sleep "$POLL_INTERVAL"
+    POLL_COUNT=$((POLL_COUNT + 1))
+    continue
   fi
 
+  # One-line summary. Note the `unknown` bucket: GitHub stamps
+  # `status=completed` a few seconds before it stamps `conclusion`, so
+  # there's a transient window where a run is in neither pending nor
+  # finalized state. Treating it as `pending` for loop control prevents
+  # a false-green break during that window.
+  SUMMARY=$(jq -r '
+    [.[] | select(.status == "in_progress" or .status == "queued" or .status == "waiting")] as $p
+    | [.[] | select(.status == "completed" and .conclusion == null)] as $u
+    | [.[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out" or .conclusion == "action_required")] as $f
+    | [.[] | select(.conclusion == "success" or .conclusion == "skipped")] as $g
+    | "pending=\($p|length) unknown=\($u|length) failed=\($f|length) green=\($g|length)"
+      + (if (($p|length) + ($u|length)) > 0 then " | waiting: " + ([($p+$u)[].name] | join(",")) else "" end)
+  ' "$RUNS_FILE")
+
+  # `unknown` counts as pending for control flow.
+  PENDING=$(jq '[.[] | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or (.status == "completed" and .conclusion == null))] | length' "$RUNS_FILE")
+
+  # Echo when the summary changes (state transition) OR every 10 polls
+  # (liveness heartbeat — proves polling is still happening even when
+  # nothing is changing).
+  if [ "$SUMMARY" != "$PREV_SUMMARY" ] || (( POLL_COUNT > 0 && POLL_COUNT % 10 == 0 )); then
+    printf 'poll %d/%d: %s\n' "$POLL_COUNT" "$POLL_MAX" "$SUMMARY"
+    PREV_SUMMARY="$SUMMARY"
+  fi
+
+  if [ "$PENDING" -eq 0 ]; then break; fi
   sleep "$POLL_INTERVAL"
   POLL_COUNT=$((POLL_COUNT + 1))
 done
 ```
 
-After the loop exits, re-classify all runs for `HEAD_SHA` by `conclusion`:
+After the loop exits, re-classify by reading the **final** state from
+`$RUNS_FILE` (one jq invocation, scalar output — not the full JSON). Treat
+`unknown` runs (completed but no conclusion stamped yet) as still-pending
+for the timeout decision; they are not failures.
+
+If `POLL_MAX` was hit with `unknown > 0`, surface that explicitly so the
+user knows the timeout wasn't a clean classification:
+
+```bash
+UNKNOWN_AT_TIMEOUT=$(jq '[.[] | select(.status == "completed" and .conclusion == null)] | length' "$RUNS_FILE")
+if [ "$POLL_COUNT" -eq "$POLL_MAX" ] && [ "$UNKNOWN_AT_TIMEOUT" -gt 0 ]; then
+  echo "WARN $UNKNOWN_AT_TIMEOUT runs are completed-but-unstamped at POLL_MAX — re-run /monitor-pr in ~30s for a clean read"
+fi
+```
+
+```bash
+jq -r '
+  [.[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out" or .conclusion == "action_required") | "\(.databaseId)\t\(.name)\t\(.conclusion)"]
+  | .[]' "$RUNS_FILE"
+```
+
+That gives you `<id>\t<name>\t<conclusion>` per failed run — exactly what 3.3
+needs. Avoid `cat $RUNS_FILE` or any unfiltered `jq '.'` of the file; load
+specific fields only.
 
 - `success` / `skipped` → green
 - `failure` / `cancelled` / `timed_out` / `action_required` → fall through to 3.3
@@ -186,11 +251,49 @@ background processes, no TTY escape sequences, and no orphaned tasks.
 
 ### 3.3 Investigate and Fix Failed Runs
 
-For each failed run, fetch the failure log:
+For each failed run, fetch the failure log. **Cap the inline read at the
+last 200 lines** — most CI failures surface the actionable error in the
+final stack trace / error block, and full logs routinely run 20k–300k
+tokens (verbose pytest, `set -x`, npm spam). Always write the full log to
+a tmpfile so you can `Read` earlier slices on demand without ever piping
+the whole thing to context.
 
 ```bash
-gh run view {run_id} --repo "$REPO" --log-failed
+LOG_FILE="/tmp/monitor-pr-${PR_NUMBER}-${$}-run-{run_id}.log"
+gh run view {run_id} --repo "$REPO" --log-failed > "$LOG_FILE"
+
+# Defensive: empty file means gh failed (auth, rate limit, network), or
+# the run has no failed steps yet. Without this check the multi-job
+# detection below sees JOB_COUNT=0 and silently produces no diagnostic.
+if [ ! -s "$LOG_FILE" ]; then
+  echo "WARN gh run view --log-failed produced no output for run {run_id} — skipping diagnosis (re-run or check gh auth)"
+else
+  tail -n 200 "$LOG_FILE"
+fi
+
+# Detect multi-job failures. gh's --log-failed concatenates failed steps
+# from every failed job, prefixed with the job name + tab. If the file
+# contains more than one distinct job-name prefix block, the tail-200
+# may show only the LAST job's noise while an earlier job hides the real
+# stack trace. In that case, walk each failed job individually rather
+# than trusting the unified tail.
+JOB_COUNT=$(awk -F'\t' 'NF>1 {print $1}' "$LOG_FILE" | sort -u | wc -l)
+if [ "$JOB_COUNT" -gt 1 ]; then
+  echo "WARN multi-job failure ($JOB_COUNT failed jobs in $LOG_FILE) — tail-200 may not capture earlier job's error"
+  echo "     Inspect each job's segment via Read with offset, or re-fetch per-job logs:"
+  awk -F'\t' 'NF>1 {print $1}' "$LOG_FILE" | sort -u
+fi
 ```
+
+When the multi-job warning fires, do **not** rely on the tail-200 — use
+`Read` with `offset`/`limit` to inspect each job's segment of `$LOG_FILE`,
+or re-fetch a specific job's log via `gh run view {run_id} --job <job-id>
+--log`. Acting on the wrong job's noise is the classic ghost-fix mode.
+
+For a single-job failure, the tail-200 is normally sufficient. If it
+still doesn't surface an actionable error (rare — happens with multi-stage
+CI where a prep step fails and downstream stages run on cached artifacts),
+use `Read` with `offset`/`limit` rather than re-fetching the whole file.
 
 **Diagnose before acting.** Classify the failure:
 
@@ -227,20 +330,74 @@ before acting** — GitHub keeps historical comments on every commit a PR has ev
 had, and acting on a comment whose code no longer exists produces ghost-fix
 churn (the exact failure mode that motivated this skill).
 
-```bash
-# Inline review comments — keep raw commit_id and position fields so we can
-# filter stale ones. Do NOT use `(.line // .original_line)` here: `line` is
-# null precisely when the referenced code no longer exists in the diff, and
-# falling back to original_line treats that as actionable.
-gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/comments" \
-  --jq '[.[] | {id, path, line, original_line, position, original_position,
-    author: .user.login, body, in_reply_to_id,
-    created_at, commit_id, original_commit_id}]'
+**Token discipline:** these endpoints return every comment ever posted on
+the PR — bodies, code snippets, suggestion blocks. On a heavily reviewed
+PR that's tens of KB. Apply the staleness/author/processed filters
+**inside a piped jq stage** so only actionable comments cross into
+context. Drop `--paginate` for the default 100-per-page fetch; only
+paginate when total exceeds the cap (rare).
 
-# Review-level comments (approve/request changes/comment)
-gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/reviews" \
-  --jq '[.[] | {id, state, author: .user.login, body,
-    submitted_at, commit_id}]'
+> **Implementation note.** `gh api` exposes only `-q/--jq` for an inline
+> filter and does **not** accept `--arg` / `--argjson`. To parameterize the
+> filter (with `$GH_USER` and `$PROCESSED_COMMENTS`), pipe `gh api`'s raw
+> JSON into a separate `jq` invocation. Do not collapse the two stages.
+
+```bash
+GH_USER=$(gh api user --jq .login)
+
+# Reusable filter expression — keep it in one place to prevent drift
+# between the first-page fetch and the paginate fallback.
+COMMENT_FILTER='
+  [.[]
+    | select(.position != null)            # drop stale (line removed from diff)
+    | select(.user.login != $me)           # drop self-replies
+    | select(([(.id | tostring)] | inside($processed)) | not)  # drop already-handled
+    | {id, path, line, original_line, position, original_position,
+       author: .user.login, body, in_reply_to_id,
+       created_at, commit_id, original_commit_id}]
+'
+REVIEW_FILTER='
+  [.[]
+    | select(.user.login != $me)
+    | select(([(.id | tostring)] | inside($processed)) | not)
+    | {id, state, author: .user.login, body, submitted_at, commit_id}]
+'
+
+# Inline review comments. PROCESSED_COMMENTS must be a JSON array (eg
+# '["123","456"]'); see Step 3 init. Use string IDs to avoid jq's
+# integer-vs-string equality footguns.
+gh api "repos/${REPO}/pulls/${PR_NUMBER}/comments?per_page=100" \
+  | jq --arg me "$GH_USER" --argjson processed "$PROCESSED_COMMENTS" \
+       "$COMMENT_FILTER"
+
+# Review-level comments — same shape.
+gh api "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100" \
+  | jq --arg me "$GH_USER" --argjson processed "$PROCESSED_COMMENTS" \
+       "$REVIEW_FILTER"
+```
+
+If either raw `gh api` response includes exactly 100 entries (the cap),
+there may be more — fall back to `gh api --paginate ...` for that endpoint
+and re-apply the same `$COMMENT_FILTER` / `$REVIEW_FILTER` via the same
+**piped** `jq` invocation. Do not collapse this back into `gh api --jq`;
+that path does not accept `--arg`/`--argjson` and silently breaks the
+filter. Use exactly:
+
+```bash
+gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/comments?per_page=100" \
+  | jq --arg me "$GH_USER" --argjson processed "$PROCESSED_COMMENTS" --slurp \
+       "[.[] | $COMMENT_FILTER[]]"
+```
+
+`--paginate` returns a stream of arrays (one per page); `--slurp` flattens
+them into a single array before the filter applies. Same shape for the
+reviews endpoint.
+
+To **mark a comment processed**, append its ID via jq (preserving array
+shape) — do not concatenate strings:
+
+```bash
+PROCESSED_COMMENTS=$(jq --arg id "$COMMENT_ID" '. + [$id]' <<< "$PROCESSED_COMMENTS")
 ```
 
 **Staleness filter** — drop any inline comment that matches any of:
@@ -290,6 +447,50 @@ At the end of the iteration:
 - If no fix was pushed and nothing was in-progress → sleep 10 seconds, then loop
 - If `ITERATION >= MAX_ITERATIONS` → exit loop with `iteration_cap_hit` status
 - If the PR reached a terminal state in 3.1 → exit loop with `success` status
+
+**Iteration compaction (token discipline).** Before re-entering the loop,
+write a one-line summary of this iteration to a scratch file and rely on
+that as the state-of-record going forward:
+
+```bash
+SUMMARY_FILE="/tmp/monitor-pr-${PR_NUMBER}-${$}-iter-summary.log"
+# Bash arrays of flagged/skipped IDs (id|reason). Joined for the summary
+# line; persist them so iter N+1 doesn't re-discover and re-flag.
+FLAGGED_JOIN=$(IFS=, ; echo "${FLAGGED_THIS_ITER[*]:-}")
+SKIPPED_JOIN=$(IFS=, ; echo "${SKIPPED_THIS_ITER[*]:-}")
+printf 'iter %d HEAD=%s | green=%d failed=%d fixed=%d comments_acted=%d | flagged=[%s] skipped=[%s]\n' \
+  "$ITERATION" "$HEAD_SHA" "$GREEN_COUNT" "$FAILED_COUNT" \
+  "$FIXES_PUSHED_THIS_ITER" "$COMMENTS_ACTED_THIS_ITER" \
+  "$FLAGGED_JOIN" "$SKIPPED_JOIN" \
+  >> "$SUMMARY_FILE"
+```
+
+**Critical:** any comment the operator chose **not** to act on (flagged
+for user judgment, skipped as ambiguous, deferred as conflicting with
+existing decisions) must have its ID added to `PROCESSED_COMMENTS`
+**and** appear in the iteration summary's `flagged=[...]` /
+`skipped=[...]` field. Without this, iter N+1 fetches the same comment,
+sees it's not in `PROCESSED_COMMENTS`, and either re-flags it (final
+report shows duplicates) or — worse — *acts* on it because the original
+"this needs human judgment" decision context is lost. Treat
+`PROCESSED_COMMENTS` as the durable record of "this skill has made a
+decision about this comment ID" — not just "this skill applied a fix."
+
+After writing the summary, treat the per-poll JSON, the failed-log tail,
+and the per-comment fetch from this iteration as discardable. Do not
+re-echo them, do not summarize them again — the next iteration starts
+fresh and only re-loads what's needed for the new HEAD_SHA. The Step 4
+final report reads `$SUMMARY_FILE` (cheap, structured) rather than
+reconstructing history from the conversation.
+
+**Tmpfile lifecycle.** All tmpfiles (`$RUNS_FILE`, `$LOG_FILE` per run,
+`$SUMMARY_FILE`) include `${$}` (PID) in their names so concurrent
+invocations targeting the same PR don't clobber each other. Set a trap
+at skill start so they're cleaned on exit even when the loop bails:
+
+```bash
+trap 'rm -f /tmp/monitor-pr-${PR_NUMBER}-${$}-* 2>/dev/null' EXIT
+```
 
 **Safety rails:**
 - Track failures by **workflow name** across pushed SHAs, not by run ID — each push creates new run IDs, so "same run ID fails twice" is unreachable. If the same workflow name fails on two consecutive pushed SHAs after a fix attempt, stop and report — the fix is not working and human judgment is required
@@ -373,3 +574,7 @@ Invoke `/monitor-pr` to shepherd it through CI and review without manually polli
 - **Mutating git operations that are visible to others (commit, push) delegate to `git-operator`.** This preserves the plugin's mandatory security-auditor / branch-protection checks before every push. Local-only alignment operations (fetch, checkout, `--ff-only` pull) in Step 2 run inline with `GIT_AUTHORIZED=1` to avoid the ~17k-token cost of a subagent spin-up for a trivial read-through operation.
 - **No destructive actions.** The skill never force-pushes, never amends, never resets, never closes the PR.
 - **Conservative comment handling.** When in doubt about a comment, the skill flags it for the user rather than guessing. Silent wrong fixes are worse than skipped comments.
+- **Token discipline.** monitor-pr is the longest-lived skill in the plugin and the only one that polls a remote system. Without care it is the only Sonnet skill that routinely crosses the 200k context window (which requires the 1M-context tier on the Anthropic API). Three rules keep it bounded:
+  1. **Polling JSON goes to a tmpfile, not to context.** The poll loop in 3.2a redirects every `gh run list` response to `$RUNS_FILE` and emits only a one-line summary — and even that line is suppressed when it's identical to the previous one. Without this, 80 polls × 750 tokens × 10 iterations = ~600k tokens of "still pending" noise.
+  2. **Failed CI logs are tail-capped at 200 lines, full log written to a tmpfile.** The actionable error is almost always at the end. Re-read earlier slices via `Read` with `offset` only if needed. A single verbose pytest log unbounded is enough to blow the context window by itself.
+  3. **Iteration compaction.** At the end of each iteration, write a one-line summary to `$SUMMARY_FILE` and treat per-poll JSON / log tails / comment fetches from that iteration as discardable. The Step 4 final report reads from the summary file, not from conversation history.

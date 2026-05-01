@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.8.5] - 2026-05-01
+
+## What's Changed
+
+1 commit: 1 performance improvement
+
+### Performance
+* f06bf26 [SKILLS-000] perf(monitor-pr): trim runtime token cost so skill stays under 200k
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.8.4...v1.8.5
+
 ## [1.8.4] - 2026-05-01
 
 ## What's Changed
