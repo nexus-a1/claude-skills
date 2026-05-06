@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.8.10] - 2026-05-06
+
+## What's Changed
+
+1 commit since v1.8.9: 1 docs. No breaking changes.
+
+### Other Changes
+
+- **assessments**: evaluate Garry Tan plan-mode patterns (#220)
+
+**Full Changelog**: https://github.com/nexus-a1/claude-skills/compare/v1.8.9...v1.8.10
+
 ## [1.8.9] - 2026-05-01
 
 ## What's Changed
