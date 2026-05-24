@@ -45,7 +45,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/shared/release/parse-args.sh" \
 
 Outcomes:
 - **Exit 0** — `target` and `version`/`release_branch` populated; proceed.
-- **Exit 10** — `missing` contains `version`. Run `version-suggest.sh --json` and use AskUserQuestion to pick. Re-run parser with the chosen version.
+- **Exit 10** — `missing` contains `version`. Run `version-suggest.sh --json` and use AskUserQuestion to pick. Re-run parser with the chosen version. `version-suggest.sh` fetches remote tags first so the suggestion reflects the authoritative tag set; **watch its stderr** — if it emits a `[stale-tags]` or `[no-remote]` marker, surface that to the user before presenting the recommendation (the version may be based on stale local tags). Do not block on the marker; continue.
 - **Exit 20** — surface errors and stop.
 
 ### Step 2 — Gather commit data

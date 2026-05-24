@@ -18,11 +18,11 @@ Working directory: !`pwd`
 
 Current branch: !`git branch --show-current 2>/dev/null || echo "(not in a git repository)"`
 
+Remote tags: !`bash "${CLAUDE_PLUGIN_ROOT}/shared/release/fetch-tags.sh" 2>/dev/null || echo "(fetch unavailable)"`
+
 Latest release: !`bash "${CLAUDE_PLUGIN_ROOT}/shared/resolve-latest-release.sh" 2>/dev/null || echo "(resolver unavailable)"`
 
 Available branches: !`git branch -a --list 'master' 'main' 'release/*' 'origin/master' 'origin/main' 'origin/release/*' 2>/dev/null || echo "(no branches)"`
-
-(fetch tags): !`timeout 5 git fetch --tags origin 2>/dev/null || echo "(fetch skipped)"`
 
 Recent tags: !`git for-each-ref --count=10 --sort=-v:refname --format='%(refname:short)' refs/tags 2>/dev/null || echo "(no tags)"`
 
@@ -58,7 +58,7 @@ Outcomes:
 
 #### Resolving the version
 
-When `version` is missing, suggest a concrete version. The Context block above already loaded `Latest release` (from `resolve-latest-release.sh`) and `Recent tags` (top 10). **Use those values directly** — do not re-shell `resolve-latest-release.sh` or `git tag --sort=-version:refname | head -10`. The fetch-tags ran in Context, so the values are fresh.
+When `version` is missing, suggest a concrete version. The Context block above fetches remote tags **first** (`Remote tags:`), then resolves `Latest release` (from `resolve-latest-release.sh`) and `Recent tags` (top 10) against that fresh tag set. **Use those values directly** — do not re-shell `resolve-latest-release.sh` or `git tag --sort=-version:refname | head -10`. If the `Remote tags:` line shows a `[stale-tags]` or `[no-remote]` marker, the fetch failed or was skipped — surface that to the user before presenting the recommendation, since `Latest release` may then be based on stale local tags.
 
 Then propose a bump based on conventional-commit scope using `commits-data.sh` against the resolved branch:
 

@@ -62,6 +62,13 @@ done
 
 _require_git_repo
 
+# Pull remote tags before resolving so the recommendation is grounded in the
+# authoritative tag set, not a stale local snapshot. Warn-and-continue: any
+# failure emits a [stale-tags]/[no-remote] marker to stderr and returns 0, so
+# offline/CI/fork workflows still get a (best-effort) recommendation. Callers
+# (the create-release / create-release-branch skills) surface the marker.
+_fetch_tags
+
 # Resolve latest release: "<kind> <ref> <version>".
 # resolve-latest-release.sh wasn't written under `set -euo pipefail`; its
 # internal `grep | head` pipelines exit 1 (and abort us) when no tags or

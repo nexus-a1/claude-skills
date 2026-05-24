@@ -220,6 +220,40 @@ _fetch_ref_quiet() {
   fi
 }
 
+# Fetch remote tags before a version recommendation is computed, so the
+# resolver sees the authoritative tag set rather than a stale local snapshot.
+#
+# Contract (deliberately distinct from _fetch_ref_quiet, which uses --no-tags
+# for branch-ref resolution and must NOT be merged with this):
+#   - Always returns 0 (warn-and-continue): a fetch failure must never hard-block
+#     offline users, CI runners, or forks without an upstream.
+#   - No origin remote        → emits "[no-remote] ..." to stderr, returns 0.
+#   - Fetch fails (timeout,    → emits "[stale-tags] ..." to stderr, returns 0.
+#     clobber, network)
+#   - --force: remote is authoritative. Release tags are created on the remote
+#     via `gh release create`, so no locally-created-unpushed release tag exists
+#     in the normal workflow; --force resolves the "would clobber existing tag"
+#     failure that silently truncated the prior fetch.
+#   - --prune-tags is intentionally absent: never delete local-only tags.
+#   - timeout 10: bounded so a restricted network cannot stall the workflow.
+# Callers MUST surface any [stale-tags]/[no-remote] marker to the user before
+# presenting a recommendation.
+_fetch_tags() {
+  if ! git remote get-url origin >/dev/null 2>&1; then
+    echo "[no-remote] No origin remote found. Resolving from local tags only." >&2
+    return 0
+  fi
+  # `|| rc=$?` keeps the assignment in a compound command so a failing fetch
+  # does NOT trip the caller's `set -e` (version-suggest.sh runs full errexit) —
+  # a bare `fetch_stderr=$(...)` would abort the script before we could warn.
+  local fetch_stderr rc=0
+  fetch_stderr=$(timeout 10 git fetch --tags --force origin 2>&1) || rc=$?
+  if (( rc != 0 )); then
+    echo "[stale-tags] tag fetch failed: ${fetch_stderr}. Recommendation may be based on stale local tags. Verify with: git ls-remote --tags origin" >&2
+  fi
+  return 0
+}
+
 # Strip the "origin/" prefix from a branch ref if present. Used when passing
 # a branch to `gh release create --target` or as a base for `gh pr create`.
 _strip_origin_prefix() {

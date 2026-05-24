@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.11.0] - 2026-05-24
+
+## What's Changed
+
+1 commit: 1 feat. No breaking changes.
+
+### Features
+
+- **release**: Fetch remote tags before version recommendation — ensures version suggestions are based on the authoritative tag set, not stale local tags. Includes markers to warn users when fetches fail or when offline. See PR #225 for details.
+
+**Full Changelog**: https://github.com/anthropics/claude-code/compare/v1.10.0...v1.11.0
+
 ## [1.10.0] - 2026-05-24
 
 ## What's Changed

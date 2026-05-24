@@ -57,7 +57,7 @@ Possible outcomes:
 
 If the parser returned exit 10 with `missing` containing `version`:
 
-1. Run `bash "${CLAUDE_PLUGIN_ROOT}/shared/release/version-suggest.sh" --json` to get a recommended next version grounded in the **current repo's** tag/branch state.
+1. Run `bash "${CLAUDE_PLUGIN_ROOT}/shared/release/version-suggest.sh" --json` to get a recommended next version grounded in the **current repo's** tag/branch state. This script fetches remote tags first so the suggestion is based on the authoritative tag set. **Watch its stderr**: if it emits a `[stale-tags]` or `[no-remote]` marker, the tag fetch failed or was skipped — surface that marker to the user before presenting the recommendation, since the suggested version may be based on stale local tags. Do not block on it; continue to the recommendation.
 2. Use AskUserQuestion to present:
    - The `recommended` value with its `reason` as the (Recommended) option.
    - Each entry from `alternatives` as additional options.
