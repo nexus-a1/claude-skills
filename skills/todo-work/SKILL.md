@@ -2,15 +2,15 @@
 name: todo-work
 model: claude-sonnet-4-6
 category: project-setup
-description: List pending items from TODO.md, pick one, mark it In progress, and propose a hand-off to /review-plan or /implement.
+description: List pending items from TODO.md, pick one, mark it In progress, and hand off directly to /review-plan or /implement.
 argument-hint: "[item number]"
 userInvocable: true
-allowed-tools: Read, Edit, Bash, AskUserQuestion, EnterWorktree
+allowed-tools: Read, Edit, Bash, AskUserQuestion, EnterWorktree, Skill
 ---
 
 # Work on a TODO Item
 
-Companion to `/todo`. Surfaces pending items from `TODO.md`, lets the user pick one, optionally marks it as `In progress`, and proposes a hand-off to the downstream skill (`/review-plan` or `/implement`) by printing the exact command to run next.
+Companion to `/todo`. Surfaces pending items from `TODO.md`, lets the user pick one, optionally marks it as `In progress`, and hands off directly to the chosen downstream skill (`/review-plan` or `/implement`) via the `Skill` tool — no manual re-invocation required.
 
 ## Purpose
 
@@ -237,11 +237,13 @@ If the Edit fails (e.g., because `{title}` or `{current_status}` is not unique i
 
 5. **If git fetch or worktree creation fails for any other reason**, surface the error and continue with the handoff in the current tree — do not abort.
 
-### Step 9: Propose Hand-off
+### Step 9: Hand off to the chosen skill
 
-Print a hand-off block that shows the user the exact command to run next. Do not invoke another skill — slash commands are user-invoked; `/todo-work` stops after printing.
+Print a one-block launch notice, then invoke the chosen skill via the `Skill` tool. The session is already inside the new worktree from Step 8 (when one was created), so the chained skill runs in that isolated context. If `EnterWorktree` was skipped or failed, the chained skill runs in the current tree — drop the `Worktree:` line from the notice in that case.
 
 **For `Validate plan first` → `/review-plan`:**
+
+Print:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -250,17 +252,20 @@ Handing off to /review-plan
 Item:     {title}
 Status:   {Proposed|Not started|Needs discussion} → In progress
 Worktree: .worktrees/{branch-suffix}  (branch feature/{branch-suffix}, from origin/{default-branch})
-
-Run next:
-
-  /review-plan {title}
-  {if description present:}
-  {description}
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
+Then invoke (use the **plain** skill name — no `nexus:` prefix):
+
+```
+Skill(skill: "review-plan", args: "{title}\n\n{description}")
+```
+
+If the description is empty, pass just `{title}`.
+
 **For `Implement directly` → `/implement`:**
+
+Print:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -270,20 +275,21 @@ Item:     {title}
 Status:   {Proposed|Not started|Needs discussion} → In progress
 Worktree: .worktrees/{branch-suffix}  (branch feature/{branch-suffix}, from origin/{default-branch})
 
-Run next:
-
-  /implement {title}
-  {if description present:}
-  Context from TODO.md:
-
-  {description}
-
+Note: /implement requires prior requirements from /create-requirements.
+      If no state.json exists for this item, /implement will surface that
+      and prompt you to run /create-requirements first.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-If the worktree step was skipped (already exists or failed), drop the `Worktree:` line from the handoff block.
+Then invoke (plain name, title-only — `/implement` looks up `state.json` by identifier):
+
+```
+Skill(skill: "implement", args: "{title}")
+```
 
 **For `Just show details`:**
+
+No invocation. Print and stop:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -309,7 +315,7 @@ Status:   {status}   (unchanged)
 /todo-work
 ```
 
-Prints the full pending list inline (all N items, one per line with priority + title), then shows the AskUserQuestion with the top 3 as quick-select. User picks item #2 ("Add webhook support"). Chooses "Validate plan first". Skill updates status to `In progress` and prints the hand-off block with `/review-plan Add webhook support` (plus the description) as the suggested next command.
+Prints the full pending list inline (all N items, one per line with priority + title), then shows the AskUserQuestion with the top 3 as quick-select. User picks item #2 ("Add webhook support"). Chooses "Validate plan first". Skill updates status to `In progress`, creates the worktree, prints the hand-off notice, and directly invokes `/review-plan` with the item title and description.
 
 ### Example 2: Direct selection by number, implement directly
 
@@ -317,7 +323,7 @@ Prints the full pending list inline (all N items, one per line with priority + t
 /todo-work 1
 ```
 
-Jumps straight to item #1 ("Fix broken link in README"). User chooses "Implement directly". Status flips to `In progress`; the skill prints `/implement Fix broken link in README` as the next command to run.
+Jumps straight to item #1 ("Fix broken link in README"). User chooses "Implement directly". Status flips to `In progress`, the worktree is created, and the skill directly invokes `/implement Fix broken link in README` (which will surface a missing-`state.json` error and prompt the user to run `/create-requirements` first if no prior requirements exist).
 
 ### Example 3: Show details only, no status change
 
@@ -368,6 +374,6 @@ Warn and continue with the handoff (see Step 7).
 - **Stateless** — no `.claude/work/` files; optionally reads `worktree.root` from `.claude/configuration.yml` (falls back to `.worktrees/`)
 - **Worktree isolation** — creates `.worktrees/{branch-suffix}/` on a new `feature/{branch-suffix}` branch off the remote default branch before handoff (skipped for `Just show details`); failures fall back to the current tree
 - **Read + targeted Edit** — only touches `TODO.md` via one `Status:` line change
-- **Handoff is passive** — prints the proposed next command; does not auto-launch a skill, because slash commands are user-invoked
+- **Active hand-off** — invokes the chosen next skill directly via the `Skill` tool (plain skill names, no `nexus:` prefix). The hand-off notice is printed as a record of what was launched and as a fallback display if the Skill call fails
 - **Priority ordering is stable** — document order is the tiebreaker within a priority tier
 - **Missing metadata tolerated** — items with partial fields are listed with an `(missing metadata)` marker, not dropped

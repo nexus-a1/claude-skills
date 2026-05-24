@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.9.0] - 2026-05-24
+
+## What's Changed
+
+1 commit since v1.8.11: 1 feat. No breaking changes.
+
+### Features
+
+- **todo-work**: hand off directly via Skill tool instead of printing a slash-command string, enabling seamless invocation of `/review-plan` or `/implement` from within the todo-work flow — SKILLS-000
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.8.11...v1.9.0
+
 ## [1.8.11] - 2026-05-24
 
 ## v1.8.11
