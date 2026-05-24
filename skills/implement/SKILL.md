@@ -910,6 +910,23 @@ If `FRONTEND_CHANGED=true`, a `playwright-engineer` Task is added to the paralle
 
 ---
 
+#### 4.0b Architecture Review Gate
+
+`architect` validated the **plan** back in Phase 2.3 — but it never sees the **built code**, which may have drifted from the intended design. This gate adds a design-drift review of the actual diff, but only when the change touches structure (mirrors the conditional in Phase 2.3 and `/pr-review`). Decide `INCLUDE_ARCHITECT` (true/false) by inspecting `{git_diff}` and `{implemented_files}`:
+
+**Include `architect` when the diff does any of:**
+- Adds or moves modules/packages, or changes directory/layer boundaries
+- Touches shared, core, or cross-cutting services consumed by multiple callers
+- Introduces a new dependency direction, DI wiring, or integration seam
+- Establishes a new pattern (new base class, abstraction, framework convention) or appears to deviate from an existing one
+- Changes public interfaces/contracts between components
+
+**Skip `architect` when the diff is** localized bug fixes, copy/string/config tweaks, test-only changes, dependency bumps, or edits contained within a single existing module that follow its established pattern.
+
+When in doubt on a non-trivial diff, include it. State the gate decision and reason in one line (e.g. `Architecture review: INCLUDED — adds a new shared HttpClient consumed across services`). If `INCLUDE_ARCHITECT=true`, an `architect` Task is added to the parallel QA block in Step 4.1.
+
+---
+
 #### 4.1 Run QA Agents (Autonomous Collaboration)
 
 **Design principle**: QA agents work autonomously, validate each other's findings, and resolve issues among themselves before presenting results to the user. The user reviews a consolidated, pre-validated report — not raw agent output.
@@ -918,7 +935,7 @@ If `FRONTEND_CHANGED=true`, a `playwright-engineer` Task is added to the paralle
 
 ##### Step 1: Parallel Initial Review
 
-Run QA agents in parallel as independent tasks (3 always; 4 if `FRONTEND_CHANGED=true`).
+Run QA agents in parallel as independent tasks (3 always; +1 if `FRONTEND_CHANGED=true`; +1 if `INCLUDE_ARCHITECT=true`).
 
 **Execute in a single message with multiple Task tool calls:**
 
@@ -989,12 +1006,31 @@ Requirements:
 - Follow existing test patterns; use Page Object Model if already in use
 - Prefer getByRole/getByLabel locators; avoid CSS selectors and XPath
 - Return: test files created and a brief coverage summary
+
+---
+
+Task 5 (only if INCLUDE_ARCHITECT=true): subagent_type: "architect"
+Prompt: Validate this implementation against the codebase's established architecture and patterns. You are reviewing finished code, not a plan — assess whether what was built drifted from the intended design.
+
+Diff: {git_diff}
+Implemented files: {implemented_files}
+Intended plan (validate the code against it): $WORK_DIR/{identifier}/plan.md
+
+Focus on:
+- Architecture/layer compliance — does the change respect module boundaries and dependency direction?
+- SOLID violations introduced by the implementation
+- Design-pattern consistency — does new code follow established patterns, or invent a divergent one?
+- Naming and structural conventions versus the surrounding codebase
+- Drift from the Phase 2.3 plan — did implementation diverge from the approved design without justification?
+
+Report design-level findings only, with file/line references, categorized CRITICAL/IMPORTANT/MINOR. Do not duplicate correctness or security review (those run separately).
 ```
 
 Save all agent outputs to `$WORK_DIR/{identifier}/context/`:
 - `qa-test-writer.md`
 - `qa-code-reviewer.md`
 - `qa-security-auditor.md`
+- `qa-architect.md` (if `INCLUDE_ARCHITECT=true`)
 
 ##### Step 1b: Output-Presence Check (mandatory)
 
@@ -1003,6 +1039,7 @@ After the parallel QA tasks return, verify every expected output file exists and
 ```bash
 qa_agents=(test-writer code-reviewer security-auditor)
 [[ "$FRONTEND_CHANGED" == "true" ]] && qa_agents+=(playwright-engineer)
+[[ "$INCLUDE_ARCHITECT" == "true" ]] && qa_agents+=(architect)
 
 for agent in "${qa_agents[@]}"; do
   f="$WORK_DIR/{identifier}/context/qa-${agent}.md"
@@ -1017,12 +1054,12 @@ Rationale: a silent agent failure (no output file) has historically advanced the
 
 ##### Step 2: Skeptic Challenge
 
-After all three QA agents complete, run the quality-guard to challenge their combined findings.
+After the QA agents complete, run the quality-guard to challenge their combined findings.
 
 **Use Task tool with `subagent_type: "quality-guard"`:**
 
 ```
-Prompt: Review the QA findings from three agents and challenge their work.
+Prompt: Independently review this implementation, THEN reconcile against the QA findings. Review the actual diff yourself first and form your own view of where it breaks before reading the agents' findings below — the new issues you find come from your own pass, not from re-litigating their list.
 
 Implementation diff: {git_diff}
 Spec (acceptance criteria — verify implementation satisfies each AC ID): $WORK_DIR/{identifier}/spec.md
@@ -1035,13 +1072,16 @@ QA agent outputs (read these files):
 - $WORK_DIR/{identifier}/context/qa-code-reviewer.md
 - $WORK_DIR/{identifier}/context/qa-security-auditor.md
 - $WORK_DIR/{identifier}/context/qa-playwright-engineer.md (if present — frontend changes only)
+- $WORK_DIR/{identifier}/context/qa-architect.md (if present — architecture gate fired)
 
-Your job (Level 2 — Implementation Validation):
-1. Verify each CRITICAL finding by checking the actual code — did the reviewer cite the right file/line?
-2. Look for issues ALL THREE agents missed — trace through the code paths yourself
+Your job (Level 2 — Implementation Validation), in this order:
+1. Independent pass FIRST: trace the code paths in the diff yourself and surface issues the agents missed — this is your primary value, not an afterthought.
+2. Verify the implementation matches the requirements — not just "code works" but "code does what was asked".
 3. Check test coverage: do the tests actually cover the critical paths, or do they test trivial cases?
-4. Cross-reference: does the code-reviewer's "no issues" on a file contradict what security-auditor found?
-5. Verify the implementation matches the requirements — not just "code works" but "code does what was asked"
+4. Now reconcile the agents' findings: verify each CRITICAL finding against the actual code — did the reviewer cite the right file/line? Are any over- or under-stated?
+5. Cross-reference: does the code-reviewer's "no issues" on a file contradict what security-auditor found? If architect findings are present, check whether a proposed design change conflicts with a correctness or security constraint.
+
+This is the terminal review before PR — report all severities (BLOCKING / IMPORTANT / ADVISORY); do not suppress medium/low findings to save space. There is no later pass to catch what you drop.
 
 Produce a Quality Review Gates report. Include a section on inter-agent agreement/disagreement.
 ```
@@ -1101,9 +1141,9 @@ Read `references/qa-team-mode.md` for team mode QA execution details (TeamCreate
 
 #### 4.1.5 Distill QA Outputs to Disk
 
-After Phase 4.1 converges (both modes have produced the four QA files, and any agent-resolution rounds are complete), write a distilled `-summary.md` sibling for each full output. This keeps `/resume-work` and `/load-context` cheap on resume — they prefer the summary variant by default.
+After Phase 4.1 converges (both modes have produced the QA files, and any agent-resolution rounds are complete), write a distilled `-summary.md` sibling for each full output. This keeps `/resume-work` and `/load-context` cheap on resume — they prefer the summary variant by default.
 
-For each file at `$WORK_DIR/{identifier}/context/qa-{agent}.md` that exists (`qa-test-writer.md`, `qa-code-reviewer.md`, `qa-security-auditor.md`, `qa-quality-guard.md`, and `qa-playwright-engineer.md` if frontend changes were detected):
+For each file at `$WORK_DIR/{identifier}/context/qa-{agent}.md` that exists (`qa-test-writer.md`, `qa-code-reviewer.md`, `qa-security-auditor.md`, `qa-quality-guard.md`, `qa-playwright-engineer.md` if frontend changes were detected, and `qa-architect.md` if the architecture gate fired):
 
 1. `Read()` the full file
 2. Distill to **≤10 lines**, concrete only:
@@ -1672,7 +1712,7 @@ Skill: /implement
 |-------|-------|-------|---------|
 | Explore | sonnet | Phase 2 | Codebase exploration |
 | Plan | opus | Phase 2 | Implementation planning |
-| architect | opus | Phase 2 | Architecture validation |
+| architect | sonnet | Phase 2, 4 | Plan validation (Phase 2); design-drift review of built code when the gate fires (Phase 4) |
 | test-writer | sonnet | Phase 4 | Test creation |
 | code-reviewer | opus | Phase 4 | Code review |
 | security-auditor | opus | Phase 4 | Security audit |

@@ -199,6 +199,18 @@ context and verbose output wastes it.
 
 These are targets, not hard caps — a real critical finding always wins over brevity.
 
+### Terminal review pass exception
+
+The compaction targets above apply to **intermediate** review passes — ones whose output feeds another agent or loop iteration (e.g. quality-guard in `/create-requirements`, `/brainstorm`, `/epic`, or a mid-implementation chunk gate). Suppressing low/medium findings is correct there: they would be noise in a pipeline that has more passes ahead.
+
+A **terminal review pass** is different. When a reviewer (quality-guard, code-reviewer, security-auditor) runs as the **last review before a PR is created or merged** — `/implement` Phase 4 and `/pr-review` Step 4 — there is no later pass to catch what it suppresses. For that pass:
+
+- **Report all severities**, including IMPORTANT and ADVISORY/MINOR. Do not drop medium/low findings to hit a line target.
+- The per-agent output ceiling is **lifted** (not raised to a higher number — removed). Completeness wins over brevity.
+- Still avoid the anti-patterns below (no prompt-echo, no process narration, no raw tool dumps) — verbosity from *padding* is never justified; verbosity from *real findings at every severity* is the point.
+
+The orchestrating skill signals a terminal pass in the agent prompt (e.g. "This is the terminal review before PR — report all severities, do not suppress"). Absent that signal, default to the compacted targets.
+
 ---
 
 ## Anti-Patterns

@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.10.0] - 2026-05-24
+
+## What's Changed
+
+6 commits: 2 features, 2 bug fixes, 2 maintenance commits. No breaking changes.
+
+### Features
+
+- **quality-guard**: Independent-first review mode where the contrarian reviewer traces code paths first, then reconciles agent findings. Terminal review pass lifts output-ceiling to report all severity levels (BLOCKING/IMPORTANT/ADVISORY). Prevents suppressed medium/low findings that slip through intermediate passes.
+- **implement + pr-review**: Architect agent is now conditionally gated into post-implementation code review when structural changes are detected (module/boundary changes, shared/core services, new DI patterns, public interface changes, etc.). Validates built code against the Phase 2 plan and flags design-drift before PR.
+
+### Bug Fixes
+
+- Replace stale "ALL THREE agents" references with "the QA agents" (agent-count-agnostic as architect joins optionally)
+- Fix stale "four QA files" prose that didn't account for architect's conditional output file
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.9.0...v1.10.0
+
 ## [1.9.0] - 2026-05-24
 
 ## What's Changed

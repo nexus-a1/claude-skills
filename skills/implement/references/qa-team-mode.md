@@ -33,17 +33,26 @@ TaskCreate: "Security review and PII scan" (T3)
     Check for vulnerabilities, PII/secrets exposure, input validation, injection risks.
     Share findings with code-reviewer — security issues may have broader code quality implications.
 
-TaskCreate: "Challenge and validate QA findings" (T4) — depends on T1, T2, T3
+TaskCreate (only if INCLUDE_ARCHITECT=true): "Review architecture" (T3b)
+  description: |
+    Diff: {git_diff}
+    Intended plan: $WORK_DIR/{identifier}/plan.md
+    Validate finished code against established architecture and patterns — boundaries,
+    dependency direction, SOLID, design-pattern consistency, drift from the Phase 2.3 plan.
+    Design-level findings only (CRITICAL/IMPORTANT/MINOR). Share findings with teammates.
+
+TaskCreate: "Challenge and validate QA findings" (T4) — depends on T1, T2, T3{if INCLUDE_ARCHITECT: , T3b}
   description: |
     Requirements: $WORK_DIR/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md
     Implementation diff: {git_diff}
-    Wait for test-writer, code-reviewer, and security-auditor to complete their initial findings.
-    Then:
-    1. Verify each CRITICAL finding by checking the actual code
-    2. Look for issues ALL THREE agents missed — trace through code paths yourself
+    Wait for test-writer, code-reviewer, security-auditor{if INCLUDE_ARCHITECT: , and architect} to complete their initial findings.
+    Then, in this order:
+    1. Independent pass FIRST: trace the code paths in the diff yourself and surface what the agents missed — your primary value.
+    2. Verify implementation matches requirements.
     3. Check test coverage: do the tests actually cover critical paths?
-    4. Cross-reference findings for contradictions between agents
-    5. Verify implementation matches requirements
+    4. Reconcile the agents' findings: verify each CRITICAL finding against the actual code; flag over/under-stated ones.
+    5. Cross-reference findings for contradictions between agents.
+    Terminal review before PR — report all severities (BLOCKING/IMPORTANT/ADVISORY); do not suppress medium/low findings.
     Produce a Quality Review Gates report. Use SendMessage to share gates with specific agents.
 ```
 
@@ -57,6 +66,7 @@ Use TaskUpdate to set T4 dependency on T1, T2, T3 completion.
 Task tool: name: "qa-tester", subagent_type: "test-writer", team_name: "qa-{identifier}"
 Task tool: name: "qa-reviewer", subagent_type: "code-reviewer", team_name: "qa-{identifier}"
 Task tool: name: "qa-security", subagent_type: "security-auditor", team_name: "qa-{identifier}"
+[only if INCLUDE_ARCHITECT=true] Task tool: name: "qa-architect", subagent_type: "architect", team_name: "qa-{identifier}"
 Task tool: name: "qa-skeptic", subagent_type: "quality-guard", team_name: "qa-{identifier}"
 ```
 
@@ -66,9 +76,10 @@ Assign tasks to teammates via TaskUpdate (set owner):
 - T1 → qa-tester
 - T2 → qa-reviewer
 - T3 → qa-security
+- T3b → qa-architect (only if INCLUDE_ARCHITECT=true)
 - T4 → qa-skeptic
 
-Monitor TaskList for progress. T1-T3 run in parallel. T4 (skeptic) starts after T1-T3 complete.
+Monitor TaskList for progress. T1-T3 (and T3b when present) run in parallel. T4 (skeptic) starts after they complete.
 
 ## Step 5: Skeptic challenge and agent resolution (in-team)
 
@@ -88,12 +99,13 @@ Agents respond via SendMessage with evidence. Skeptic verifies responses and iss
 
 ## Step 6: Collect results and shut down team
 
-Gather findings from all four agents including skeptic verdict. Send shutdown_request to each teammate. Use TeamDelete to clean up.
+Gather findings from all teammates including skeptic verdict. Send shutdown_request to each teammate. Use TeamDelete to clean up.
 
 ```
 SendMessage(type="shutdown_request", recipient="qa-tester", message="QA complete. Shut down.")
 SendMessage(type="shutdown_request", recipient="qa-reviewer", message="QA complete. Shut down.")
 SendMessage(type="shutdown_request", recipient="qa-security", message="QA complete. Shut down.")
+[only if INCLUDE_ARCHITECT=true] SendMessage(type="shutdown_request", recipient="qa-architect", message="QA complete. Shut down.")
 SendMessage(type="shutdown_request", recipient="qa-skeptic", message="QA complete. Shut down.")
 TeamDelete()
 ```

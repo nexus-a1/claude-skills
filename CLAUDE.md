@@ -255,11 +255,11 @@ execution_mode:
 | Phase Name | Used By | Description |
 |------------|---------|-------------|
 | `requirements_deep_dive` | `/create-requirements` | Stage 3 parallel research agents |
-| `qa_review` | `/implement` | Phase 4 QA agents (test-writer, code-reviewer, security-auditor, quality-guard) |
+| `qa_review` | `/implement` | Phase 4 QA agents (test-writer, code-reviewer, security-auditor, quality-guard; architect when the architecture gate fires) |
 | `documentation_update` | `/update-documentation` | Phase 2-4 agents (context-builder, business-analyst, doc-writer) |
 | `refactor` | `/refactor` | Step 5.1 quality gate loop (code-reviewer, test-writer, quality-guard) |
 | `troubleshoot` | `/troubleshoot` | Phase 6 verification (security-auditor, quality-guard) |
-| `pr_review` | `/pr-review` (remote and `--local` modes) | Step 4 review agents (code-reviewer, security-auditor, quality-guard) |
+| `pr_review` | `/pr-review` (remote and `--local` modes) | Step 4 review agents (code-reviewer, security-auditor, quality-guard; architect when the architecture gate fires) |
 | `review_plan` | `/review-plan` | Step 3 review agents (architect, quality-guard, optionally security-auditor) |
 
 All skills that use multiple agents support configurable execution mode (`"subagent"` or `"team"`).

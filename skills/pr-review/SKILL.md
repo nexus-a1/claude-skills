@@ -165,11 +165,26 @@ git log {base_branch}..HEAD --format="%h %s%n%b" --no-decorate
 
 Delegate the review to specialized agents with cross-validation via quality-guard. The prompts below use `{full_diff}` and `{file_list}`/`{commit_log}` from whichever path (remote or local) ran above.
 
+#### Architecture review gate
+
+`architect` validates finished code against the codebase's established architecture and patterns — but it's only worth the cost when the diff actually touches structure. Decide `INCLUDE_ARCHITECT` (true/false) by inspecting the diff and file list:
+
+**Include `architect` when the diff does any of:**
+- Adds or moves modules/packages, or changes directory/layer boundaries
+- Touches shared, core, or cross-cutting services consumed by multiple callers
+- Introduces a new dependency direction, DI wiring, or integration seam
+- Establishes a new pattern (new base class, abstraction, framework convention) or appears to deviate from an existing one
+- Changes public interfaces/contracts between components
+
+**Skip `architect` when the diff is** localized bug fixes, copy/string/config tweaks, test-only changes, dependency bumps, or edits contained within a single existing module that follow its established pattern.
+
+When in doubt on a non-trivial diff, include it. State the gate decision and the reason in one line before dispatching (e.g. `Architecture review: INCLUDED — adds a new shared HttpClient consumed across services`).
+
 **If `$PR_REVIEW_EXEC_MODE` = `"subagent"`:**
 
 #### Step 1: Parallel review
 
-**Execute in a single message with multiple Task tool calls:**
+**Execute in a single message with multiple Task tool calls.** Run Task 1, Task 2, and (when `INCLUDE_ARCHITECT`) Task 1b together.
 
 **Task 1 — Use Task tool with `subagent_type: "code-reviewer"`:**
 
@@ -213,24 +228,49 @@ Diff:
 {full_diff}
 ```
 
+**Task 1b (only if `INCLUDE_ARCHITECT`) — Use Task tool with `subagent_type: "architect"`:**
+
+```
+Prompt: Validate this {pr_or_branch} diff against the codebase's established architecture and patterns. You are reviewing finished code, not a plan — assess whether what was built drifted from the intended design.
+
+{remote: PR: #{number} - {title}, Branch: {head} → {base}}
+{local:  Branch: {current_branch} → {base_branch}}
+Files changed: {file_list}
+
+Focus on:
+- Architecture/layer compliance — does the change respect module boundaries and dependency direction?
+- SOLID violations introduced by the diff
+- Design-pattern consistency — does new code follow established patterns, or invent a divergent one?
+- Naming and structural conventions versus the surrounding codebase
+- Abstractions that are missing, leaky, or premature
+
+Report only design-level findings with file/line references. Do not duplicate correctness or security review (those run separately).
+
+Diff:
+{full_diff}
+```
+
 #### Step 2: Skeptic challenge
 
 **Task 3 — Use Task tool with `subagent_type: "quality-guard"`:**
 
 ```
-Prompt: Challenge the PR review findings (Level 2 — Implementation Validation).
+Prompt: Independently review this diff, THEN reconcile against the review findings (Level 2 — Implementation Validation). Read the diff and trace the key code paths yourself first, forming your own view of where it breaks, before reading the findings below — the issues you add come from your own pass, not from re-litigating their list.
 
 {remote: PR: #{number} - {title}}
 {local:  Branch: {current_branch} → {base_branch}}
 Full diff: {full_diff}
 Code-reviewer findings: {code_reviewer_output}
 Security-auditor findings: {security_auditor_output}
+{if INCLUDE_ARCHITECT: Architect findings: {architect_output}}
 
-Verify:
-1. Are the CRITICAL findings real? Check actual file paths and line numbers.
-2. Did both reviewers miss anything? Trace through key code paths.
-3. Cross-reference: do findings contradict each other?
-4. Any issues falling between the two reviewers' scopes?
+In this order:
+1. Independent pass FIRST: trace key code paths yourself and surface what both reviewers missed — this is your primary value.
+2. Then reconcile their findings: are the CRITICAL findings real? Check actual file paths and line numbers. Any over- or under-stated?
+3. Cross-reference: do findings contradict each other (e.g. architect's preferred design vs a correctness/security constraint)?
+4. Any issues falling between the reviewers' scopes?
+
+This is the terminal review before PR/merge — report all severities (BLOCKING / IMPORTANT / ADVISORY); do not suppress medium/low findings to save space. There is no later pass to catch what you drop.
 
 Produce a Quality Review Gates report.
 ```
@@ -254,18 +294,29 @@ TaskCreate: "Review security" (T2)
     {Diff context}. Focus on injection, auth, data exposure.
     Share findings with teammates.
 
-TaskCreate: "Challenge review findings" (T3) — depends on T1, T2
+TaskCreate (only if INCLUDE_ARCHITECT): "Review architecture" (T2b)
   description: |
-    Wait for code-reviewer and security-auditor. Verify findings against actual code.
-    Use SendMessage to challenge specific agents. Produce Quality Review Gates report.
+    {Diff context}. Validate finished code against established architecture and
+    patterns — boundaries, dependency direction, SOLID, design-pattern consistency.
+    Design-level findings only. Share findings with teammates.
+
+TaskCreate: "Challenge review findings" (T3) — depends on T1, T2{if INCLUDE_ARCHITECT: , T2b}
+  description: |
+    Wait for code-reviewer, security-auditor{if INCLUDE_ARCHITECT: , and architect}.
+    Review the diff independently FIRST — trace key code paths yourself and surface what
+    the reviewers missed (your primary value) — then reconcile their findings against the
+    actual code. Use SendMessage to challenge specific agents.
+    Terminal review before PR/merge — report all severities (BLOCKING/IMPORTANT/ADVISORY);
+    do not suppress medium/low findings. Produce Quality Review Gates report.
 
 [PARALLEL - Single message with multiple Task calls]
 Task tool: name: "pr-code", subagent_type: "code-reviewer", team_name: <see above>
 Task tool: name: "pr-security", subagent_type: "security-auditor", team_name: <see above>
+[only if INCLUDE_ARCHITECT] Task tool: name: "pr-architect", subagent_type: "architect", team_name: <see above>
 Task tool: name: "pr-skeptic", subagent_type: "quality-guard", team_name: <see above>
 ```
 
-Assign tasks. Skeptic challenges via SendMessage after T1 and T2 complete. Agents resolve gates. Collect results and TeamDelete.
+Assign tasks. Skeptic challenges via SendMessage after T1, T2{if INCLUDE_ARCHITECT: , and T2b} complete. Agents resolve gates. Collect results and TeamDelete.
 
 ---
 
@@ -326,6 +377,12 @@ Merge agent outputs into a unified review. Header varies by mode:
 ## 🔒 Security Analysis
 
 [Security findings from security-auditor agent]
+
+---
+
+## 🏛️ Architecture {only if INCLUDE_ARCHITECT}
+
+[Design-level findings from architect agent — boundary, pattern, and SOLID drift. Omit this section entirely when the architecture gate was skipped.]
 
 ---
 
@@ -506,7 +563,8 @@ EOF
 
 - **Always use `--repo`** in remote mode: every `gh` command MUST include `--repo $REPO` to prevent cross-repo mistakes. PR numbers are not unique across repos.
 - **Inline comments, not general comments**: Interactive mode MUST use the Reviews API. Never use `gh pr comment` — it creates a top-level comment that is not anchored to code lines.
-- **Parallel agents**: code-reviewer and security-auditor run simultaneously, then quality-guard validates.
+- **Parallel agents**: code-reviewer and security-auditor (plus `architect` when the architecture gate fires) run simultaneously, then quality-guard validates.
+- **Architecture gate**: `architect` is the only agent here that runs conditionally — include it for structural/boundary/pattern changes, skip it for localized fixes, config, or test-only diffs. State the gate decision before dispatching.
 - **Team mode**: When `$PR_REVIEW_EXEC_MODE` = `"team"`, agents cross-pollinate findings via SendMessage.
 - **Local review is local-only**: No GitHub interaction in `--local` mode unless the user explicitly opts in to PR creation in Step 7L.
 - **Pending reviews**: Interactive mode creates a pending review (not submitted). User decides when to submit and with what verdict.
