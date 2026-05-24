@@ -181,6 +181,45 @@ _resolve_branch_ref() {
   return 1
 }
 
+# Same as _resolve_branch_ref but prefers `origin/<ref>` over the local ref of
+# the same name. Use this for release-context resolution where origin is the
+# authoritative source — a stale local branch must not mask the real upstream
+# state. Callers should fetch the relevant ref(s) before invoking this.
+_resolve_branch_ref_origin_first() {
+  local hint="$1"
+  local candidates=()
+  case "$hint" in
+    origin/*)
+      candidates=("$hint" "${hint#origin/}")
+      ;;
+    *)
+      candidates=("origin/$hint" "$hint")
+      ;;
+  esac
+  local c
+  for c in "${candidates[@]}"; do
+    if git rev-parse --verify --quiet "$c" >/dev/null 2>&1; then
+      printf '%s' "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Best-effort fetch of a single ref from origin. Silent on failure (offline,
+# missing remote, ref doesn't exist upstream) so callers can use this as a
+# precondition without breaking offline workflows. The resolver will surface a
+# real "ref not found" error afterwards if the ref genuinely doesn't exist.
+_fetch_ref_quiet() {
+  local ref="$1"
+  case "$ref" in
+    origin/*) ref="${ref#origin/}" ;;
+  esac
+  if git remote get-url origin >/dev/null 2>&1; then
+    git fetch --no-tags --quiet origin "$ref" >/dev/null 2>&1 || true
+  fi
+}
+
 # Strip the "origin/" prefix from a branch ref if present. Used when passing
 # a branch to `gh release create --target` or as a base for `gh pr create`.
 _strip_origin_prefix() {

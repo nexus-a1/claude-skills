@@ -96,14 +96,17 @@ if [[ -z "$title" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Fetch target branch so commit range reflects current upstream state
+# Fetch target + release branches so commit range reflects current upstream
+# state. Stale local refs (e.g. a release/* branch pointing at master's SHA)
+# would otherwise mask real upstream commits — see issue #49.
 # ---------------------------------------------------------------------------
-git fetch -q origin "$target" 2>/dev/null || true
+_fetch_ref_quiet "$target"
+_fetch_ref_quiet "$release_branch"
 
 # ---------------------------------------------------------------------------
-# Resolve target ref
+# Resolve target ref (origin-first so stale local branches don't win)
 # ---------------------------------------------------------------------------
-if ! target_ref=$(_resolve_branch_ref "$target"); then
+if ! target_ref=$(_resolve_branch_ref_origin_first "$target"); then
   _die "$EX_USER" "Target branch '$target' not found locally or on origin"
 fi
 target_local=$(_strip_origin_prefix "$target_ref")
@@ -124,11 +127,13 @@ if (( release_local_exists == 0 && release_remote_exists == 0 )); then
   _die "$EX_USER" "Release branch '$release_branch' does not exist locally or on origin (run /create-release-branch first)"
 fi
 
-# Pick a usable ref to compute commit count from.
-if (( release_local_exists )); then
-  release_ref="$release_branch"
-else
+# Prefer origin/<release_branch> for commit-range computation when it exists:
+# the remote is authoritative for "what's about to ship", and a stale local
+# ref would silently undercount commits.
+if (( release_remote_exists )); then
   release_ref="origin/$release_branch"
+else
+  release_ref="$release_branch"
 fi
 
 # Count commits between target and release.

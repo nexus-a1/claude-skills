@@ -82,9 +82,17 @@ if [[ "$head" == -* ]]; then _die "$EX_USER" "Invalid --head: '$head' must not s
 _require_git_repo
 if ! _have_jq; then _die "$EX_SYSTEM" "commits-data.sh: jq is required"; fi
 
-# Resolve refs.
+# Refresh origin refs before resolution so a stale local branch doesn't mask
+# the authoritative upstream state (issue #49: a stale local release/* ref
+# pointing at master's SHA produced a false "0 commits" result). Best-effort
+# so offline use still works — if a ref is genuinely missing, the resolver
+# below will fail with a real "Cannot resolve" error.
+_fetch_ref_quiet "$base"
+_fetch_ref_quiet "$head"
+
+# Resolve refs, preferring origin/<ref> over the local ref of the same name.
 base_resolved=""
-if base_resolved=$(_resolve_branch_ref "$base" 2>/dev/null); then
+if base_resolved=$(_resolve_branch_ref_origin_first "$base" 2>/dev/null); then
   : # ok
 elif git rev-parse --verify --quiet "$base" >/dev/null 2>&1; then
   base_resolved="$base"
@@ -93,7 +101,7 @@ else
 fi
 
 head_resolved=""
-if head_resolved=$(_resolve_branch_ref "$head" 2>/dev/null); then
+if head_resolved=$(_resolve_branch_ref_origin_first "$head" 2>/dev/null); then
   :
 elif git rev-parse --verify --quiet "$head" >/dev/null 2>&1; then
   head_resolved="$head"

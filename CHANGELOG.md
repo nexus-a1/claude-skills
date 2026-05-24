@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.8.11] - 2026-05-24
+
+## v1.8.11
+
+**1 fix**: resolve origin-first branch resolution to defeat stale local refs in release workflows.
+
+### Bug Fixes
+
+- **release**: Resolve `origin/<ref>` first to prevent stale local refs from masking upstream state. Fixes false "No commits to release" errors when a local release branch is behind the remote. ([#49](https://github.com/nexus-a1/claude-skills/issues/49))
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.8.10...v1.8.11
+
 ## [1.8.10] - 2026-05-06
 
 ## What's Changed
