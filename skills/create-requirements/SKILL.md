@@ -479,13 +479,14 @@ Update `last_updated` and `total_items` in the envelope.
 #### 1.9 Register Active Session (for auto-context hook)
 
 ```bash
-if [ -n "${CLAUDE_SESSION_ID:-}" ] && command -v jq >/dev/null 2>&1; then
+SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+if [ -n "$SID" ] && command -v jq >/dev/null 2>&1; then
   mkdir -p "$WORK_DIR"
   touch "$WORK_DIR/.active-sessions.lock"
   (
     flock -x -w 2 200 || exit 0
     [ -s "$WORK_DIR/.active-sessions" ] || echo '{}' > "$WORK_DIR/.active-sessions"
-    jq --arg s "$CLAUDE_SESSION_ID" --arg w "{identifier}" \
+    jq --arg s "$SID" --arg w "{identifier}" \
        '. + {($s): $w}' "$WORK_DIR/.active-sessions" \
        > "$WORK_DIR/.active-sessions.tmp.$$" \
        && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
@@ -494,7 +495,7 @@ if [ -n "${CLAUDE_SESSION_ID:-}" ] && command -v jq >/dev/null 2>&1; then
 fi
 ```
 
-No-op when `CLAUDE_SESSION_ID` is unset or `jq` is missing. Enables the optional `auto-context.sh` PostToolUse hook to route entries to this session's `state.json`. Cleared at Stage 4.11 completion.
+No-op when neither `CLAUDE_SESSION_ID` nor `CLAUDE_CODE_SESSION_ID` is set, or `jq` is missing. The runtime injects `CLAUDE_CODE_SESSION_ID` (preferring `CLAUDE_SESSION_ID` if a future CLI sets it) — the same id the `auto-context.sh` hook reads from its stdin payload, so the map key matches. Enables the optional hook to route entries to this session's `state.json`. Cleared at Stage 4.11 completion.
 
 ---
 
@@ -1320,12 +1321,13 @@ Next Steps (for YOU to run when ready):
 
 ```bash
 # Clear auto-context sentinel on completion
-if [ -n "${CLAUDE_SESSION_ID:-}" ] \
+SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+if [ -n "$SID" ] \
    && [ -f "$WORK_DIR/.active-sessions" ] \
    && command -v jq >/dev/null 2>&1; then
   (
     flock -x -w 2 200 || exit 0
-    jq --arg s "$CLAUDE_SESSION_ID" 'del(.[$s])' "$WORK_DIR/.active-sessions" \
+    jq --arg s "$SID" 'del(.[$s])' "$WORK_DIR/.active-sessions" \
        > "$WORK_DIR/.active-sessions.tmp.$$" \
        && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
        || rm -f "$WORK_DIR/.active-sessions.tmp.$$"

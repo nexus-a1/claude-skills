@@ -18,7 +18,7 @@ fi
 
 # Format: timestamp | session | tool | status
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-SESSION="${CLAUDE_SESSION_ID:-unknown}"
+SESSION="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-unknown}}"
 TOOL="${CLAUDE_TOOL_NAME:-unknown}"
 
 echo "${TIMESTAMP} | ${SESSION} | ${TOOL}" >> "$LOG_FILE"

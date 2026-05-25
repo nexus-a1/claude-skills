@@ -210,12 +210,13 @@ Next Steps:
 
 ```bash
 # Clear auto-context sentinel on completion
-if [ -n "${CLAUDE_SESSION_ID:-}" ] \
+SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+if [ -n "$SID" ] \
    && [ -f "$WORK_DIR/.active-sessions" ] \
    && command -v jq >/dev/null 2>&1; then
   (
     flock -x -w 2 200 || exit 0
-    jq --arg s "$CLAUDE_SESSION_ID" 'del(.[$s])' "$WORK_DIR/.active-sessions" \
+    jq --arg s "$SID" 'del(.[$s])' "$WORK_DIR/.active-sessions" \
        > "$WORK_DIR/.active-sessions.tmp.$$" \
        && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
        || rm -f "$WORK_DIR/.active-sessions.tmp.$$"

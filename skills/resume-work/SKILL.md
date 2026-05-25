@@ -140,16 +140,17 @@ Use AskUserQuestion to get selection.
 
 ### Re-register Active Session (for auto-context hook)
 
-Once the target `{identifier}` is resolved (either from the argument or the user's manifest selection), re-register the current session → work-id mapping so the optional `auto-context.sh` PostToolUse hook can resolve it. This is a no-op when `CLAUDE_SESSION_ID` is unset or `jq` is missing:
+Once the target `{identifier}` is resolved (either from the argument or the user's manifest selection), re-register the current session → work-id mapping so the optional `auto-context.sh` PostToolUse hook can resolve it. This is a no-op when neither `CLAUDE_SESSION_ID` nor `CLAUDE_CODE_SESSION_ID` is set, or `jq` is missing:
 
 ```bash
-if [ -n "${CLAUDE_SESSION_ID:-}" ] && command -v jq >/dev/null 2>&1; then
+SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+if [ -n "$SID" ] && command -v jq >/dev/null 2>&1; then
   mkdir -p "$WORK_DIR"
   touch "$WORK_DIR/.active-sessions.lock"
   (
     flock -x -w 2 200 || exit 0
     [ -s "$WORK_DIR/.active-sessions" ] || echo '{}' > "$WORK_DIR/.active-sessions"
-    jq --arg s "$CLAUDE_SESSION_ID" --arg w "{identifier}" \
+    jq --arg s "$SID" --arg w "{identifier}" \
        '. + {($s): $w}' "$WORK_DIR/.active-sessions" \
        > "$WORK_DIR/.active-sessions.tmp.$$" \
        && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \

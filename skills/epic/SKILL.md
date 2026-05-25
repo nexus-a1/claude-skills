@@ -323,16 +323,17 @@ Save files:
 2. `$WORK_DIR/{epic-id}/state.json` - Epic tracking
 3. `$WORK_DIR/{epic-id}/{ticket-id}/spec.md` - Each ticket's product spec (WHAT/WHY only)
 
-Register active session for the optional `auto-context.sh` PostToolUse hook (no-op when `CLAUDE_SESSION_ID` is unset):
+Register active session for the optional `auto-context.sh` PostToolUse hook (no-op when neither `CLAUDE_SESSION_ID` nor `CLAUDE_CODE_SESSION_ID` is set):
 
 ```bash
-if [ -n "${CLAUDE_SESSION_ID:-}" ] && command -v jq >/dev/null 2>&1; then
+SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+if [ -n "$SID" ] && command -v jq >/dev/null 2>&1; then
   mkdir -p "$WORK_DIR"
   touch "$WORK_DIR/.active-sessions.lock"
   (
     flock -x -w 2 200 || exit 0
     [ -s "$WORK_DIR/.active-sessions" ] || echo '{}' > "$WORK_DIR/.active-sessions"
-    jq --arg s "$CLAUDE_SESSION_ID" --arg w "{epic-id}" \
+    jq --arg s "$SID" --arg w "{epic-id}" \
        '. + {($s): $w}' "$WORK_DIR/.active-sessions" \
        > "$WORK_DIR/.active-sessions.tmp.$$" \
        && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
@@ -455,12 +456,13 @@ Next Steps
 
 ```bash
 # Clear auto-context sentinel on completion
-if [ -n "${CLAUDE_SESSION_ID:-}" ] \
+SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+if [ -n "$SID" ] \
    && [ -f "$WORK_DIR/.active-sessions" ] \
    && command -v jq >/dev/null 2>&1; then
   (
     flock -x -w 2 200 || exit 0
-    jq --arg s "$CLAUDE_SESSION_ID" 'del(.[$s])' "$WORK_DIR/.active-sessions" \
+    jq --arg s "$SID" 'del(.[$s])' "$WORK_DIR/.active-sessions" \
        > "$WORK_DIR/.active-sessions.tmp.$$" \
        && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
        || rm -f "$WORK_DIR/.active-sessions.tmp.$$"

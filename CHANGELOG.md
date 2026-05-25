@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.12.0] - 2026-05-25
+
+## What's Changed
+
+5 commits: 2 features, 2 fixes, 1 chore. No breaking changes.
+
+### Features
+
+- **update-context**: make /update-context session-aware
+- **update-context**: session-aware /update-context + repo-wide session-id fix
+
+### Bug Fixes
+
+- **session**: key .active-sessions map by the session id the runtime actually injects
+- **update-context**: address PR review comments
+
+### Other Changes
+
+- [SKILLS-051] chore(cleanup): deprecate install.sh references in CLAUDE.md and update-context
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.11.0...v1.12.0
+
 ## [1.11.0] - 2026-05-24
 
 ## What's Changed
