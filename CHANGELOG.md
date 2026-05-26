@@ -1,5 +1,67 @@
 # Changelog
 
+## [1.13.0] - 2026-05-26
+
+# Release v1.13.0
+
+## What's Changed
+
+20 commits: 11 features, 7 fixes, 1 docs. Complete implementation of ECC assessment P0–P4 (security baselines for prompt injection, stale-context replay, subagent retrieval discipline, acceptance-criteria-as-graders framework, and cross-reference validation). No breaking changes.
+
+### Features
+
+**Security & Defense** (SKILLS-052):
+- **shared**: Prompt-injection defense baseline for ingestion agents (9 agents protected) — [`plugin/shared/prompt-defense.md`](https://github.com/nexus-a1/claude/blob/master/plugin/shared/prompt-defense.md)
+- **agents**: Wire prompt-injection defense into context-builder, archaeologist, business-analyst, code-reviewer, security-auditor, product-expert, aws-architect, archivist, database-analyst, integration-analyst agents
+- **validators**: Add C5 shared-reference-integrity checks for cross-file references
+
+**Protocol & Discipline** (SKILLS-053 & SKILLS-054):
+- **shared**: Stale-context replay guard (historical reference framing + 6 rules) — [`plugin/shared/replay-guard.md`](https://github.com/nexus-a1/claude/blob/master/plugin/shared/replay-guard.md)
+- **shared**: Subagent-context discipline (iterative retrieval with 3-cycle hard cap) — [`plugin/shared/subagent-context-discipline.md`](https://github.com/nexus-a1/claude/blob/master/plugin/shared/subagent-context-discipline.md)
+- **skills**: Wire dispatch-site anchors for stale-context guard (`/load-context`, `/resume-work`) and subagent discipline (`/create-requirements`, `/troubleshoot`, `/refactor`)
+
+**Quality & Evaluation** (SKILLS-055):
+- **shared**: Eval concepts grader taxonomy (code/rule/model/human evidence types + reliability vocabulary) — [`plugin/shared/eval-concepts.md`](https://github.com/nexus-a1/claude/blob/master/plugin/shared/eval-concepts.md)
+- **agents**: Grader-tag ACs in business-analyst (marks evidence type for each AC); cite AC IDs in quality-guard gates
+- **skills**: Per-AC PASS/FAIL eval reporting in `/implement` (Phase 4.5) and `/troubleshoot --spec` (Phase 6.3); grader-tag slot in AC template (`/create-requirements`)
+
+### Bug Fixes
+
+- **troubleshoot**: Harden `--spec` parser (quote-aware, handles paths with spaces) — QA gate GATE 2 fix
+- **docs**: Add `replay-guard.md` to plugin/shared tree in CLAUDE.md reference
+- **docs**: Add docs/workflows/release/ to CLAUDE.md tree
+- **docs**: Add docs/assets/ to CLAUDE.md tree
+- **pr-review**: Address three post-PR review findings (prompt-defense snippet self-sufficiency)
+- **review**: Make prompt-defense snippet self-sufficient for AC-SEC-2/6
+- **docs**: Resolve healthcheck WARNs (missing assets/ and workflows/release/ tree nodes)
+
+### Documentation & Reference Updates
+
+- **docs**: Note grader-tagging and per-AC eval reporting in agents.md and skills.md references
+
+## Deployment Notes
+
+### New Files (Installation Required)
+
+All new shared files are installed to `~/.claude/shared/` by the marketplace:
+- `plugin/shared/prompt-defense.md` — 7 defense rules; required for all ingestion agents
+- `plugin/shared/replay-guard.md` — 6 replay-guard rules; required for `/load-context` and `/resume-work`
+- `plugin/shared/subagent-context-discipline.md` — iterative retrieval protocol; required for `create-requirements`, `implement`, `troubleshoot`, `refactor`
+- `plugin/shared/eval-concepts.md` — grader taxonomy and reliability vocabulary; referenced by `quality-guard` agent and per-AC eval reports
+
+### Modified Agents & Skills
+
+- **Agents**: business-analyst (grader-tag instruction), quality-guard (AC-ID citation)
+- **Skills**: `/create-requirements` (AC template), `/implement` (per-AC eval reporting), `/troubleshoot` (`--spec` opt-in per-AC section)
+
+### Validation
+
+All 261 validators (A/B/C series) pass. Cross-reference integrity (C5) enforced for new shared files.
+
+---
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.12.0...v1.13.0
+
 ## [1.12.0] - 2026-05-25
 
 ## What's Changed

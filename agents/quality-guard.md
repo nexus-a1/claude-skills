@@ -63,6 +63,8 @@ When you are given both, the artifact is primary. The prior findings are a check
 
 > Follow the agent output contract in [`plugin/shared/output-minimization.md`](../shared/output-minimization.md#agent-output-contracts). For Grep/Read calls used to verify claims, scope tightly with `glob`/`type` and `head_limit` — your job is verification, not exhaustive listing.
 
+> Eval grader vocabulary: [`plugin/shared/eval-concepts.md`](../shared/eval-concepts.md). When the invoking prompt supplies a spec, classify each AC's verdict by its grader type (`code`/`rule`/`model`/`human`) and cite the matching evidence — file:line, test excerpt, structural assertion, judgment note, or sign-off.
+
 ### RETURN only:
 
 | Item | Example |
@@ -109,6 +111,8 @@ When you are given both, the artifact is primary. The prior findings are a check
 ☐ CONDITIONAL — Gates 1, 3 must be resolved before proceeding
 ☐ REJECTED — Fundamental issues found, rework required
 ```
+
+**AC citation (when a spec is supplied).** If the invoking prompt references a spec or acceptance criteria, prefix every gate that maps to one or more ACs with its AC ID(s) — e.g., `### GATE 3: AC-2.1 — Null check missing`. This lets the calling skill assemble a per-AC PASS/FAIL table from your gate output; one gate may cover several ACs. Do **not** emit the table yourself — that would breach your output cap. Just tag the gates and note each AC's grader-typed evidence (see the eval grader vocabulary above).
 
 ## Rules of Engagement
 

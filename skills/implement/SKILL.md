@@ -1084,6 +1084,8 @@ Your job (Level 2 — Implementation Validation), in this order:
 
 This is the terminal review before PR — report all severities (BLOCKING / IMPORTANT / ADVISORY); do not suppress medium/low findings to save space. There is no later pass to catch what you drop.
 
+When a gate maps to one or more acceptance criteria from the spec, prefix it with the AC ID(s) (e.g., `GATE 3: AC-2.1 — ...`) and note each AC's grader-typed evidence — this feeds the per-AC PASS/FAIL table assembled in Phase 4.5. See `~/.claude/shared/eval-concepts.md`.
+
 Produce a Quality Review Gates report. Include a section on inter-agent agreement/disagreement.
 ```
 
@@ -1286,7 +1288,15 @@ Skeptic Validation:
   Gates escalated to user: {count}
 
 Auto-fixed: {count} issues
+
+Per-AC Verification (only when spec.md present — see assembly note below):
+  | AC ID  | Verdict | Grader | Evidence                    |
+  |--------|---------|--------|-----------------------------|
+  | AC-1.1 | PASS    | rule   | src/Foo.php:45              |
+  | AC-2.1 | FAIL    | code   | UserTest::testExport failed |
 ```
+
+**Per-AC table assembly** (only when `$WORK_DIR/{identifier}/spec.md` exists): correlate the AC-tagged gate entries in `context/qa-quality-guard.md` against the AC list in `spec.md`. Emit **one row per AC** — when a single gate covers several ACs, repeat that gate's evidence on each AC's row (never collapse). The Grader column is the AC's own `grader:` tag from spec.md; Verdict ∈ PASS / FAIL / UNVERIFIED; Evidence follows the grader type (`code`→file:line or test excerpt, `rule`→structural assertion, `model`→judgment note, `human`→sign-off) per `~/.claude/shared/eval-concepts.md`. Source is `qa-quality-guard.md` only — never `gap-analysis.md`. Phase 4.5 is a single pass (pass@1): do **not** print pass^k framing here. When no spec.md exists, omit this section entirely.
 
 #### 4.6 Update State
 

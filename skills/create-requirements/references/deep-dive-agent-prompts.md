@@ -4,6 +4,8 @@ These are the prompt templates for each deep-dive agent. The orchestrator determ
 
 Template variables (`{feature_description}`, `{discovery_output}`, etc.) are filled by the orchestrator from Stage 1-2 outputs.
 
+**Dispatch discipline (applies to every template below — Task 1, 1b, and 2-7):** per `~/.claude/shared/subagent-context-discipline.md`, each dispatch carries a standing PURPOSE — *these findings feed the business-analyst's Stage-4 synthesis into the Spec-Driven triad; surface gaps, conflicts, and thin areas explicitly rather than glossing them*. If an agent returns output with no concrete anchors (`file:line`, symbols, signatures), re-dispatch with a refined query (≤3 cycles) rather than accepting an empty result.
+
 ---
 
 ```

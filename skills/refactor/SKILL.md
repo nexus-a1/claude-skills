@@ -123,10 +123,10 @@ Suggestions:
 
 ### 2. Explore Context
 
-**Use Task tool with `subagent_type: "Explore"`:**
+**Use Task tool with `subagent_type: "Explore"`:** Pass purpose, not just a query — the prompt below states this is a REFACTORING analysis (structural patterns to preserve), not a bug hunt or PR review, so the agent scopes its report accordingly. If it returns no concrete anchors (`file:line`, symbols), re-dispatch with a refined query (≤3 cycles). See `~/.claude/shared/subagent-context-discipline.md`.
 
 ```
-Prompt: Analyze the codebase context for refactoring the following files.
+Prompt: Analyze the codebase context for refactoring the following files. PURPOSE: this feeds a refactoring-opportunity analysis — surface structural patterns, conventions, and coupling to preserve; this is NOT a bug hunt.
 
 Target files:
 {file_list}

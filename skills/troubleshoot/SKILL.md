@@ -29,6 +29,27 @@ else
   exit 1
 fi
 TROUBLESHOOT_EXEC_MODE=$(resolve_exec_mode troubleshoot team)
+
+# Optional --spec PATH: opt-in source for per-AC verification (Phase 6.3).
+# Troubleshoot is ticket-agnostic by default; this flag is the ONLY way a spec
+# enters the run — no inference from CWD, ticket, or work dir.
+# Quote-aware parse: handles `--spec PATH`, `--spec=PATH`, and quoted paths
+# with spaces; a bare `--spec` (no value) resolves to empty and is ignored.
+SPEC=""
+case " $ARGUMENTS " in
+  *" --spec "*|*" --spec="*)
+    rest=${ARGUMENTS#*--spec}; rest=${rest#[ =]}    # text after the flag, minus one space/=
+    case $rest in
+      \"*) SPEC=${rest#\"}; SPEC=${SPEC%%\"*} ;;     # double-quoted path (allows spaces)
+      \'*) SPEC=${rest#\'}; SPEC=${SPEC%%\'*} ;;     # single-quoted path
+      *)   SPEC=${rest%% *} ;;                        # bare token, up to next space
+    esac
+    ;;
+esac
+if [ -n "$SPEC" ] && [ ! -f "$SPEC" ]; then
+  echo "WARNING: --spec '$SPEC' not found; per-AC verification skipped." >&2
+  SPEC=""
+fi
 ```
 
 Use `$TROUBLESHOOT_EXEC_MODE` to determine team vs sub-agent behavior in Phase 6 (verify fix).
@@ -49,7 +70,10 @@ See `~/.claude/shared/write-safety.md` for the full conventions.
 /troubleshoot "Endpoint /api/users returns 202 instead of 200"
 /troubleshoot "Login fails when password contains special characters"
 /troubleshoot "Database query times out on large datasets"
+/troubleshoot "Endpoint returns 500 after deploy" --spec .claude/work/PROJ-1-login/spec.md
 ```
+
+`--spec PATH` (optional) opts into per-AC verification: when supplied, Phase 6.3 verifies the fix against the spec's acceptance criteria and appends a per-AC PASS/FAIL section. Omit it for an ordinary ad-hoc run — troubleshoot stays ticket-agnostic and infers no spec on its own.
 
 ## When to Use This Skill
 
@@ -152,9 +176,9 @@ Parsed:
 - Related tests
 - Configuration files
 
-**Agent delegation:**
+**Agent delegation:** Pass purpose, not just a query — state the symptom and that the result feeds root-cause investigation, so the agent scopes its trace accordingly. If it returns no concrete anchors (`file:line`, symbols), re-dispatch with a refined query (≤3 cycles). See `~/.claude/shared/subagent-context-discipline.md`.
 ```
-Task(Explore, "Find /api/users endpoint definition and trace the code flow through controllers and services")
+Task(Explore, "Troubleshooting: /api/users returns 202 instead of 200. Find the endpoint definition and trace the code flow through controllers and services so we can locate where the status is set. Return file:line anchors.")
 ```
 
 **Explore agent returns:**
@@ -163,9 +187,9 @@ Task(Explore, "Find /api/users endpoint definition and trace the code flow throu
 - Dependencies
 - Related tests
 
-**If code is complex or legacy:**
+**If code is complex or legacy:** (same dispatch discipline — carry the symptom and the investigation goal, not just the endpoint name)
 ```
-Task(archaeologist, "Deep dive into /api/users endpoint - understand why it returns 202 status")
+Task(archaeologist, "Troubleshooting why /api/users returns 202: deep-dive the endpoint and its call chain to find what sets the status. Return file:line anchors and any historical clues (TODOs, workarounds).")
 ```
 
 **Output to user:**
@@ -360,6 +384,7 @@ Verify:
 1. Does the fix actually address the root cause, or just the symptom?
 2. Are there other code paths with the same bug pattern?
 3. Do the tests cover the specific condition that triggered the bug?
+When `--spec` was supplied (`$SPEC` resolved to a file): also read `$SPEC`, verify the fix against each acceptance criterion, and prefix every gate that maps to an AC with its AC ID(s) — e.g., `GATE 2: AC-3.1 — ...` — citing grader-typed evidence per `~/.claude/shared/eval-concepts.md`.
 Produce a Quality Review Gates report.
 ```
 
@@ -397,8 +422,15 @@ Skeptic waits for security-auditor, then challenges. Agents resolve via SendMess
 ✓ Skeptic validation: {APPROVED | CONDITIONAL}
 ✓ Manual verification: Endpoint returns 200
 
+Per-AC Verification (--spec only — one row per AC):
+  | AC ID  | Verdict | Grader | Evidence                      |
+  |--------|---------|--------|-------------------------------|
+  | AC-3.1 | PASS    | code   | UserApiTest::testStatus → 200 |
+
 Fix verified successfully.
 ```
+
+**Per-AC section** (only when `--spec PATH` was supplied and `$SPEC` resolved to a file): assemble one row per AC from the quality-guard gate output (AC-tagged) against the spec's AC list — same rules as `/implement` Phase 4.5; source is the quality-guard output and evidence follows the grader type. Re-verification reliability matters here: a fix that passes once is **pass@1, not pass^k** — flag a re-verified flaky fix as such (see `~/.claude/shared/eval-concepts.md`). When no `--spec` is supplied (the default ad-hoc run), omit this section entirely — no error, no placeholder.
 
 ---
 
