@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.14.0] - 2026-05-27
+
+## What's Changed
+
+This release completes all Phase 1 items from the ECC (Evaluating Claude Code) assessment. 10 commits: 5 new features, 3 fixes, 1 docs, 1 test. No breaking changes.
+
+### Features
+
+- **security**: agent-config & plugin self-security audit (meta-security) — SKILLS-056
+- **healthcheck**: add config-security checks 27–31 to deep mode — SKILLS-056
+- **validators**: add E-series config-security CI validator — SKILLS-056
+- **validators**: add C5c config-audit reference integrity check — SKILLS-056
+- **security**: add config-audit mode to security-auditor — SKILLS-056
+
+### Bug Fixes
+
+- **validators**: address automated review findings (E2 eval-in-comment + E4 no-jq mcpServers) — SKILLS-056
+- **validators**: handle compact and entry-on-bracket-line JSON in no-jq awk fallback — SKILLS-056
+- **validators**: harden config-security no-jq fallback + add tests — SKILLS-056
+
+### Other Changes
+
+- **docs**: document security-auditor config-audit mode — SKILLS-056
+- **test**: make config-security regression tests sound — SKILLS-056
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.13.0...v1.14.0
+
 ## [1.13.0] - 2026-05-26
 
 # Release v1.13.0
