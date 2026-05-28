@@ -177,6 +177,19 @@ Rules in `~/.claude/rules/` are automatically loaded based on project context.
 
 ---
 
+## Hook Management
+
+Two environment variables let users tune or disable hooks without editing files.
+Full reference: [`plugin/shared/hook-profiles.md`](shared/hook-profiles.md).
+
+| Variable | Effect |
+|----------|--------|
+| `NEXUS_HOOK_PROFILE=minimal` | Disable advisory hooks; keep safety hooks (`git-mutation-guard`, `validate-commit`) |
+| `NEXUS_HOOK_PROFILE=off` | Disable **all** hooks — nuclear option, removes git guards |
+| `NEXUS_DISABLED_HOOKS=notify,audit` | Fine-grained per-hook disable by name |
+
+---
+
 ## Critical Thinking & Feedback
 
 **Think critically about ideas and proposals:**

@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.16.0] - 2026-05-28
+
+## What's Changed
+
+4 commits: 1 feature addition, 1 fix, 2 docs updates. Ships SKILLS-059 (hook runtime profiles and kill-switch) on top of v1.15.0.
+
+### Features
+
+- **hooks**: Add `NEXUS_HOOK_PROFILE` (full/minimal/off) and `NEXUS_DISABLED_HOOKS` kill-switch to all 7 hooks. Safety hooks (git-mutation-guard, validate-commit) warn loudly when bypassed via env vars or profile setting (SKILLS-059). Bash hooks now strip whitespace from hook names in disabled list, matching Python behavior.
+
+### Bug Fixes
+
+- **hooks**: Strip whitespace from `NEXUS_DISABLED_HOOKS` in bash case match — `NEXUS_DISABLED_HOOKS="notify, audit"` now correctly disables audit in all 5 bash hooks
+
+### Documentation
+
+- **shared**: New `plugin/shared/hook-profiles.md` — full reference with hook catalogue, common scenarios, and safety notes
+- **CLAUDE.md**: Added Hook Management section with quick-ref table for env vars
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.15.0...v1.16.0
+
 ## [1.15.0] - 2026-05-28
 
 ## What's Changed

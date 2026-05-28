@@ -13,8 +13,21 @@ tools support updatedMCPToolOutput), so output filtering is not implemented.
 """
 
 import json
+import os as _os
 import re
 import sys
+
+# ── Kill-switch ──────────────────────────────────────────────────────────────
+# NEXUS_HOOK_PROFILE=off      → disable ALL hooks (nuclear option)
+# NEXUS_HOOK_PROFILE=minimal  → disable advisory hooks; keep safety hooks
+# NEXUS_DISABLED_HOOKS=a,b   → disable specific hooks by name
+_nexus_name, _nexus_class = "bash-token-filter", "advisory"
+_nexus_profile = _os.environ.get("NEXUS_HOOK_PROFILE", "full")
+if _nexus_profile == "off" or (_nexus_profile == "minimal" and _nexus_class == "advisory"):
+    sys.exit(0)
+if _nexus_name in {h.strip() for h in _os.environ.get("NEXUS_DISABLED_HOOKS", "").split(",") if h.strip()}:
+    sys.exit(0)
+# ─────────────────────────────────────────────────────────────────────────────
 
 # ── Quiet flag injection map for PreToolUse ────────────────────────────────
 # Each entry: (command_regex, flag_to_inject, where_to_inject)

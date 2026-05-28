@@ -16,6 +16,16 @@
 #
 # Scope: this guard only inspects Bash tool calls. Other tools are untouched.
 
+# ── Kill-switch ──────────────────────────────────────────────────────────────
+# NEXUS_HOOK_PROFILE=off      → disable ALL hooks (nuclear option)
+# NEXUS_HOOK_PROFILE=minimal  → keep safety hooks (git-mutation-guard is safety)
+# NEXUS_DISABLED_HOOKS=a,b   → disable specific hooks by name
+_nexus_name="git-mutation-guard"; _nexus_class="safety"
+[ "${NEXUS_HOOK_PROFILE:-full}" = "off" ] && { echo "WARN: safety hook $_nexus_name disabled via NEXUS_HOOK_PROFILE=off — git mutation guard inactive" >&2; exit 0; }
+# safety hooks are NOT disabled by "minimal" — only "off" reaches them
+case ",${NEXUS_DISABLED_HOOKS//[[:space:]]/}," in *",$_nexus_name,"*) echo "WARN: safety hook $_nexus_name disabled via NEXUS_DISABLED_HOOKS — git mutation guard inactive" >&2; exit 0 ;; esac
+# ─────────────────────────────────────────────────────────────────────────────
+
 set -u
 
 input="${CLAUDE_TOOL_INPUT:-}"
