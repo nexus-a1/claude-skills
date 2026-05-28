@@ -97,6 +97,29 @@ Nice-to-have improvements or low-impact optimizations.
 **Recommendation**: [✅ Approve | 🔄 Request Changes | ⛔ Needs Revision]
 ```
 
+## Supply-Chain Review
+
+When a PR introduces new dependencies, install commands, MCP servers, or hook
+scripts, apply these checks before approving:
+
+| Check | Reject if |
+|-------|-----------|
+| Remote-pipe-to-shell | `curl \| bash`, `wget \| sh`, or equivalent present |
+| Auto-install without pinning | `npx -y <pkg>` or `pip install <pkg>` without an exact version |
+| Unpinned versions | Docker `latest`, npm `*`, GitHub Actions `@main` / `@master` |
+| `eval` on external input | Hook or agent script calls `eval`/`exec` on fetched or tool-derived data |
+| MCP not pinned | `.mcp.json` or `mcpServers` entries without exact version or commit SHA |
+
+In this repository, `scripts/validators/config-security.sh` covers E1–E5 automatically (CI enforces on every PR).
+This section covers human-review judgment calls the validator cannot catch.
+
+For PRs porting ideas from external plugins or repos, apply the
+**direct-port, don't wholesale-merge** policy: verify the idea on its merits,
+ask for a re-implementation in our conventions rather than a verbatim copy,
+and confirm the source license is compatible (MIT/Apache-2.0 acceptable).
+
+---
+
 ## Tone Guidelines
 
 **Do:**

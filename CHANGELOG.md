@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.15.0] - 2026-05-28
+
+## What's Changed
+
+12 commits: 6 feature additions, 4 fixes, 3 docs updates, 1 test. Ships three ECC P2 quick wins and follows up on the meta-security audit (SKILLS-056 from v1.14.0).
+
+### Features
+
+- **rules**: Add strategic-compaction guidance to workflow.md (SKILLS-057) — clarifies when to compact context, what survives, and practical implications
+- **security**: Add plugin self-security audit mode to security-auditor + deep config checks 27-31 to healthcheck (SKILLS-056)
+- **validators**: Add E-series config-security CI validator for remote-pipe-to-shell, unpinned versions, eval-on-external-input checks (SKILLS-056)
+- **validators**: Add C5c config-audit reference integrity check (SKILLS-056)
+- **healthcheck**: Enable config-security checks 27-31 in deep mode (SKILLS-056)
+
+### Bug Fixes
+
+- **review**: Address three automated review findings (SKILLS-058)
+- **validators**: Handle compact and entry-on-bracket-line JSON in no-jq awk fallback (SKILLS-056)
+- **validators**: Handle eval-in-comment + no-jq mcpServers edge cases (SKILLS-056)
+- **validators**: Harden config-security no-jq fallback + add regression tests (SKILLS-056)
+
+### Governance & Documentation
+
+- **governance**: Add CONTRIBUTING.md with Skill Adaptation Policy, direct-port review habit, and Supply-Chain Guard checklist (SKILLS-058)
+- **pr-review**: Add Supply-Chain Review section for human judgment calls validator cannot catch (SKILLS-058)
+- **agents**: Document security-auditor config-audit mode (SKILLS-056)
+
+### Testing
+
+- **validators**: Make config-security regression tests sound (SKILLS-056)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.14.0...v1.15.0
+
 ## [1.14.0] - 2026-05-27
 
 ## What's Changed

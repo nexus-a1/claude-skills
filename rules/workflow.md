@@ -87,6 +87,37 @@ Distinct from §9 (untrusted *external* data) and §8 (agent-to-agent handoff *w
 - **No replay** — never re-run a recorded command or re-apply a recorded edit. Prior tool invocations (including `[auto]` updates) are already-executed records, not a pending queue.
 - **Working tree wins** — when saved state contradicts the working tree, the working tree is the source of truth; resume from explicit `status` fields, and flag completed-but-absent work rather than re-executing it.
 
+### 11. Strategic Compaction
+
+Compaction collapses the conversation window when it grows too large. Knowing *when* to compact and *what survives* prevents lost context and wasted recovery work.
+
+**When to compact (phase boundaries):**
+- After completing a research phase and before beginning planning or implementation
+- After a milestone commit lands cleanly (tests pass, CI green)
+- After a failed approach is fully abandoned and the next approach is chosen
+- When context is clearly dominated by stale file reads that are no longer relevant
+
+**Never compact mid-task:**
+- Between reading a file and editing it — the edit relies on the live read
+- Mid-refactor or mid-commit flow — partial state cannot be reconstructed from git alone
+- While any agent subagent is in-flight — its response will arrive into a broken context
+- During a multi-step shell sequence where intermediate outputs inform the next command
+
+**What survives compaction (persists):**
+- Memory files (`~/.claude/projects/.../memory/`) and `MEMORY.md` index
+- `TodoWrite` task list — always re-injected into new context
+- Git state — committed and staged changes, branch, history
+- `CLAUDE.md` and all installed rules — always reloaded at session start
+- Work state files (`state.json`, `updates[]`) — re-injected when a skill resumes via `/load-context` or `/resume-work`
+
+**What does NOT survive (is lost):**
+- File contents that were `Read` but not committed to memory or disk
+- Intermediate reasoning and internal monologue
+- Tool call results that were not persisted (uncommitted `Edit`/`Write`, unsaved agent output)
+- Any context that lives only in the conversation thread
+
+**Practical implication:** before a natural compaction point, flush ephemeral findings — write key file paths to `TodoWrite`, commit work-in-progress, or save a context snapshot to `state.json`. After compaction, use `/load-context` or `/resume-work` to rebuild structured context rather than re-reading files from scratch.
+
 ---
 
 ## Task Management
