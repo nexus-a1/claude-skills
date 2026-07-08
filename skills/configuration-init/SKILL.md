@@ -1,6 +1,6 @@
 ---
 name: configuration-init
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 category: project-setup
 description: Initialize project configuration file with interactive wizard. Also supports `validate` and `migrate` modes for existing installs.
 argument-hint: "[validate | migrate]"

@@ -1,7 +1,7 @@
 ---
 name: implement
 category: implementation
-model: claude-opus-4-7
+model: claude-opus-4-8
 userInvocable: true
 description: Implement a feature from saved requirements. Chunk-based commits, parallel QA (tests + review + security), and PR creation. Resumes interrupted sessions from saved state. Runs in the current working tree by default — set `worktree.enabled: true` in `.claude/configuration.yml` to isolate work in a git worktree.
 argument-hint: "[--light] [identifier]"

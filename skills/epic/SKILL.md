@@ -1,7 +1,7 @@
 ---
 name: epic
 category: planning
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 userInvocable: true
 description: Decompose large initiatives into dependency-mapped, wave-sequenced tickets with per-ticket requirements. Use when a feature is too large for a single /create-requirements run — typically 5+ tickets with complex interdependencies.
 argument-hint: <epic-description>

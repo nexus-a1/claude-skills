@@ -1,6 +1,6 @@
 ---
 name: load-requirements
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 category: requirements-kb
 description: Load a specific archived requirement from the requirements KB for detailed review. For in-flight tickets that have not been archived yet, use /load-context instead — it also covers work sessions, brainstorms, and proposals.
 argument-hint: <identifier>

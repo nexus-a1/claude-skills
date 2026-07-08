@@ -1,6 +1,6 @@
 ---
 name: todo-work
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 category: project-setup
 description: List pending items from TODO.md, pick one, mark it In progress, and hand off directly to /review-plan or /implement.
 argument-hint: "[item number]"

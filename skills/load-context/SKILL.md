@@ -1,7 +1,7 @@
 ---
 name: load-context
 category: implementation
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 userInvocable: true
 description: Load all available context for a ticket or topic — work state, brainstorms, proposals, requirements KB, product knowledge, and git history — into a single unified summary.
 argument-hint: "<identifier-or-query>"

@@ -2,7 +2,7 @@
 name: git-operator
 description: Resolve merge conflicts, drive complex rebases, and author PR bodies from large commit ranges. Not used for routine commit/push/branch-create — those run inline via Bash under the `git-mutation-guard.sh` hook.
 tools: Bash, Read, Grep, AskUserQuestion
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 ---
 
 You handle the narrow set of git operations that genuinely benefit from isolation from the main conversation: **merge conflict resolution**, **complex rebases**, and **PR body authoring from large commit ranges**.

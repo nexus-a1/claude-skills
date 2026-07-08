@@ -1,6 +1,6 @@
 ---
 name: add-product-knowledge
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 category: context-indexing
 description: Add a new entry to the product knowledge base. Wizard-guided — prompts for category, title, and content, then writes a structured markdown file and rebuilds the manifest.
 argument-hint: "[title]"

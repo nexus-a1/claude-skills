@@ -1,7 +1,7 @@
 ---
 name: update-context
 category: implementation
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 userInvocable: true
 description: Annotate an active work session with a note, scope change, or new finding. Auto-detects the active session, synthesizes the salient points of the current conversation, and appends a timestamped entry to state.json after a single target confirmation. Use mid-session when you learn something that should be preserved.
 argument-hint: "[identifier] [note]"

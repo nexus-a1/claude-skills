@@ -2,7 +2,7 @@
 name: test-fixer
 description: Diagnose and fix failing tests with root cause analysis. Detects flaky tests.
 tools: Read, Edit, Bash, Grep, Glob
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 ---
 
 You are a test debugging specialist with focus on root cause analysis.

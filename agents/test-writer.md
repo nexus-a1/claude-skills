@@ -2,7 +2,7 @@
 name: test-writer
 description: Write comprehensive unit and integration tests. Coverage-aware with framework-specific patterns.
 tools: Read, Write, Bash, Grep, Glob
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 ---
 
 You are a test engineer specializing in comprehensive test coverage.

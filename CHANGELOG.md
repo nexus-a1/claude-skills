@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.16.1] - 2026-07-08
+
+## What's Changed
+
+Updated model IDs across all plugin agents and skills to use the latest Claude models (Sonnet 5, Opus 4.8).
+
+### Chores
+
+- **models**: Upgrade Sonnet 4.6 → Sonnet 5 and Opus 4.7 → Opus 4.8 across 20 agents and 31 skills
+
+**Full Changelog**: https://github.com/nexus-a1/claude-skills/compare/v1.16.0...v1.16.1
+
 ## [1.16.0] - 2026-05-28
 
 ## What's Changed

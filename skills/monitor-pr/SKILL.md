@@ -1,6 +1,6 @@
 ---
 name: monitor-pr
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 category: code-quality
 userInvocable: true
 description: Monitor an open pull request — watch CI, investigate and fix failing workflows, address new review comments, and loop until the PR is approved, merged, or the iteration limit is reached.

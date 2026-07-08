@@ -1,7 +1,7 @@
 ---
 name: create-proposal
 category: planning
-model: claude-opus-4-7
+model: claude-opus-4-8
 userInvocable: true
 description: Create a formal design document for a feature or component. Guides through requirements, approach brainstorming, and iterative proposal drafts with approval gate before optional implementation. Use when you need a written design approved before committing to code.
 argument-hint: "[--light] [proposal-name or identifier]"

@@ -1,7 +1,7 @@
 ---
 name: resume-work
 category: implementation
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 userInvocable: true
 description: Resume any interrupted work session — brainstorm, requirements, proposal, epic, or implementation. Scans for incomplete sessions and continues from the last saved checkpoint. Re-enters the original session's worktree if one was used; otherwise runs in the current working tree.
 argument-hint: "[identifier]"

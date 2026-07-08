@@ -1,6 +1,6 @@
 ---
 name: pr-review
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 category: code-quality
 userInvocable: true
 description: Review a pull request (or local branch with --local) with thorough analysis, severity levels, and actionable feedback

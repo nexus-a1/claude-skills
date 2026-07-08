@@ -1,6 +1,6 @@
 ---
 name: search-requirements
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 category: requirements-kb
 description: Search team requirements repository for similar past work
 argument-hint: <query>

@@ -1,7 +1,7 @@
 ---
 name: create-requirements
 category: planning
-model: claude-opus-4-7
+model: claude-opus-4-8
 userInvocable: true
 description: Run a multi-agent pipeline to produce detailed technical requirements and a ticket-ready summary. Creates a feature branch, persists session state, and supports resume. Optionally seeds from a prior brainstorm session.
 argument-hint: "[--light] [--from-brainstorm <slug>] [feature-description]"
