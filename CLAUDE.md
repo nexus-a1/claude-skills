@@ -218,7 +218,7 @@ Full reference: [`plugin/shared/hook-profiles.md`](shared/hook-profiles.md).
 
 ### Configuration File
 
-Create `.claude/configuration.yml` in your project (copy from `~/.claude/templates/configuration.yml`):
+Create `.claude/configuration.yml` in your project (copy from `${CLAUDE_PLUGIN_ROOT}/templates/configuration.yml`, or `~/.claude/templates/configuration.yml` for local/dev copies):
 
 ```yaml
 execution_mode: team
@@ -335,4 +335,4 @@ Skills find `.claude/configuration.yml` by walking up from CWD. All relative art
 
 ### Setup
 
-Run `/nexus:configuration-init` for interactive setup, or copy `~/.claude/templates/configuration.yml` and edit manually. See `docs/configuration.md` for full reference.
+Run `/configuration-init` for interactive setup, or copy `${CLAUDE_PLUGIN_ROOT}/templates/configuration.yml` (or `~/.claude/templates/configuration.yml` for local/dev copies) and edit manually — see the sections above for full field reference.

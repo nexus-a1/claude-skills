@@ -67,7 +67,7 @@ After syncing the knowledge base and before researching, check if `${KB_PATH}/ma
    - Extract tags from content (look for `tags:` frontmatter or infer from headings)
    - Create a one-line summary from the first paragraph
 3. Build `categories` and `tags` frequency maps
-4. Write `manifest.json` to `$KB_PATH` using the product-knowledge schema (see [docs/manifest-system.md](../docs/manifest-system.md)):
+4. Write `manifest.json` to `$KB_PATH` using the product-knowledge schema (see `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md`):
 
 ```json
 {

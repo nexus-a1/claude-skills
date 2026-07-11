@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.16.2] - 2026-07-11
+
+## What's Changed
+
+1 commit: 1 fix. No breaking changes.
+
+### Bug Fixes
+
+- **plugin**: fix marketplace-portability paths across skills and agents — SKILLS-061
+
+Replaces hardcoded `~/.claude/shared|templates|agents/` prose paths (which only resolve for deprecated `install.sh` installs) with `${CLAUDE_PLUGIN_ROOT}`-first resolution across 13 skills, 5 agents, and `plugin/CLAUDE.md`. Extracts the manifest envelope/upsert contract into `plugin/shared/manifest-schema.md` and repoints 10 dead `docs/manifest-system.md` links at it. Fixes `configuration-init`'s dead-end where a missing template forced marketplace users toward `install.sh` with no other path forward — it now warns and continues.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.16.1...v1.16.2
+
 ## [1.16.1] - 2026-07-08
 
 ## What's Changed

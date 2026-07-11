@@ -151,7 +151,7 @@ fi
 Requirements storage not configured
 
 To set up:
-1. See: ~/.claude/templates/requirements-repo/README.md
+1. See: ${CLAUDE_PLUGIN_ROOT}/templates/requirements-repo/README.md (or ~/.claude/templates/requirements-repo/README.md for local/dev copies)
 2. Add requirements artifact to .claude/configuration.yml:
 
 storage:
@@ -296,7 +296,7 @@ Did you mean one of these?
 ```
 ❌ Requirements repository not configured
 
-Setup guide: ~/.claude/templates/requirements-repo/README.md
+Setup guide: ${CLAUDE_PLUGIN_ROOT}/templates/requirements-repo/README.md (or ~/.claude/templates/requirements-repo/README.md for local/dev copies)
 
 Cannot proceed until configured.
 ```

@@ -231,7 +231,7 @@ Write `$WORK_DIR/{identifier}/state.json`:
 
 ### 0.7 Update Work Manifest
 
-After creating the state file, upsert into `${WORK_DIR}/manifest.json` (see [docs/manifest-system.md](../../docs/manifest-system.md)).
+After creating the state file, upsert into `${WORK_DIR}/manifest.json` (see `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for the envelope/upsert contract).
 
 Read or initialize manifest, then upsert item using `identifier` as unique key:
 

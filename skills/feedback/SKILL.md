@@ -224,12 +224,12 @@ Task(Explore, "Analyze the output quality and duplication across agent outputs f
 
 Read the following files:
 - All files in ${WORK_DIR}/${identifier}/context/*.md (agent outputs)
-- The agent definitions from ~/.claude/agents/ for each agent that produced output (if the path exists; skip scope adherence check if agent definitions are not available)
+- The agent definitions from ${CLAUDE_PLUGIN_ROOT}/agents/ (or ~/.claude/agents/ for local/dev copies) for each agent that produced output (if the path exists; skip scope adherence check if agent definitions are not available)
 
 For each agent output file, analyze:
 
 1. **Scope Adherence** (skip if agent definitions not found)
-   - Compare what the agent actually wrote vs its defined purpose in ~/.claude/agents/{name}.md
+   - Compare what the agent actually wrote vs its defined purpose in ${CLAUDE_PLUGIN_ROOT}/agents/{name}.md (or ~/.claude/agents/{name}.md for local/dev copies)
    - Did it stay within its scope or drift into another agent's territory?
    - Rate: IN_SCOPE / MINOR_DRIFT / MAJOR_DRIFT
 

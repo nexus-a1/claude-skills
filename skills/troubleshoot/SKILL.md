@@ -62,7 +62,7 @@ When running verification agents in parallel (Phase 6), agents MUST NOT write to
 - **quality-guard**: Writes only to its own scoped output (returned via Task result)
 - **Source code fixes**: Only the lead applies fixes (Phase 5), sequentially, never in parallel
 
-See `~/.claude/shared/write-safety.md` for the full conventions.
+See `${CLAUDE_PLUGIN_ROOT}/shared/write-safety.md` (or `~/.claude/shared/write-safety.md` for local/dev copies) for the full conventions.
 
 ## Usage
 
@@ -176,7 +176,7 @@ Parsed:
 - Related tests
 - Configuration files
 
-**Agent delegation:** Pass purpose, not just a query — state the symptom and that the result feeds root-cause investigation, so the agent scopes its trace accordingly. If it returns no concrete anchors (`file:line`, symbols), re-dispatch with a refined query (≤3 cycles). See `~/.claude/shared/subagent-context-discipline.md`.
+**Agent delegation:** Pass purpose, not just a query — state the symptom and that the result feeds root-cause investigation, so the agent scopes its trace accordingly. If it returns no concrete anchors (`file:line`, symbols), re-dispatch with a refined query (≤3 cycles). See `${CLAUDE_PLUGIN_ROOT}/shared/subagent-context-discipline.md` (or `~/.claude/shared/subagent-context-discipline.md` for local/dev copies).
 ```
 Task(Explore, "Troubleshooting: /api/users returns 202 instead of 200. Find the endpoint definition and trace the code flow through controllers and services so we can locate where the status is set. Return file:line anchors.")
 ```
@@ -384,7 +384,7 @@ Verify:
 1. Does the fix actually address the root cause, or just the symptom?
 2. Are there other code paths with the same bug pattern?
 3. Do the tests cover the specific condition that triggered the bug?
-When `--spec` was supplied (`$SPEC` resolved to a file): also read `$SPEC`, verify the fix against each acceptance criterion, and prefix every gate that maps to an AC with its AC ID(s) — e.g., `GATE 2: AC-3.1 — ...` — citing grader-typed evidence per `~/.claude/shared/eval-concepts.md`.
+When `--spec` was supplied (`$SPEC` resolved to a file): also read `$SPEC`, verify the fix against each acceptance criterion, and prefix every gate that maps to an AC with its AC ID(s) — e.g., `GATE 2: AC-3.1 — ...` — citing grader-typed evidence per `${CLAUDE_PLUGIN_ROOT}/shared/eval-concepts.md` (or `~/.claude/shared/eval-concepts.md` for local/dev copies).
 Produce a Quality Review Gates report.
 ```
 
@@ -430,7 +430,7 @@ Per-AC Verification (--spec only — one row per AC):
 Fix verified successfully.
 ```
 
-**Per-AC section** (only when `--spec PATH` was supplied and `$SPEC` resolved to a file): assemble one row per AC from the quality-guard gate output (AC-tagged) against the spec's AC list — same rules as `/implement` Phase 4.5; source is the quality-guard output and evidence follows the grader type. Re-verification reliability matters here: a fix that passes once is **pass@1, not pass^k** — flag a re-verified flaky fix as such (see `~/.claude/shared/eval-concepts.md`). When no `--spec` is supplied (the default ad-hoc run), omit this section entirely — no error, no placeholder.
+**Per-AC section** (only when `--spec PATH` was supplied and `$SPEC` resolved to a file): assemble one row per AC from the quality-guard gate output (AC-tagged) against the spec's AC list — same rules as `/implement` Phase 4.5; source is the quality-guard output and evidence follows the grader type. Re-verification reliability matters here: a fix that passes once is **pass@1, not pass^k** — flag a re-verified flaky fix as such (see `${CLAUDE_PLUGIN_ROOT}/shared/eval-concepts.md`, or `~/.claude/shared/eval-concepts.md` for local/dev copies). When no `--spec` is supplied (the default ad-hoc run), omit this section entirely — no error, no placeholder.
 
 ---
 

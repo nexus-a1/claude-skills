@@ -96,7 +96,7 @@ Extract requirements artifact path from storage configuration.
 Requirements storage not configured
 
 To search past work, configure requirements storage:
-1. See: ~/.claude/templates/requirements-repo/README.md
+1. See: ${CLAUDE_PLUGIN_ROOT}/templates/requirements-repo/README.md (or ~/.claude/templates/requirements-repo/README.md for local/dev copies)
 2. Add to .claude/configuration.yml:
 
 storage:

@@ -358,7 +358,7 @@ Read `references/state-schema.md` for the complete `state.json` schema (schema_v
 
 ## Phase 6.5: Update Work Manifest
 
-After saving all epic files, upsert into `${WORK_DIR}/manifest.json` (see [docs/manifest-system.md](../../docs/manifest-system.md)).
+After saving all epic files, upsert into `${WORK_DIR}/manifest.json` (see `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for the envelope/upsert contract).
 
 Read or initialize manifest, then upsert item using `identifier` (the epic slug) as unique key:
 

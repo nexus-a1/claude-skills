@@ -2,8 +2,9 @@
 # Shared configuration resolution for Claude Code skills.
 # Source this script to get config discovery and artifact resolution functions.
 #
-# Usage in SKILL.md bash blocks:
-#   source ~/.claude/shared/resolve-config.sh
+# Usage in SKILL.md bash blocks (marketplace installs get ${CLAUDE_PLUGIN_ROOT}
+# substituted inline; ~/.claude fallback is for local/dev copies only):
+#   source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
 #   WORK_DIR=$(resolve_artifact work work)
 #   EXEC_MODE=$(resolve_exec_mode qa_review team)
 

@@ -78,7 +78,7 @@ You emit **four marker-delimited blocks** in a single response (`SPEC`, `PLAN`, 
 ### 1. `spec.md` — WHAT / WHY (product-facing)
 - Summary (one paragraph — no HOW)
 - User stories (`As X, I want Y, so that Z`) with stable IDs `US-N`
-- Acceptance criteria as Given/When/Then scenarios with stable IDs `AC-N.M`, grouped under each user story. Tag each AC with a grader type (`code`, `rule`, `model`, `human`) as an indent-2 `grader:` bullet under its Then clause — the type names the *kind of evidence* that verifies the AC, never a tool. See `~/.claude/shared/eval-concepts.md`.
+- Acceptance criteria as Given/When/Then scenarios with stable IDs `AC-N.M`, grouped under each user story. Tag each AC with a grader type (`code`, `rule`, `model`, `human`) as an indent-2 `grader:` bullet under its Then clause — the type names the *kind of evidence* that verifies the AC, never a tool. See `${CLAUDE_PLUGIN_ROOT}/shared/eval-concepts.md` (or `~/.claude/shared/eval-concepts.md` for local/dev copies).
 - Security & compliance criteria from `security-requirements`, expressed as AC (IDs `AC-SEC-N`)
 - Out of scope (explicit exclusions)
 - Open questions (or "None")

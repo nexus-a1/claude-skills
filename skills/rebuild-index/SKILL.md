@@ -85,7 +85,7 @@ Usage:
   /rebuild-index requirements
   /rebuild-index all
 
-See docs/manifest-system.md for manifest schema details.
+See `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for manifest schema details.
 ```
 
 ### Step 2: Sync Git Locations
@@ -214,7 +214,7 @@ Process:
 3. Build categories and tags frequency maps
 4. Write manifest.json to ${PRODUCT_DIR}/manifest.json
 
-Use the manifest schema from docs/manifest-system.md (artifact_type: product-knowledge).
+Use the manifest schema from ${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md (artifact_type: product-knowledge).
 Include the extra 'categories' and 'tags' top-level fields.
 ")
 ```
@@ -316,7 +316,7 @@ Use AskUserQuestion for selection.
 
 ## See Also
 
-- [Manifest System Reference](../../docs/manifest-system.md) — Schema details and update patterns
+- [Manifest Schema Reference](${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md) — Schema details and update patterns
 - `/rebuild-requirements-index` — Requirements-specific index rebuild
 - `/load-context` — Uses manifests for fast listing and lookup
 - `/resume-work` — Uses work manifest to find incomplete work

@@ -548,7 +548,7 @@ Next Steps:
 
 After saving all brainstorm outputs, update the brainstorms manifest.
 
-**Read or initialize** `${WORK_DIR}/manifest.json` (see [docs/manifest-system.md](../../docs/manifest-system.md)):
+**Read or initialize** `${WORK_DIR}/manifest.json` (see `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for the envelope/upsert contract):
 
 ```bash
 MANIFEST="${WORK_DIR}/manifest.json"

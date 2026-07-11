@@ -167,7 +167,7 @@ Update **work manifest** (`${WORK_DIR}/manifest.json`) to reflect completion:
 }
 ```
 
-Update **proposals manifest** (`${PROPOSALS_DIR}/manifest.json`) with the new proposal (see [docs/manifest-system.md](../../../../docs/manifest-system.md)):
+Update **proposals manifest** (`${PROPOSALS_DIR}/manifest.json`) with the new proposal (see `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for the envelope/upsert contract):
 ```json
 {
   "name": "{proposal_name}",

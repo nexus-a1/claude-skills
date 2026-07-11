@@ -66,7 +66,7 @@ Agents working in parallel MUST NOT write to the same file. Follow these convent
 - **QA gate report**: Only the skill lead writes to `$WORK_DIR/{identifier}/qa-gate-report.md` after aggregating all agent outputs.
 - **Source code**: During Phase 3 (implementation), only the lead writes code. During Phase 4.7 (auto-fix), only the refactorer agent writes fixes, sequentially (not in parallel).
 
-See `~/.claude/shared/write-safety.md` for the full conventions.
+See `${CLAUDE_PLUGIN_ROOT}/shared/write-safety.md` (or `~/.claude/shared/write-safety.md` for local/dev copies) for the full conventions.
 
 ---
 
@@ -300,7 +300,7 @@ If `state.json` doesn't exist or has `type == "implementation"` (resuming), skip
 
 #### 0.4 Update Work Manifest
 
-After creating or loading `state.json`, upsert into `${WORK_DIR}/manifest.json` (see [docs/manifest-system.md](../../docs/manifest-system.md)).
+After creating or loading `state.json`, upsert into `${WORK_DIR}/manifest.json` (see `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for the envelope/upsert contract).
 
 Read or initialize manifest, then upsert item using `identifier` as unique key:
 
@@ -1084,7 +1084,7 @@ Your job (Level 2 — Implementation Validation), in this order:
 
 This is the terminal review before PR — report all severities (BLOCKING / IMPORTANT / ADVISORY); do not suppress medium/low findings to save space. There is no later pass to catch what you drop.
 
-When a gate maps to one or more acceptance criteria from the spec, prefix it with the AC ID(s) (e.g., `GATE 3: AC-2.1 — ...`) and note each AC's grader-typed evidence — this feeds the per-AC PASS/FAIL table assembled in Phase 4.5. See `~/.claude/shared/eval-concepts.md`.
+When a gate maps to one or more acceptance criteria from the spec, prefix it with the AC ID(s) (e.g., `GATE 3: AC-2.1 — ...`) and note each AC's grader-typed evidence — this feeds the per-AC PASS/FAIL table assembled in Phase 4.5. See `${CLAUDE_PLUGIN_ROOT}/shared/eval-concepts.md` (or `~/.claude/shared/eval-concepts.md` for local/dev copies).
 
 Produce a Quality Review Gates report. Include a section on inter-agent agreement/disagreement.
 ```
@@ -1132,7 +1132,7 @@ For each gate:
 Issue final verdict.
 ```
 
-**Deadlock protocol (max resolution iterations: 2)**: After two rounds of agent resolution, remaining open gates are escalated to the user in Phase 4.5. Do NOT continue iterating — present all submissions, objections, and attempted resolutions to the user for a decision: override, provide guidance, or abort. See `~/.claude/shared/principles.md` for the full deadlock protocol.
+**Deadlock protocol (max resolution iterations: 2)**: After two rounds of agent resolution, remaining open gates are escalated to the user in Phase 4.5. Do NOT continue iterating — present all submissions, objections, and attempted resolutions to the user for a decision: override, provide guidance, or abort. See `${CLAUDE_PLUGIN_ROOT}/shared/principles.md` (or `~/.claude/shared/principles.md` for local/dev copies) for the full deadlock protocol.
 
 ---
 
@@ -1296,7 +1296,7 @@ Per-AC Verification (only when spec.md present — see assembly note below):
   | AC-2.1 | FAIL    | code   | UserTest::testExport failed |
 ```
 
-**Per-AC table assembly** (only when `$WORK_DIR/{identifier}/spec.md` exists): correlate the AC-tagged gate entries in `context/qa-quality-guard.md` against the AC list in `spec.md`. Emit **one row per AC** — when a single gate covers several ACs, repeat that gate's evidence on each AC's row (never collapse). The Grader column is the AC's own `grader:` tag from spec.md; Verdict ∈ PASS / FAIL / UNVERIFIED; Evidence follows the grader type (`code`→file:line or test excerpt, `rule`→structural assertion, `model`→judgment note, `human`→sign-off) per `~/.claude/shared/eval-concepts.md`. Source is `qa-quality-guard.md` only — never `gap-analysis.md`. Phase 4.5 is a single pass (pass@1): do **not** print pass^k framing here. When no spec.md exists, omit this section entirely.
+**Per-AC table assembly** (only when `$WORK_DIR/{identifier}/spec.md` exists): correlate the AC-tagged gate entries in `context/qa-quality-guard.md` against the AC list in `spec.md`. Emit **one row per AC** — when a single gate covers several ACs, repeat that gate's evidence on each AC's row (never collapse). The Grader column is the AC's own `grader:` tag from spec.md; Verdict ∈ PASS / FAIL / UNVERIFIED; Evidence follows the grader type (`code`→file:line or test excerpt, `rule`→structural assertion, `model`→judgment note, `human`→sign-off) per `${CLAUDE_PLUGIN_ROOT}/shared/eval-concepts.md` (or `~/.claude/shared/eval-concepts.md` for local/dev copies). Source is `qa-quality-guard.md` only — never `gap-analysis.md`. Phase 4.5 is a single pass (pass@1): do **not** print pass^k framing here. When no spec.md exists, omit this section entirely.
 
 #### 4.6 Update State
 
@@ -1677,7 +1677,7 @@ If yes, trigger `/pr-review {pr_number}`.
 
 #### 5.5 Update Work Manifest (Final)
 
-Update the work manifest to reflect completion (see [docs/manifest-system.md](../../docs/manifest-system.md)).
+Update the work manifest to reflect completion (see `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for the envelope/upsert contract).
 
 Upsert item using `identifier` as unique key:
 

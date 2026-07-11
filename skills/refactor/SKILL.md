@@ -48,7 +48,7 @@ When running QA agents in parallel (Step 5.1 quality gate loop), agents MUST NOT
 - **quality-guard**: Returns validation via Task result only
 - **refactorer**: The only agent that modifies source code, runs sequentially (not in parallel with reviewers)
 
-See `~/.claude/shared/write-safety.md` for the full conventions.
+See `${CLAUDE_PLUGIN_ROOT}/shared/write-safety.md` (or `~/.claude/shared/write-safety.md` for local/dev copies) for the full conventions.
 
 ## Worktree Isolation (Conditional)
 
@@ -123,7 +123,7 @@ Suggestions:
 
 ### 2. Explore Context
 
-**Use Task tool with `subagent_type: "Explore"`:** Pass purpose, not just a query — the prompt below states this is a REFACTORING analysis (structural patterns to preserve), not a bug hunt or PR review, so the agent scopes its report accordingly. If it returns no concrete anchors (`file:line`, symbols), re-dispatch with a refined query (≤3 cycles). See `~/.claude/shared/subagent-context-discipline.md`.
+**Use Task tool with `subagent_type: "Explore"`:** Pass purpose, not just a query — the prompt below states this is a REFACTORING analysis (structural patterns to preserve), not a bug hunt or PR review, so the agent scopes its report accordingly. If it returns no concrete anchors (`file:line`, symbols), re-dispatch with a refined query (≤3 cycles). See `${CLAUDE_PLUGIN_ROOT}/shared/subagent-context-discipline.md` (or `~/.claude/shared/subagent-context-discipline.md` for local/dev copies).
 
 ```
 Prompt: Analyze the codebase context for refactoring the following files. PURPOSE: this feeds a refactoring-opportunity analysis — surface structural patterns, conventions, and coupling to preserve; this is NOT a bug hunt.

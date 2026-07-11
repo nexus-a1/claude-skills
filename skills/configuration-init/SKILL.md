@@ -81,22 +81,14 @@ If user selects "Validate", jump to **Step 9: Validate Configuration**.
 
 ### Step 2: Load Template
 
-Read the template from `~/.claude/templates/configuration.yml`.
+Read the template, trying in order: `${CLAUDE_PLUGIN_ROOT}/templates/configuration.yml`, then `~/.claude/templates/configuration.yml` (local/dev copies).
 
-**If template not found:**
+**If neither is found:** the template is optional — Step 6 builds the YAML from scratch regardless. Warn and continue:
 
 ```
-Template not found at ~/.claude/templates/configuration.yml
-
-Run install.sh first to install templates:
-  cd /path/to/claude-skills && ./install.sh
-
-Or install templates only:
-  cd /path/to/claude-skills && ./install.sh
-  Select option: 8) Templates only
+Template not found (searched ${CLAUDE_PLUGIN_ROOT}/templates/configuration.yml and ~/.claude/templates/configuration.yml).
+Continuing without a template — the configuration will be built from your answers below.
 ```
-
-Stop execution.
 
 ### Step 3: Ask About Execution Mode
 
@@ -206,12 +198,12 @@ To create a team-knowledge repository:
   cd team-knowledge
   git init
   mkdir requirements proposals
-  cp -r ~/.claude/templates/requirements-repo/* requirements/  # If templates installed
+  cp -r ${CLAUDE_PLUGIN_ROOT}/templates/requirements-repo/* requirements/  # or ~/.claude/templates/requirements-repo/ for local/dev copies; skip if templates not present
   git add . && git commit -m "Initial setup"
 
 Then re-run /configuration-init to connect it.
 
-See: docs/workflows/requirements-knowledge-base.md
+See: ${CLAUDE_PLUGIN_ROOT}/templates/requirements-repo/README.md (or ~/.claude/templates/requirements-repo/README.md for local/dev copies)
 ```
 
 **If user selects the default path or enters a custom path via "Other"**, validate it exists:

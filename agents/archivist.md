@@ -58,7 +58,7 @@ test -n "$REPO" && test -d "$REPO" && echo "Repository found" || echo "Repositor
 test -f "$REPO/index.json" && echo "Index found" || echo "Index missing"
 ```
 
-**If configuration missing or invalid:** Report "Requirements repository not configured. See `plugin/templates/requirements-repo/README.md` for setup." Do NOT proceed with search/archive operations.
+**If configuration missing or invalid:** Report "Requirements repository not configured. See `${CLAUDE_PLUGIN_ROOT}/templates/requirements-repo/README.md` (or `~/.claude/templates/requirements-repo/README.md` for local/dev copies) for setup." Do NOT proceed with search/archive operations.
 
 ## Scope Boundary
 
@@ -168,7 +168,7 @@ Archive completed requirements after PR creation.
      "implementation": {"approach": "...", "patterns_used": [], "technologies": []}
    }
    ```
-4. **Generate requirements.md:** Human-readable summary (overview, requirements, architecture, decisions, lessons learned). Use `plugin/templates/requirements-repo/requirements.template.md` as guide.
+4. **Generate requirements.md:** Human-readable summary (overview, requirements, architecture, decisions, lessons learned). Use `${CLAUDE_PLUGIN_ROOT}/templates/requirements-repo/requirements.template.md` (or `~/.claude/templates/requirements-repo/requirements.template.md` for local/dev copies) as guide.
 5. **Copy to repository:** Create `{repository_path}/{identifier}/` with metadata, requirements, state files, and context directory
 6. **Update index.json:** Add ticket entry, update tag/component/project frequencies
 7. **Commit and push:**
@@ -198,7 +198,7 @@ Archive completed requirements after PR creation.
 | Scenario | Action |
 |----------|--------|
 | Config not found | Report "not configured", exit |
-| Repository not found | Report path issue, suggest `plugin/templates/requirements-repo/` for setup |
+| Repository not found | Report path issue, suggest `${CLAUDE_PLUGIN_ROOT}/templates/requirements-repo/` (or `~/.claude/templates/requirements-repo/` for local/dev copies) for setup |
 | Index corrupted | Suggest `git checkout HEAD~1 index.json` or rebuild |
 | Sync failed | Warn, continue with potentially stale data |
 | Rebase conflict during push | Report conflict, suggest manual resolution |

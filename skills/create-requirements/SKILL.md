@@ -102,7 +102,7 @@ Agents working in parallel MUST NOT write to the same file. Follow these convent
 - **Manifest**: Only the skill lead writes to `${WORK_DIR}/manifest.json`.
 - **Discovery JSON**: Only the context-builder writes to `context/discovery.json`.
 
-See `~/.claude/shared/write-safety.md` for the full conventions.
+See `${CLAUDE_PLUGIN_ROOT}/shared/write-safety.md` (or `~/.claude/shared/write-safety.md` for local/dev copies) for the full conventions.
 
 ---
 
@@ -454,7 +454,7 @@ fi
 
 #### 1.8 Update Work Manifest
 
-After creating the state file, upsert into `${WORK_DIR}/manifest.json` (see [docs/manifest-system.md](../../docs/manifest-system.md)).
+After creating the state file, upsert into `${WORK_DIR}/manifest.json` (see `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for the envelope/upsert contract).
 
 Read or initialize manifest, then upsert item using `identifier` as unique key:
 
@@ -566,7 +566,7 @@ Build a structured context inventory for the following feature.
 
 Feature: {feature_description}
 Repository: {current_repo}
-PURPOSE: this inventory is the seed context for the Stage-3 deep-dive agents and Stage-4 synthesis — its gaps become their blind spots. Flag missing/ambiguous areas explicitly rather than glossing them. (Dispatch discipline: ~/.claude/shared/subagent-context-discipline.md)
+PURPOSE: this inventory is the seed context for the Stage-3 deep-dive agents and Stage-4 synthesis — its gaps become their blind spots. Flag missing/ambiguous areas explicitly rather than glossing them. (Dispatch discipline: `${CLAUDE_PLUGIN_ROOT}/shared/subagent-context-discipline.md`, or `~/.claude/shared/subagent-context-discipline.md` for local/dev copies)
 {IF has_brainstorm_context: "Prior brainstorm context available at: $WORK_DIR/{brainstorm_slug}/context/exploration.md and context/business-context.md — use these as your starting inventory and verify/extend rather than re-discovering from scratch."}
 
 Create an inventory of:
@@ -709,7 +709,7 @@ This prevents broad, undirected analysis and eliminates second-pass supplements.
 
 **Agent prompts (shared between both modes):**
 
-Read `references/deep-dive-agent-prompts.md` for the complete prompt templates for each deep-dive agent (Tasks 1-7). Each prompt includes the template variables to fill from Stage 1-2 outputs. Those templates carry the standing dispatch PURPOSE and iterative-retrieval rule (`~/.claude/shared/subagent-context-discipline.md`): if an agent returns thin output with no concrete anchors, re-dispatch with a refined query (≤3 cycles) rather than proceeding empty.
+Read `references/deep-dive-agent-prompts.md` for the complete prompt templates for each deep-dive agent (Tasks 1-7). Each prompt includes the template variables to fill from Stage 1-2 outputs. Those templates carry the standing dispatch PURPOSE and iterative-retrieval rule (`${CLAUDE_PLUGIN_ROOT}/shared/subagent-context-discipline.md`, or `~/.claude/shared/subagent-context-discipline.md` for local/dev copies): if an agent returns thin output with no concrete anchors, re-dispatch with a refined query (≤3 cycles) rather than proceeding empty.
 
 #### 3.3 [TEAM MODE ONLY] Monitor and Cross-Pollinate
 
@@ -829,7 +829,7 @@ Consolidate all agent findings into final requirements.
 Feature: {feature_description}
 Refined Requirements: {refined_requirements}
 Work directory: $WORK_DIR/{identifier}/
-PURPOSE: produce the Spec-Driven triad (spec/plan/tasks) that /implement will execute — not a prose summary. Resolve conflicts between agent findings; where a finding is too thin to act on, flag it rather than inventing detail. (Dispatch discipline: ~/.claude/shared/subagent-context-discipline.md)
+PURPOSE: produce the Spec-Driven triad (spec/plan/tasks) that /implement will execute — not a prose summary. Resolve conflicts between agent findings; where a finding is too thin to act on, flag it rather than inventing detail. (Dispatch discipline: `${CLAUDE_PLUGIN_ROOT}/shared/subagent-context-discipline.md`, or `~/.claude/shared/subagent-context-discipline.md` for local/dev copies)
 
 Agent findings are saved in the context directory. Read each file that exists:
 - $WORK_DIR/{identifier}/context/discovery.json (context-builder inventory — JSON format)
@@ -876,7 +876,7 @@ Use this EXACT format:
 - **US-2**: ...
 
 ## Acceptance Criteria
-Each AC is a Given/When/Then scenario, grouped under its user story. Assign stable IDs (AC-{story}.{n}). Tag each AC with a grader type — `code`, `rule`, `model`, or `human` — as an indent-2 `grader:` bullet under its Then clause (see `~/.claude/shared/eval-concepts.md`); the type names the *kind of evidence* that verifies the AC, never a tool.
+Each AC is a Given/When/Then scenario, grouped under its user story. Assign stable IDs (AC-{story}.{n}). Tag each AC with a grader type — `code`, `rule`, `model`, or `human` — as an indent-2 `grader:` bullet under its Then clause (see `${CLAUDE_PLUGIN_ROOT}/shared/eval-concepts.md`, or `~/.claude/shared/eval-concepts.md` for local/dev copies); the type names the *kind of evidence* that verifies the AC, never a tool.
 
 ### AC for US-1
 - **AC-1.1**
@@ -1253,7 +1253,7 @@ Update `state.json`:
 
 #### 4.10 Update Work Manifest (Final)
 
-Update the work manifest to reflect completion (see [docs/manifest-system.md](../../docs/manifest-system.md)).
+Update the work manifest to reflect completion (see `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for the envelope/upsert contract).
 
 Upsert item using `identifier` as unique key with updated fields:
 

@@ -71,7 +71,7 @@ Extract requirements artifact path from storage configuration.
 Requirements storage not configured
 
 Configure in .claude/configuration.yml to load archived requirements.
-See: ~/.claude/templates/requirements-repo/README.md
+See: ${CLAUDE_PLUGIN_ROOT}/templates/requirements-repo/README.md (or ~/.claude/templates/requirements-repo/README.md for local/dev copies)
 ```
 
 ### Step 2: Offer Loading Options

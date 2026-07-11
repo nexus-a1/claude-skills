@@ -93,7 +93,7 @@ SendMessage(recipient="qa-security", message="GATE: FeatureOverrideRequest.expir
 
 Agents respond via SendMessage with evidence. Skeptic verifies responses and issues final verdict.
 
-**Message size discipline**: Each `SendMessage` payload is capped at **5 lines / ~80 words** (see `shared/principles.md` #8). Every challenge and response must cite `file:line`. Do NOT paste full findings reports, full test output, or full diffs into messages — agents write full reports to their role-scoped files and reference the path instead. The `GATE:` examples above are the target shape.
+**Message size discipline**: Each `SendMessage` payload is capped at **5 lines / ~80 words** (see `${CLAUDE_PLUGIN_ROOT}/shared/principles.md` #8, or `~/.claude/shared/principles.md` for local/dev copies). Every challenge and response must cite `file:line`. Do NOT paste full findings reports, full test output, or full diffs into messages — agents write full reports to their role-scoped files and reference the path instead. The `GATE:` examples above are the target shape.
 
 **Max resolution rounds**: 2. After two rounds, remaining open gates are documented and escalated to user.
 

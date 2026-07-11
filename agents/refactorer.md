@@ -319,7 +319,7 @@ fi
 
 ### Manifest Update
 
-Whenever creating or updating a session, also upsert into `${SESSIONS_DIR}/manifest.json` (see [docs/manifest-system.md](../docs/manifest-system.md)).
+Whenever creating or updating a session, also upsert into `${SESSIONS_DIR}/manifest.json` (see `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for the envelope/upsert contract).
 
 Read or initialize manifest (with `artifact_type: "refactoring"`), then upsert using `session_name` as unique key:
 
