@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.16.3] - 2026-07-11
+
+## What's Changed
+
+1 commit: 1 fix. No breaking changes.
+
+### Bug Fixes
+
+- **plugin**: fix broken commands and unreachable loop caps — SKILLS-062
+
+`pr-review`'s GitHub review-posting command (6R.4) was empirically broken — `-f` fields alongside `--input` were silently dropped into the query string instead of the request body, so the review summary never posted, and `event="PENDING"` isn't a valid Reviews API value. It now builds one JSON payload and omits `event` to get the intended pending-review behavior.
+
+`monitor-pr`'s iteration cap only advanced when a fix was pushed, so a green-but-unapproved PR polled forever; it now increments every pass and adds an `awaiting_review` terminal state. Its CI poll loop (20 min) exceeded the harness's 10-minute per-call cap; reduced to a ~9-minute round with an explicit re-invoke budget. Its `EXIT` trap for tmpfile cleanup was a no-op across the loop's real lifetime and has been replaced with a persisted JSON state file plus one explicit cleanup step.
+
+`implement`'s resume path could null out the PR target branch after the requirements→implementation state transition moved branch info under `.requirements.branches`; resume now reads that path with a fallback.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.16.2...v1.16.3
+
 ## [1.16.2] - 2026-07-11
 
 ## What's Changed

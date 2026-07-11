@@ -100,14 +100,46 @@ REMOTE_SHA=$(git rev-parse "origin/$BRANCH")
 
 ## Step 3: Monitor Loop
 
-Initialize loop state:
+**Loop state lives in a file, not shell variables.** Each step below (3.1
+through 3.5) runs as its own Bash tool call, and shell variables do not
+survive between separate Bash invocations — only the working directory
+does. All loop-control state (iteration count, processed comment IDs,
+last-processed SHA, poll-round budget) is persisted to one JSON file, read
+at the start of each step and updated at the end:
 
-- `MAX_ITERATIONS=10` — hard cap to prevent runaway loops
-- `ITERATION=0`
-- `PROCESSED_COMMENTS='[]'` — JSON array of comment IDs already addressed (must be a JSON array string so it can be passed to `jq --argjson` without reshaping; appending uses `jq` not bash)
-- `LAST_PROCESSED_SHA=""` — tracks the SHA we last acted on
+```bash
+STATE_FILE="/tmp/monitor-pr-${PR_NUMBER}-state.json"
 
-**First-iteration bootstrap:** Treat all comments that already exist on the PR as "pre-existing." Use `AskUserQuestion` to confirm whether to address pre-existing unaddressed comments from reviewers (default: **Yes**). If the user says no, seed `PROCESSED_COMMENTS` with all existing comment IDs so only comments posted after this moment are acted on.
+if [ ! -f "$STATE_FILE" ]; then
+  cat > "$STATE_FILE" <<'JSON'
+{
+  "iteration": 0,
+  "max_iterations": 10,
+  "processed_comments": [],
+  "last_processed_sha": "",
+  "poll_rounds_used": 0,
+  "max_poll_rounds": 3,
+  "idle_polls": 0,
+  "max_idle_polls": 2
+}
+JSON
+fi
+```
+
+- `max_iterations` (10) — hard cap on fix-attempt iterations; prevents a runaway loop.
+- `processed_comments` — JSON array of comment IDs already addressed or explicitly skipped (see 3.4).
+- `poll_rounds_used` / `max_poll_rounds` — bounds how many times 3.2a's polling block may be re-invoked for the current `HEAD_SHA` before giving up (see 3.2a).
+- `idle_polls` / `max_idle_polls` — consecutive iterations where CI was already green and nothing else happened, so a PR that's just waiting on reviewer approval terminates instead of looping forever (see 3.5).
+
+Read a field with `jq -r '.field' "$STATE_FILE"`. Write updates with a
+read-modify-write — never by re-declaring the whole file from a shell
+variable that may be stale from a prior call:
+
+```bash
+jq '.iteration += 1' "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
+```
+
+**First-iteration bootstrap:** Treat all comments that already exist on the PR as "pre-existing." Use `AskUserQuestion` to confirm whether to address pre-existing unaddressed comments from reviewers (default: **Yes**). If the user says no, seed `processed_comments` in `$STATE_FILE` with all existing comment IDs so only comments posted after this moment are acted on.
 
 Enter the loop:
 
@@ -162,7 +194,11 @@ new run starts) or when you need detail to fall through to 3.3.
 
 ```bash
 POLL_INTERVAL=15           # seconds between polls
-POLL_MAX=80                # 80 × 15s = 20 minutes hard cap per iteration
+POLL_MAX=36                # 36 × 15s = 9 minutes — stays under the Bash
+                            # tool's 10-minute hard cap with margin for
+                            # command overhead. Hitting POLL_MAX does NOT
+                            # mean timeout — see the round-budget note
+                            # right after this loop.
 POLL_COUNT=0
 # Tmpfile names include $$ (PID) so concurrent /monitor-pr invocations on
 # the same PR don't clobber each other.
@@ -232,6 +268,43 @@ if [ "$POLL_COUNT" -eq "$POLL_MAX" ] && [ "$UNKNOWN_AT_TIMEOUT" -gt 0 ]; then
 fi
 ```
 
+**Round budget (this call's 9-minute wait may not be enough).** A single
+Bash tool call cannot run longer than the harness's 10-minute hard cap, so
+one invocation of the `while` loop above can only wait ~9 minutes. If CI is
+still pending when that loop exits (`FINAL_PENDING > 0` at `POLL_MAX`),
+that is **not** a timeout by itself — it means "poll again in a fresh
+call." Track how many rounds have run for the current `HEAD_SHA` in
+`$STATE_FILE` (see Step 3's state-file note):
+
+```bash
+# Reset the round counter on a new HEAD_SHA — a push landed since the
+# budget was last consumed, so CI is starting over.
+STATE_SHA=$(jq -r '.last_processed_sha' "$STATE_FILE")
+if [ "$STATE_SHA" != "$HEAD_SHA" ]; then
+  jq --arg sha "$HEAD_SHA" '.poll_rounds_used = 0 | .last_processed_sha = $sha' \
+    "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
+fi
+
+FINAL_PENDING=$(jq '[.[] | select(.status == "in_progress" or .status == "queued" or .status == "waiting" or (.status == "completed" and .conclusion == null))] | length' "$RUNS_FILE")
+
+if [ "$FINAL_PENDING" -gt 0 ]; then
+  MAX_ROUNDS=$(jq '.max_poll_rounds' "$STATE_FILE")
+  ROUNDS_USED=$(( $(jq '.poll_rounds_used' "$STATE_FILE") + 1 ))
+  jq --argjson r "$ROUNDS_USED" '.poll_rounds_used = $r' "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
+  if [ "$ROUNDS_USED" -lt "$MAX_ROUNDS" ]; then
+    echo "CI still pending after round $ROUNDS_USED/$MAX_ROUNDS (~9 min) — re-invoke this Step 3.2a block again in a new call."
+  else
+    echo "CI still pending after $MAX_ROUNDS rounds (~$((MAX_ROUNDS * 9)) min total) — treat as ci_timeout, proceed to Step 3.5."
+  fi
+fi
+```
+
+Re-invoke this whole 3.2a block as a fresh Bash call while
+`poll_rounds_used < max_poll_rounds` in `$STATE_FILE`. Only fall through to
+`ci_timeout` once the round budget (3 rounds × ~9 min ≈ 27 min total) is
+exhausted — enough runway for slow CI without ever exceeding a single
+call's 10-minute cap.
+
 ```bash
 jq -r '
   [.[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out" or .conclusion == "action_required") | "\(.databaseId)\t\(.name)\t\(.conclusion)"]
@@ -244,10 +317,13 @@ specific fields only.
 
 - `success` / `skipped` → green
 - `failure` / `cancelled` / `timed_out` / `action_required` → fall through to 3.3
-- Still pending after `POLL_MAX` → report `ci_timeout` and exit the monitor loop; the poll cap is a safety rail, not a failure signal
+- Still pending after `POLL_MAX` and `poll_rounds_used < max_poll_rounds` → re-invoke this block in a fresh call (see round budget above)
+- Still pending after `max_poll_rounds` is exhausted → report `ci_timeout` and exit the monitor loop; the round budget is a safety rail, not a failure signal
 
-This pattern is synchronous, non-interactive, and bounded. It produces no
-background processes, no TTY escape sequences, and no orphaned tasks.
+This pattern is synchronous, non-interactive, and bounded within each call —
+and bounded overall via the round budget, so it never silently waits forever
+or exceeds the harness's per-call time limit. It produces no background
+processes, no TTY escape sequences, and no orphaned tasks.
 
 ### 3.3 Investigate and Fix Failed Runs
 
@@ -325,6 +401,9 @@ Use the **issue/ticket number this PR closes** as `{N}` (e.g., `[SKILLS-022]`) �
 
 ### 3.4 Check for New Review Comments
 
+Load the running list at the start of this step — do not rely on a shell
+variable from a prior call: `PROCESSED_COMMENTS=$(jq -c '.processed_comments' "$STATE_FILE")`.
+
 Fetch PR comments (inline and review-level). **Filter out stale/outdated comments
 before acting** — GitHub keeps historical comments on every commit a PR has ever
 had, and acting on a comment whose code no longer exists produces ghost-fix
@@ -393,11 +472,14 @@ gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/comments?per_page=100" \
 them into a single array before the filter applies. Same shape for the
 reviews endpoint.
 
-To **mark a comment processed**, append its ID via jq (preserving array
-shape) — do not concatenate strings:
+To **mark a comment processed**, append its ID directly to `$STATE_FILE`
+(preserving array shape, deduped) — do not concatenate strings, and do not
+hold this only in a shell variable, since it must survive into the next
+Bash call:
 
 ```bash
-PROCESSED_COMMENTS=$(jq --arg id "$COMMENT_ID" '. + [$id]' <<< "$PROCESSED_COMMENTS")
+jq --arg id "$COMMENT_ID" '.processed_comments += [$id] | .processed_comments |= unique' \
+  "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
 ```
 
 **Staleness filter** — drop any inline comment that matches any of:
@@ -416,9 +498,10 @@ PROCESSED_COMMENTS=$(jq --arg id "$COMMENT_ID" '. + [$id]' <<< "$PROCESSED_COMME
 > feedback is still actionable regardless of which SHA it was pinned to.
 > `commit_id` is useful for reporting and debugging, not for filtering.
 
-Silently mark stale comments as processed (add their IDs to `PROCESSED_COMMENTS`)
-so subsequent iterations do not re-examine them. Do **not** reply to stale
-comments — the reviewer already knows the code moved.
+Silently mark stale comments as processed (persist their IDs to
+`$STATE_FILE` via the jq command above) so subsequent iterations do not
+re-examine them. Do **not** reply to stale comments — the reviewer already
+knows the code moved.
 
 **Actionable delta** — comments that:
 - pass the staleness filter above, AND
@@ -435,25 +518,47 @@ For each new comment:
 | Praise / LGTM / purely informational | Mark as processed without action. Do NOT reply. |
 | Request that conflicts with existing code decisions | Skip, log to the end-of-run report, and flag as needing user judgment. |
 
-**Every comment this skill acts on must be added to `PROCESSED_COMMENTS` by ID.** Track both inline-comment IDs and review IDs separately to avoid ID collisions.
+**Every comment this skill acts on must have its ID persisted to `$STATE_FILE`'s `processed_comments`.** Track both inline-comment IDs and review IDs separately to avoid ID collisions.
 
 **Do NOT resolve conversation threads** — resolution is a reviewer's prerogative. Leave the comment for the reviewer to mark resolved after inspecting the fix.
 
 ### 3.5 Decide Whether to Continue
 
-At the end of the iteration:
+**Increment `iteration` unconditionally, every pass** — whether or not a
+fix was pushed. (The prior version only incremented on a pushed fix, so a
+PR that's green and just waiting on reviewer approval never advanced the
+counter, and the iteration cap could never trigger — it polled forever.)
 
-- If any fix was pushed this iteration → increment `ITERATION`, skip the sleep, loop immediately
-- If no fix was pushed and nothing was in-progress → sleep 10 seconds, then loop
-- If `ITERATION >= MAX_ITERATIONS` → exit loop with `iteration_cap_hit` status
+```bash
+jq '.iteration += 1' "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
+ITERATION=$(jq '.iteration' "$STATE_FILE")
+MAX_ITERATIONS=$(jq '.max_iterations' "$STATE_FILE")
+```
+
 - If the PR reached a terminal state in 3.1 → exit loop with `success` status
+- If `ITERATION >= MAX_ITERATIONS` → exit loop with `iteration_cap_hit` status
+- If any fix was pushed or any comment was acted on this iteration → reset the idle counter, skip the sleep, loop immediately:
+  ```bash
+  jq '.idle_polls = 0' "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
+  ```
+- Otherwise (CI green, nothing pushed, no comment acted on — the PR is simply waiting on reviewer approval, and there is nothing left for this skill to do) → increment the idle counter and check the cap:
+  ```bash
+  jq '.idle_polls += 1' "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
+  IDLE_POLLS=$(jq '.idle_polls' "$STATE_FILE")
+  MAX_IDLE_POLLS=$(jq '.max_idle_polls' "$STATE_FILE")
+  ```
+  - If `IDLE_POLLS >= MAX_IDLE_POLLS` → exit loop with `awaiting_review` status
+  - Otherwise → sleep 10 seconds, then loop
 
 **Iteration compaction (token discipline).** Before re-entering the loop,
 write a one-line summary of this iteration to a scratch file and rely on
 that as the state-of-record going forward:
 
 ```bash
-SUMMARY_FILE="/tmp/monitor-pr-${PR_NUMBER}-${$}-iter-summary.log"
+# No ${$} (PID) here, unlike $RUNS_FILE/$LOG_FILE — this file must
+# accumulate across the whole run's iterations, each a separate Bash call
+# with a different PID, so it has to be named per-PR, not per-call.
+SUMMARY_FILE="/tmp/monitor-pr-${PR_NUMBER}-iter-summary.log"
 # Bash arrays of flagged/skipped IDs (id|reason). Joined for the summary
 # line; persist them so iter N+1 doesn't re-discover and re-flag.
 FLAGGED_JOIN=$(IFS=, ; echo "${FLAGGED_THIS_ITER[*]:-}")
@@ -467,14 +572,15 @@ printf 'iter %d HEAD=%s | green=%d failed=%d fixed=%d comments_acted=%d | flagge
 
 **Critical:** any comment the operator chose **not** to act on (flagged
 for user judgment, skipped as ambiguous, deferred as conflicting with
-existing decisions) must have its ID added to `PROCESSED_COMMENTS`
-**and** appear in the iteration summary's `flagged=[...]` /
-`skipped=[...]` field. Without this, iter N+1 fetches the same comment,
-sees it's not in `PROCESSED_COMMENTS`, and either re-flags it (final
-report shows duplicates) or — worse — *acts* on it because the original
-"this needs human judgment" decision context is lost. Treat
-`PROCESSED_COMMENTS` as the durable record of "this skill has made a
-decision about this comment ID" — not just "this skill applied a fix."
+existing decisions) must have its ID persisted to `$STATE_FILE`'s
+`processed_comments` **and** appear in the iteration summary's
+`flagged=[...]` / `skipped=[...]` field. Without this, iter N+1 fetches
+the same comment, sees it's not in `processed_comments`, and either
+re-flags it (final report shows duplicates) or — worse — *acts* on it
+because the original "this needs human judgment" decision context is
+lost. Treat `$STATE_FILE`'s `processed_comments` as the durable record of
+"this skill has made a decision about this comment ID" — not just "this
+skill applied a fix."
 
 After writing the summary, treat the per-poll JSON, the failed-log tail,
 and the per-comment fetch from this iteration as discardable. Do not
@@ -483,14 +589,16 @@ fresh and only re-loads what's needed for the new HEAD_SHA. The Step 4
 final report reads `$SUMMARY_FILE` (cheap, structured) rather than
 reconstructing history from the conversation.
 
-**Tmpfile lifecycle.** All tmpfiles (`$RUNS_FILE`, `$LOG_FILE` per run,
-`$SUMMARY_FILE`) include `${$}` (PID) in their names so concurrent
-invocations targeting the same PR don't clobber each other. Set a trap
-at skill start so they're cleaned on exit even when the loop bails:
+**Tmpfile lifecycle.** All per-iteration tmpfiles (`$RUNS_FILE`, `$LOG_FILE`
+per run, `$SUMMARY_FILE`) include `${$}` (PID) in their names so concurrent
+invocations targeting the same PR don't clobber each other.
 
-```bash
-trap 'rm -f /tmp/monitor-pr-${PR_NUMBER}-${$}-* 2>/dev/null' EXIT
-```
+**Do not set an `EXIT` trap for cleanup.** Each Step 3.x block runs as its
+own Bash process, so a trap registered in one call fires when *that call*
+exits — not when the whole skill finishes — deleting files a later step
+(Step 4's final report reads `$SUMMARY_FILE`) still needs. Clean up
+explicitly instead, once, at the very end of Step 4 (see below); never
+mid-loop.
 
 **Safety rails:**
 - Track failures by **workflow name** across pushed SHAs, not by run ID — each push creates new run IDs, so "same run ID fails twice" is unreachable. If the same workflow name fails on two consecutive pushed SHAs after a fix attempt, stop and report — the fix is not working and human judgment is required
@@ -499,6 +607,9 @@ trap 'rm -f /tmp/monitor-pr-${PR_NUMBER}-${$}-* 2>/dev/null' EXIT
 ---
 
 ## Step 4: Final Report
+
+Read `$STATE_FILE` one last time for `iteration`/`max_iterations` before
+composing the report — do not rely on shell variables from a prior call.
 
 Produce a structured summary regardless of exit reason:
 
@@ -522,11 +633,24 @@ Follow-up commits: {list of SHAs with short messages}
 - `merged` — the PR was merged during monitoring (e.g., a reviewer merged it)
 - `closed` — the PR was closed during monitoring
 - `iteration_cap_hit` — max iterations reached, human attention needed
+- `awaiting_review` — CI green, no actionable comments, idle-poll cap reached; the PR is simply waiting on a reviewer and there is nothing left for this skill to do
 - `blocked_needs_human` — a comment requires user judgment the skill refused to guess at
 - `ci_stuck` — the same workflow failed repeatedly after fix attempts
-- `ci_timeout` — at least one workflow remained pending past the 3.2a poll cap (no failure signal, but the skill gave up waiting)
+- `ci_timeout` — at least one workflow remained pending past the 3.2a round budget (no failure signal, but the skill gave up waiting)
 
 **If status is not `ready to merge` / `merged`**, list each unresolved item so the user can act.
+
+**Cleanup (do this last, once, after the report above has been printed):**
+
+```bash
+rm -f "$STATE_FILE" "$SUMMARY_FILE" /tmp/monitor-pr-"${PR_NUMBER}"-*-runs.json /tmp/monitor-pr-"${PR_NUMBER}"-*-run-*.log
+```
+
+This is the one and only cleanup point — no `trap`, no mid-loop deletion.
+If the skill exits early (error, user interrupt), leaving these tmpfiles
+behind is harmless; the next `/monitor-pr` invocation for this PR
+re-initializes `$STATE_FILE` fresh (Step 3) and stale run/log files are
+simply overwritten or ignored.
 
 ---
 

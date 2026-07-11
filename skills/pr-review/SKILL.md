@@ -435,20 +435,12 @@ For each issue matching the selected severity, use AskUserQuestion:
 
 Use the GitHub Pull Request Reviews API to post inline comments anchored to specific diff lines. **Do NOT use `gh pr comment`** — that creates a general top-level comment, not inline review comments.
 
+**Build one JSON payload file with every field** — `body`, `comments`, and (if submitting outright) `event`. When `--input` is passed, `gh api` sends that file as the entire request body and silently shoves any co-occurring `-f` flags into the query string instead — so a split `-f body=... --input comments.json` call drops the summary body without error. Never combine `-f` with `--input` on this call.
+
 ```bash
-gh api "repos/$REPO/pulls/{PR_NUMBER}/reviews" \
-  --method POST \
-  -f event="PENDING" \
-  -f body="## PR Review Summary
-
-{overall_summary}" \
-  --input /tmp/review-comments.json
-```
-
-Where `/tmp/review-comments.json` contains the inline comments array:
-
-```json
+cat > /tmp/review-comments.json <<JSON
 {
+  "body": "## PR Review Summary\n\n{overall_summary}",
   "comments": [
     {
       "path": "src/Services/FooClient.php",
@@ -462,12 +454,18 @@ Where `/tmp/review-comments.json` contains the inline comments array:
     }
   ]
 }
+JSON
+
+gh api "repos/$REPO/pulls/{PR_NUMBER}/reviews" \
+  --method POST \
+  --input /tmp/review-comments.json
 ```
 
 **Important considerations:**
 - The `line` field refers to the line number in the **new version** of the file (right side of the diff)
 - Use `side: "RIGHT"` (default) for lines in the new version, `side: "LEFT"` for deleted lines
-- The `event` should be `"PENDING"` so the reviewer can edit comments before submitting
+- **Omit the `event` field entirely.** The Reviews API's `event` enum is `APPROVE` / `REQUEST_CHANGES` / `COMMENT` — there is no `"PENDING"` value, and passing one is rejected. Omitting `event` is what leaves the review unsubmitted (pending) so the reviewer can edit comments before submitting — that's the actual mechanism, not a literal `PENDING` value.
+- `{overall_summary}` may itself contain newlines/quotes — escape it into valid JSON (`\n` for line breaks, `\"` for embedded quotes) before writing the heredoc, or build the file with `jq -n --arg body "$overall_summary" '...'` instead of a raw heredoc if the summary has non-trivial content.
 
 #### 6R.5 Verify and Open Browser
 

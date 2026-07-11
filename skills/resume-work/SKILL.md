@@ -449,6 +449,13 @@ All session state is stored in `$WORK_DIR/{identifier}/state.json`. The `type` f
   "identifier": "JIRA-123",
   "status": "in_progress",
   "started_at": "2024-01-15T10:00:00Z",
+  "requirements": {
+    "branches": {
+      "base": "master",
+      "feature": "feature/JIRA-123",
+      "remote_pushed": false
+    }
+  },
   "phases": {
     "plan": {"status": "completed"},
     "implement": {"status": "in_progress", "chunks_completed": 2, "chunks_total": 3},

@@ -185,8 +185,12 @@ echo "✓ Requirements state validated"
 ```bash
 # Load and parse state files
 identifier=$(jq -r '.identifier' "$WORK_DIR/{identifier}/state.json")
-base_branch=$(jq -r '.branches.base' "$WORK_DIR/{identifier}/state.json")
-feature_branch=$(jq -r '.branches.feature' "$WORK_DIR/{identifier}/state.json")
+# After the 0.3 type transition (requirements -> implementation), branches
+# move under .requirements.branches; a fresh requirements-phase state.json
+# still has them at the top level. Try the post-transition path first so
+# resume doesn't silently null these out and empty Phase 5.2's PR target.
+base_branch=$(jq -r '.requirements.branches.base // .branches.base' "$WORK_DIR/{identifier}/state.json")
+feature_branch=$(jq -r '.requirements.branches.feature // .branches.feature' "$WORK_DIR/{identifier}/state.json")
 
 # Load implementation state if exists
 if [[ -f "$WORK_DIR/{identifier}/state.json" ]]; then

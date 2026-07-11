@@ -11,6 +11,14 @@
   "started_at": "2024-01-15T10:00:00Z",
   "completed_at": null,
 
+  "requirements": {
+    "branches": {
+      "base": "master",
+      "feature": "feature/JIRA-123",
+      "remote_pushed": false
+    }
+  },
+
   "phases": {
     "plan": {"status": "completed"},
     "implement": {"status": "in_progress", "chunks_completed": 2, "chunks_total": 3},
@@ -47,3 +55,9 @@
   ]
 }
 ```
+
+`requirements.branches` is preserved from the requirements-phase state.json
+by the Phase 0.3 type transition (`requirements` → `implementation`). On
+resume, read it with a fallback to the pre-transition top-level shape:
+`jq -r '.requirements.branches.base // .branches.base'` — Phase 5.2's PR
+target depends on this resolving correctly.
