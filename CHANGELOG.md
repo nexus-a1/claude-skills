@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.16.4] - 2026-07-11
+
+## What's Changed
+
+1 commit: 1 fix. No breaking changes.
+
+### Bug Fixes
+
+- **plugin**: fix four broken inter-skill handoffs — SKILLS-063
+
+`/epic` writes only `spec.md` per ticket (no per-ticket `state.json`) at `$WORK_DIR/{epic-id}/{ticket-id}/`, but `/implement` advertised a flat `/implement {ticket-id}` and hard-failed on the missing state.json. Now instructs `/implement {epic-id}/{ticket-id}`, and `/implement`'s Phase 0.2 waives the state.json check (creating the feature branch fresh) when `spec.md` + parent `EPIC_PLAN.md` are present.
+
+`/brainstorm promote` handed off `--from-brainstorm {slug} {ticket-id}`, but `/create-requirements` Stage 1.1 always re-prompted for the ticket regardless, silently dropping the trailing argument. Stage 1.1 now consumes a ticket-formatted token from `$ARGUMENTS` when present. Also removed brainstorm's blank-ticket fallback to the slug itself, which never matches the required ticket format and was guaranteed to fail validation.
+
+`/review-plan` told users to paste revised plan text into `/implement`, which only accepts a work directory or a requirements file. Now writes the revised plan to `.claude/session-state/` and hands off the file path.
+
+`/todo-work` passed the raw TODO item title as the `/implement` identifier, which never matches an actual `state.json`. Now checks for a matching state.json first; routes to `/create-requirements` instead when absent. Also fixes a worktree path bug (`resolve_worktree_root` already returns an absolute path; concatenating `$REPO_ROOT` onto it produced a mangled path) and gates worktree creation on the `worktree.enabled` opt-in, skipping it for the `/implement` handoff (which manages its own).
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.16.3...v1.16.4
+
 ## [1.16.3] - 2026-07-11
 
 ## What's Changed

@@ -150,13 +150,36 @@ Status:   {status}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
+**Resolve config and check for existing requirements** (needed before offering an
+`/implement` handoff — it requires an existing `state.json`, which a bare TODO
+item never has on its own):
+
+```bash
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+fi
+WORK_DIR=$(resolve_artifact work work 2>/dev/null || echo ".claude/work")
+```
+
+Derive `{candidate}` from the title using the same slug rule as Step 8 point 1
+below (ticket-prefixed `{TICKET}-{slug}` if the title has one, slug-only
+otherwise) — this is the identifier `/implement` would look up.
+
+```bash
+HAS_REQUIREMENTS=false
+[ -f "$WORK_DIR/{candidate}/state.json" ] && HAS_REQUIREMENTS=true
+```
+
 Then use AskUserQuestion:
 
 - header: `"Next action"`
 - question: `"How do you want to start on this item?"`
 - options:
   - `"Validate plan first (Recommended for non-trivial)"` / `"Hand off to /review-plan — architect and quality-guard review the plan before implementation"`
-  - `"Implement directly"` / `"Hand off to /implement — skip plan review, go straight to coding"`
+  - **If `HAS_REQUIREMENTS == true`:** `"Implement directly"` / `"Existing requirements found at $WORK_DIR/{candidate}/ — hand off to /implement"`
+    **Otherwise:** `"Create requirements first"` / `"No existing requirements for this item — /implement needs a state.json that doesn't exist yet, so this hands off to /create-requirements instead"`
   - `"Just show details"` / `"Print the item and stop — no handoff, no status change"`
 - multiSelect: `false`
 
@@ -187,13 +210,30 @@ If the Edit fails (e.g., because `{title}` or `{current_status}` is not unique i
     Handoff will proceed; update the status manually if needed.
 ```
 
-### Step 8: Create Isolated Worktree (skip for show-details-only)
+### Step 8: Create Isolated Worktree (conditional)
 
-**If the user chose `Just show details`:** Skip to Step 9. No worktree.
+**Skip to Step 9, no worktree, when any of:**
+- the user chose `Just show details`
+- the resolved target is `/implement` — it manages its own worktree (Phase 0.2b,
+  gated on the same `worktree.enabled` config) when `HAS_REQUIREMENTS == true`;
+  creating one here too would nest a second worktree inside the first
+- `worktree.enabled` is not `true`:
+  ```bash
+  WORKTREE_ENABLED=$(resolve_worktree_enabled 2>/dev/null || echo "false")
+  ```
+  This is the same opt-in flag `/implement`, `/refactor`, and
+  `/update-documentation` respect — defaulting to `false`, so most projects skip
+  this step entirely unless they've explicitly configured `worktree.enabled: true`.
 
-**Otherwise:** Create a git worktree off the remote default branch with a new feature branch so downstream code changes happen in isolation from the current working tree.
+**Otherwise** (target is `/review-plan` or `/create-requirements`, and worktrees
+are enabled): create a git worktree off the remote default branch with a new
+feature branch so downstream code changes happen in isolation from the current
+working tree.
 
-1. **Derive a slug** from the selected item's title:
+1. **Derive a slug** from the selected item's title — this is the same value as
+   `{candidate}` from Step 6 (compute once, reuse both places; do not re-derive
+   independently, since Step 6's `HAS_REQUIREMENTS` check and this worktree's
+   branch name must refer to the same identifier):
    - Lowercase, ASCII only.
    - Drop filler words (`the`, `a`, `an`, `to`, `for`, `of`, `add`, `update`, `fix`).
    - Keep 2–5 meaningful words, joined with `-`.
@@ -216,7 +256,14 @@ If the Edit fails (e.g., because `{title}` or `{current_status}` is not unique i
      source "$HOME/.claude/shared/resolve-config.sh"
    fi
    WT_ROOT=$(resolve_worktree_root 2>/dev/null || echo ".worktrees")
-   WORKTREE_PATH="$REPO_ROOT/$WT_ROOT/{branch-suffix}"
+   # resolve_worktree_root already returns an absolute path (it prefixes
+   # WORKSPACE_ROOT itself unless worktree.root was set to an absolute path);
+   # only the ".worktrees" fallback above is relative. Concatenating
+   # $REPO_ROOT unconditionally would double it up for the common case.
+   case "$WT_ROOT" in
+     /*) WORKTREE_PATH="$WT_ROOT/{branch-suffix}" ;;
+     *)  WORKTREE_PATH="$REPO_ROOT/$WT_ROOT/{branch-suffix}" ;;
+   esac
 
    git fetch -q origin "$DEFAULT_BRANCH"
    git worktree add -b feature/{branch-suffix} "$WORKTREE_PATH" "origin/$DEFAULT_BRANCH"
@@ -263,7 +310,7 @@ Skill(skill: "review-plan", args: "{title}\n\n{description}")
 
 If the description is empty, pass just `{title}`.
 
-**For `Implement directly` → `/implement`:**
+**For `Implement directly` → `/implement`** (only offered when `HAS_REQUIREMENTS == true` — see Step 6):
 
 Print:
 
@@ -271,21 +318,47 @@ Print:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Handing off to /implement
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Item:       {title}
+Status:     {Proposed|Not started|Needs discussion} → In progress
+Requirements: $WORK_DIR/{candidate}/
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+(Drop the `Worktree:` line — see Step 8's skip condition; `/implement` manages
+its own worktree when configured.)
+
+Then invoke (plain name, passing the resolved requirements identifier — **not**
+the raw title, which will not match any `state.json`):
+
+```
+Skill(skill: "implement", args: "{candidate}")
+```
+
+**For `Create requirements first` → `/create-requirements`** (only offered when `HAS_REQUIREMENTS == false`):
+
+Print:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Handing off to /create-requirements
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Item:     {title}
 Status:   {Proposed|Not started|Needs discussion} → In progress
 Worktree: .worktrees/{branch-suffix}  (branch feature/{branch-suffix}, from origin/{default-branch})
 
-Note: /implement requires prior requirements from /create-requirements.
-      If no state.json exists for this item, /implement will surface that
-      and prompt you to run /create-requirements first.
+Note: this TODO item has no requirements yet. /create-requirements will ask
+      for a ticket number and generate spec/plan/tasks; run /implement
+      afterward to build it.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Then invoke (plain name, title-only — `/implement` looks up `state.json` by identifier):
+Then invoke:
 
 ```
-Skill(skill: "implement", args: "{title}")
+Skill(skill: "create-requirements", args: "{title}\n\n{description}")
 ```
+
+If the description is empty, pass just `{title}`.
 
 **For `Just show details`:**
 
@@ -323,7 +396,7 @@ Prints the full pending list inline (all N items, one per line with priority + t
 /todo-work 1
 ```
 
-Jumps straight to item #1 ("Fix broken link in README"). User chooses "Implement directly". Status flips to `In progress`, the worktree is created, and the skill directly invokes `/implement Fix broken link in README` (which will surface a missing-`state.json` error and prompt the user to run `/create-requirements` first if no prior requirements exist).
+Jumps straight to item #1 ("Fix broken link in README"). No `state.json` exists yet for this item, so `HAS_REQUIREMENTS == false` and the second option reads "Create requirements first" instead of "Implement directly". User picks it. Status flips to `In progress`, a worktree is created (worktrees enabled), and the skill invokes `/create-requirements Fix broken link in README`. Had a matching `state.json` already existed (e.g. from an earlier `/create-requirements` run), the option would have read "Implement directly" and invoked `/implement {candidate}` with the resolved identifier — no worktree created here, since `/implement` manages its own.
 
 ### Example 3: Show details only, no status change
 

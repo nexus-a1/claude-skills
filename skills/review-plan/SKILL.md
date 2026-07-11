@@ -5,7 +5,7 @@ category: planning
 userInvocable: true
 description: Validate an ad-hoc implementation plan through architect and quality-guard (and optionally security-auditor), then output a revised plan with adjustments applied.
 argument-hint: "[plan text] [--security]"
-allowed-tools: "Read, Glob, Grep, Bash, Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
+allowed-tools: "Read, Write, Glob, Grep, Bash, Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
 ---
 
 # Review Plan
@@ -271,7 +271,7 @@ Render below the findings report:
 Revised Plan
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-{Full revised plan — self-contained, ready to paste into /nexus:implement or use as a working spec. Preserve the intent of the original plan; integrate adjustments inline rather than tacking them on at the end.}
+{Full revised plan — self-contained, usable as a working spec. Preserve the intent of the original plan; integrate adjustments inline rather than tacking them on at the end.}
 
 ---
 
@@ -280,6 +280,19 @@ Revised Plan
 - {bullet per significant change, citing the agent whose finding drove it}
 - ...
 ```
+
+**Save to file** — `/implement` only accepts a work directory or a requirements
+file, never pasted plan text, so the revised plan must be written to disk before
+handoff:
+
+```bash
+mkdir -p .claude/session-state
+SLUG=$(echo "{first heading or first line of the revised plan}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -d'-' -f1-6)
+REVISED_PLAN_PATH=".claude/session-state/review-plan-${SLUG}.md"
+```
+
+Write the rendered Revised Plan (the markdown block above, without the
+surrounding box-drawing chrome) to `$REVISED_PLAN_PATH` using the Write tool.
 
 **Rules for the revised plan:**
 
@@ -298,7 +311,8 @@ Display a one-line next-step hint:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Done. Hand the Revised Plan to /nexus:implement, or iterate by re-running /nexus:review-plan with the updated version.
+Done. Revised plan saved to: {REVISED_PLAN_PATH}
+Run /nexus:implement {REVISED_PLAN_PATH}, or iterate by re-running /nexus:review-plan with the updated version.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 

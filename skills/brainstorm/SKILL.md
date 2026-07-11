@@ -88,19 +88,25 @@ If `$ARGUMENTS` begins with `promote`, handle the promote flow instead of normal
 
 4. If `{ticket-id}` was not provided, ask:
    ```
-   AskUserQuestion: Enter the ticket/identifier for this work (e.g., PROJ-123 or leave blank to use the brainstorm slug as draft):
+   AskUserQuestion: Enter the ticket number for this work (e.g., PROJ-123), or leave blank to be asked by /create-requirements:
    ```
-   If blank, use `{slug}` as the identifier.
+   If blank, leave `{ticket-id}` unset — do **not** substitute `{slug}` (a brainstorm
+   slug like `user-data-export` never matches create-requirements' required
+   `[A-Z]+-[0-9]+` ticket format, so passing it through would only produce a
+   validation failure downstream). `/create-requirements` Stage 1.1 will prompt
+   for the ticket itself when none was pre-filled.
 
 5. **Update brainstorm state** (`$WORK_DIR/{slug}/state.json`):
    ```json
    {
      "status": "promoted",
-     "promoted_to": "{ticket-id}",
+     "promoted_to": "{ticket-id or null if not yet known}",
      "updated_at": "{ISO_TIMESTAMP}"
    }
    ```
    Merge these fields into the existing JSON (preserve all other fields).
+   `/create-requirements` Stage 1.3b overwrites `promoted_to` with the final
+   identifier once one is assigned, so a `null` here is only transient.
 
 6. **Update manifest** (`$WORK_DIR/manifest.json`) — find the entry where `identifier == {slug}`, update `status` to `"promoted"` and add `promoted_to`.
 
@@ -113,13 +119,20 @@ If `$ARGUMENTS` begins with `promote`, handle the promote flow instead of normal
 
 8. Continue directly into Stage 1 of the `create-requirements` workflow with:
    - `--from-brainstorm {slug}` flag effectively active
-   - `{identifier}` pre-set to `{ticket-id}` (skip the identifier prompt in Stage 1.1)
+   - `{ticket-id}` pre-filled when provided: create-requirements' Stage 1.1 now
+     scans `$ARGUMENTS` for a token matching `[A-Z]+-[0-9]+` and uses it directly,
+     skipping its own prompt. If `{ticket-id}` wasn't provided, Stage 1.1 asks as
+     usual — this is expected, not an error.
    - Brainstorm context loaded per Stage 1.3b
 
    To achieve this, output the following instruction and stop — do not run the full brainstorm phases:
    ```
    Run: /create-requirements --from-brainstorm {slug} {ticket-id}
    ```
+   **Omit the trailing `{ticket-id}` token entirely if it wasn't provided** — never
+   substitute `{slug}` in its place; create-requirements will then ask for the
+   ticket normally.
+
    Then stop. The user will run this, or you may invoke the create-requirements workflow inline if the tool allows it.
 
 ---

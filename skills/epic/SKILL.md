@@ -445,7 +445,7 @@ Next Steps
    cat $WORK_DIR/{epic-id}/EPIC_PLAN.md
 
 2. Start implementing first ticket:
-   /implement {ticket-id}             # e.g., /implement PROJ-101-db-schema
+   /implement {epic-id}/{ticket-id}   # e.g., /implement PROJ-100-user-auth-system/PROJ-101-db-schema
 
 3. Track progress:
    /resume-work {epic-id}
@@ -491,7 +491,7 @@ Read `references/error-handling.md` for error-scenario message templates (no des
 ## Integration with Existing Workflow
 
 After epic creation:
-- Each ticket can be implemented with `/implement {ticket-id}` (e.g., `/implement PROJ-101-db-schema`)
+- Each ticket can be implemented with `/implement {epic-id}/{ticket-id}` (e.g., `/implement PROJ-100-user-auth-system/PROJ-101-db-schema`) — the nested path is required: tickets live at `$WORK_DIR/{epic-id}/{ticket-id}/`, not `$WORK_DIR/{ticket-id}/`, and have no per-ticket `state.json` of their own (see `/implement` §0.2's epic-ticket carve-out)
 - Progress tracked in `state.json`
 - `/resume-work {epic-id}` shows epic status and suggests next ticket (e.g., `/resume-work PROJ-100-user-auth-system`)
 - After all tickets complete, epic status becomes "completed"

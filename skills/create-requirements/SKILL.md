@@ -165,7 +165,13 @@ Use AskUserQuestion. On selection: load state from `$WORK_DIR/{identifier}/state
 
 #### 1.1 Get Work Identifier
 
-Use AskUserQuestion:
+**Check for a pre-filled ticket first** — `/brainstorm promote` hands off with
+`--from-brainstorm {slug} {ticket-id}`, where `{ticket-id}` (if the user provided
+one) already matches the ticket format. If `$ARGUMENTS` (after stripping
+`--light` and `--from-brainstorm {slug}`) contains a token matching
+`[A-Z]+-[0-9]+`, use it directly as `{ticket}` and skip the prompt below.
+
+**Otherwise**, use AskUserQuestion:
 ```
 What is the ticket number for this work?
 

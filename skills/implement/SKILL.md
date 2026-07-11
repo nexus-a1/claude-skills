@@ -148,49 +148,76 @@ Use AskUserQuestion to get selection.
 
 **If work directory specified or selected:**
 
-**VALIDATION** (required):
+**Epic-ticket carve-out** (checked first): `/epic` writes only `spec.md` per ticket —
+never a per-ticket `state.json` — because shared HOW context lives in the parent
+epic's `EPIC_PLAN.md`. This must match the `EPIC_TICKET` detection Phase 1.2 uses
+later, so the state.json requirement below is waived under the same condition:
+
 ```bash
-# CRITICAL: Verify requirements state file exists
-if [[ ! -f "$WORK_DIR/{identifier}/state.json" ]]; then
-  echo "ERROR: No requirements found for {identifier}"
-  echo "Expected: $WORK_DIR/{identifier}/state.json"
-  echo ""
-  echo "Please run /create-requirements first to generate requirements."
-  exit 1
+EPIC_TICKET_NO_STATE=false
+PARENT_DIR="$(dirname "$WORK_DIR/{identifier}")"
+if [[ ! -f "$WORK_DIR/{identifier}/state.json" ]] \
+   && [[ -f "$WORK_DIR/{identifier}/spec.md" ]] \
+   && [[ -f "$PARENT_DIR/EPIC_PLAN.md" ]]; then
+  EPIC_TICKET_NO_STATE=true
+  echo "✓ Epic ticket detected ($WORK_DIR/{identifier}/spec.md + $PARENT_DIR/EPIC_PLAN.md) — no per-ticket state.json expected yet"
 fi
+```
 
-# Validate requirements state file is valid JSON
-if ! jq empty "$WORK_DIR/{identifier}/state.json" 2>/dev/null; then
-  echo "ERROR: Corrupted requirements state file"
-  echo "File: $WORK_DIR/{identifier}/state.json"
-  echo ""
-  echo "The state file is not valid JSON. It may have been corrupted."
-  echo "You may need to regenerate requirements."
-  exit 1
+**VALIDATION** (required, skipped when `EPIC_TICKET_NO_STATE == true`):
+```bash
+if [[ "$EPIC_TICKET_NO_STATE" == false ]]; then
+  # CRITICAL: Verify requirements state file exists
+  if [[ ! -f "$WORK_DIR/{identifier}/state.json" ]]; then
+    echo "ERROR: No requirements found for {identifier}"
+    echo "Expected: $WORK_DIR/{identifier}/state.json"
+    echo ""
+    echo "Please run /create-requirements first (or /epic for a ticketed sub-ticket)."
+    exit 1
+  fi
+
+  # Validate requirements state file is valid JSON
+  if ! jq empty "$WORK_DIR/{identifier}/state.json" 2>/dev/null; then
+    echo "ERROR: Corrupted requirements state file"
+    echo "File: $WORK_DIR/{identifier}/state.json"
+    echo ""
+    echo "The state file is not valid JSON. It may have been corrupted."
+    echo "You may need to regenerate requirements."
+    exit 1
+  fi
+
+  # Validate requirements phase completed
+  req_status=$(jq -r '.status' "$WORK_DIR/{identifier}/state.json")
+  if [[ "$req_status" != "completed" ]]; then
+    echo "WARNING: Requirements phase status is: $req_status"
+    echo "Expected: completed"
+    echo ""
+    echo "The requirements may be incomplete. Continue anyway? [y/n]"
+    # Use AskUserQuestion or read input
+  fi
+
+  echo "✓ Requirements state validated"
 fi
-
-# Validate requirements phase completed
-req_status=$(jq -r '.status' "$WORK_DIR/{identifier}/state.json")
-if [[ "$req_status" != "completed" ]]; then
-  echo "WARNING: Requirements phase status is: $req_status"
-  echo "Expected: completed"
-  echo ""
-  echo "The requirements may be incomplete. Continue anyway? [y/n]"
-  # Use AskUserQuestion or read input
-fi
-
-echo "✓ Requirements state validated"
 ```
 
 ```bash
-# Load and parse state files
-identifier=$(jq -r '.identifier' "$WORK_DIR/{identifier}/state.json")
-# After the 0.3 type transition (requirements -> implementation), branches
-# move under .requirements.branches; a fresh requirements-phase state.json
-# still has them at the top level. Try the post-transition path first so
-# resume doesn't silently null these out and empty Phase 5.2's PR target.
-base_branch=$(jq -r '.requirements.branches.base // .branches.base' "$WORK_DIR/{identifier}/state.json")
-feature_branch=$(jq -r '.requirements.branches.feature // .branches.feature' "$WORK_DIR/{identifier}/state.json")
+if [[ "$EPIC_TICKET_NO_STATE" == true ]]; then
+  # No state.json to read yet — identifier is the argument itself, and the
+  # feature branch is resolved/created in the checkout step below (it may
+  # not exist yet: /epic never creates branches, only work directories).
+  identifier="{identifier}"
+  feature_branch="feature/{identifier}"
+  base_branch=""
+else
+  # Load and parse state files
+  identifier=$(jq -r '.identifier' "$WORK_DIR/{identifier}/state.json")
+  # After the 0.3 type transition (requirements -> implementation), branches
+  # move under .requirements.branches; a fresh requirements-phase state.json
+  # still has them at the top level. Try the post-transition path first so
+  # resume doesn't silently null these out and empty Phase 5.2's PR target.
+  base_branch=$(jq -r '.requirements.branches.base // .branches.base' "$WORK_DIR/{identifier}/state.json")
+  feature_branch=$(jq -r '.requirements.branches.feature // .branches.feature' "$WORK_DIR/{identifier}/state.json")
+fi
 
 # Load implementation state if exists
 if [[ -f "$WORK_DIR/{identifier}/state.json" ]]; then
@@ -235,7 +262,21 @@ Ensure on correct branch:
 Run inline — the guard hook allows branch checkout without agent delegation:
 
 ```bash
-git checkout feature/{identifier}
+if git show-ref --verify --quiet "refs/heads/feature/{identifier}"; then
+  git checkout feature/{identifier}
+elif [[ "$EPIC_TICKET_NO_STATE" == true ]]; then
+  # First implementation of this epic ticket — /epic never creates branches,
+  # only work directories, so this is the first time feature/{identifier}
+  # is created. Branch from wherever the user currently is (epic doesn't
+  # switch branches, so this is expected to be the repo's default branch).
+  base_branch=$(git branch --show-current)
+  git checkout -b feature/{identifier}
+  echo "✓ Created feature/{identifier} from $base_branch"
+else
+  echo "ERROR: Branch feature/{identifier} not found and no epic-ticket bootstrap applies."
+  echo "If requirements exist but the branch was deleted, recreate it manually or re-run /create-requirements."
+  exit 1
+fi
 ```
 
 **CRITICAL VALIDATION** - Verify we're on a feature branch:
@@ -267,7 +308,7 @@ echo "✓ On feature branch: $current_branch"
 
 Read the existing `state.json` (written by `create-requirements`). Verify `type == "requirements"`.
 
-If `state.json` doesn't exist or has `type == "implementation"` (resuming), skip creation or load as-is.
+If `state.json` doesn't exist or has `type == "implementation"` (resuming), skip creation or load as-is. **If `EPIC_TICKET_NO_STATE == true`**, there is no prior state.json to transition from — go straight to writing the fresh `state.json` below, with `bootstrap_from_epic: true` (this is the one-time epic-ticket bootstrap referenced in Important Notes).
 
 **Transition**: Replace the requirements state by writing a new `state.json` with `type: "implementation"`. Preserve key requirements fields in the `requirements` sub-object:
 
@@ -278,10 +319,11 @@ If `state.json` doesn't exist or has `type == "implementation"` (resuming), skip
   "identifier": "{identifier}",
   "status": "in_progress",
   "started_at": "{ISO_TIMESTAMP}",
+  "bootstrap_from_epic": "{true if EPIC_TICKET_NO_STATE else omit field}",
 
   "requirements": {
     "branches": {
-      "base": "{base_branch from requirements state}",
+      "base": "{base_branch from requirements state, or the branch resolved during checkout for epic tickets}",
       "feature": "feature/{identifier}",
       "remote_pushed": false
     }
