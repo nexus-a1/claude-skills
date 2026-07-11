@@ -5,7 +5,7 @@ model: claude-sonnet-5
 userInvocable: true
 description: Annotate an active work session with a note, scope change, or new finding. Auto-detects the active session, synthesizes the salient points of the current conversation, and appends a timestamped entry to state.json after a single target confirmation. Use mid-session when you learn something that should be preserved.
 argument-hint: "[identifier] [note]"
-allowed-tools: "Read, Write, Bash(jq:*), Bash(yq:*), Bash(flock:*), Bash(git:*), Bash(date:*), Bash(mv:*), Bash(touch:*), AskUserQuestion"
+allowed-tools: "Read, Write, Bash(source:*), Bash(echo:*), Bash(rm:*), Bash(jq:*), Bash(yq:*), Bash(flock:*), Bash(git:*), Bash(date:*), Bash(mv:*), Bash(touch:*), AskUserQuestion"
 ---
 
 # Update Context

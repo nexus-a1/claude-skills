@@ -5,7 +5,7 @@ category: context-indexing
 description: Add a new entry to the product knowledge base. Wizard-guided — prompts for category, title, and content, then writes a structured markdown file and rebuilds the manifest.
 argument-hint: "[title]"
 userInvocable: true
-allowed-tools: "Read, Write, Bash(yq:*), Bash(jq:*), Bash(find:*), Bash(git:*), Bash(date:*), Bash(mkdir:*), Bash(mv:*), Bash(mktemp:*), Bash(tr:*), Bash(sed:*), Bash(xargs:*), Bash(basename:*), Bash(sort:*), AskUserQuestion"
+allowed-tools: "Read, Write, Bash(source:*), Bash(echo:*), Bash(yq:*), Bash(jq:*), Bash(find:*), Bash(git:*), Bash(date:*), Bash(mkdir:*), Bash(mv:*), Bash(mktemp:*), Bash(tr:*), Bash(sed:*), Bash(xargs:*), Bash(basename:*), Bash(sort:*), AskUserQuestion"
 ---
 
 # Add Product Knowledge

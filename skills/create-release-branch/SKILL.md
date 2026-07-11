@@ -5,7 +5,7 @@ model: claude-haiku-4-5
 userInvocable: true
 description: Create a release/vX.Y.Z branch from origin/master (default), any branch, or a specific tag using tag@vX.Y.Z syntax
 argument-hint: <version> [source]
-allowed-tools: "Bash(pwd:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git fetch:*), Bash(bash:*), AskUserQuestion"
+allowed-tools: "Bash(pwd:*), Bash(echo:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git fetch:*), Bash(bash:*), AskUserQuestion"
 ---
 
 # Create Release Branch Command

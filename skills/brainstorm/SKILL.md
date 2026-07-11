@@ -5,7 +5,7 @@ model: claude-opus-4-8
 userInvocable: true
 description: Explore implementation strategies for business requirements. Interactive brainstorming that presents multiple approaches, trade-offs, and creates high-level implementation picture before committing to detailed specs.
 argument-hint: "[--light] [feature-description] | promote <slug> [ticket-id]"
-allowed-tools: "Read, Write, Glob, Grep, Bash(git:*), Bash(mkdir:*), Bash(jq:*), Bash(yq:*), Task, AskUserQuestion"
+allowed-tools: "Read, Write, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(pwd:*), Bash(touch:*), Bash(flock:*), Bash(mv:*), Bash(rm:*), Bash(git:*), Bash(mkdir:*), Bash(jq:*), Bash(yq:*), Task, AskUserQuestion"
 ---
 
 # Brainstorm Implementation

@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.16.6] - 2026-07-11
+
+## What's Changed
+
+1 commit: 1 fix. No breaking changes.
+
+### Bug Fixes
+
+- **skills**: reconcile allowed-tools with skills' own mandatory bash — SKILLS-065
+
+Several skills declared `allowed-tools` narrower than the bash their own mandatory blocks execute — most commonly the shared config-sourcing block (`source .../resolve-config.sh`) and the `.active-sessions` jq/flock dance — causing permission prompts on every invocation or hard blocks in headless/CI runs.
+
+`epic` and `load-context` widen to unrestricted `Bash`, matching sibling skills that already work this way (`create-requirements`, `implement`, `troubleshoot`, `resume-work`). Twelve other skills (`pr-review`, `refactor`, `work-status`, `feedback`, `create-proposal`, `report-issue`, `brainstorm`, `add-product-knowledge`, `update-context`, `update-documentation`, `commit`, `release` and its three siblings) get specific missing patterns added instead — `source`, `jq`, `flock`, `mv`, `rm`, `touch`, `pwd`, `cat`, `grep`, `bash`, `false` — preserving their tighter scoping.
+
+Adds an A6 validator check in `scripts/validators/skill-structure.sh` that scans each skill's fenced bash blocks and inline Context `!`command`` snippets for a fixed watchlist of commonly-missed commands, to catch regressions on this class of bug.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.16.5...v1.16.6
+
 ## [1.16.5] - 2026-07-11
 
 ## What's Changed

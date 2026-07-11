@@ -5,7 +5,7 @@ model: claude-sonnet-5
 userInvocable: true
 description: Load all available context for a ticket or topic — work state, brainstorms, proposals, requirements KB, product knowledge, and git history — into a single unified summary.
 argument-hint: "<identifier-or-query>"
-allowed-tools: "Read, Write, Glob, Grep, Bash(git:*), Task, AskUserQuestion"
+allowed-tools: "Read, Write, Glob, Grep, Bash, Task, AskUserQuestion"
 ---
 
 # Context Aggregator

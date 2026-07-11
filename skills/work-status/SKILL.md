@@ -5,7 +5,7 @@ model: claude-sonnet-5
 userInvocable: true
 description: Show all active work sessions across brainstorms, requirements, proposals, and epics. Supports --update to advance lifecycle on one session and --sync to sweep them all.
 argument-hint: "[--update | --sync] [identifier]"
-allowed-tools: "Read, Glob, Bash(jq:*), Bash(git:*), Bash(ls:*), Bash(yq:*), Bash(gh:*), Bash(date:*), Bash(mktemp:*), Bash(mv:*), AskUserQuestion"
+allowed-tools: "Read, Glob, Bash(source:*), Bash(echo:*), Bash(jq:*), Bash(git:*), Bash(ls:*), Bash(yq:*), Bash(gh:*), Bash(date:*), Bash(mktemp:*), Bash(mv:*), AskUserQuestion"
 ---
 
 # Work Status

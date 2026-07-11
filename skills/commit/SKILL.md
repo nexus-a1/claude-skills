@@ -5,7 +5,7 @@ model: claude-haiku-4-5
 userInvocable: true
 description: Stage and commit changes with a conventional commit message. Runs pre-commit checks automatically. Optionally prefixes with a ticket number.
 argument-hint: "[ticket-number]"
-allowed-tools: "Bash(git commit:*), Bash(git add:*), Bash(git reset:*), Bash(git status:*), Bash(git diff:*), Bash(git checkout:*), Bash(git branch:*), Bash(git log:*), Bash(./vendor/bin/php-cs-fixer:*), Bash(php-cs-fixer:*), Bash(test:*), Bash(which:*), AskUserQuestion"
+allowed-tools: "Bash(cat:*), Bash(echo:*), Bash(grep:*), Bash(git commit:*), Bash(git add:*), Bash(git reset:*), Bash(git status:*), Bash(git diff:*), Bash(git checkout:*), Bash(git branch:*), Bash(git log:*), Bash(./vendor/bin/php-cs-fixer:*), Bash(php-cs-fixer:*), Bash(test:*), Bash(which:*), AskUserQuestion"
 ---
 
 # Git Commit Command

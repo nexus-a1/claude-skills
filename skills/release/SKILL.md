@@ -5,7 +5,7 @@ model: claude-haiku-4-5
 userInvocable: true
 description: Create a GitHub release with a version tag and LLM-authored release notes. Supports pre-releases. Final step of the release workflow.
 argument-hint: "[version] [branch] [--pre-release] [--fasttrack|-y|--yes]"
-allowed-tools: "Bash(pwd:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git fetch:*), Bash(git tag:*), Bash(git log:*), Bash(bash:*), Bash(gh pr list:*), Bash(gh release view:*), AskUserQuestion, Skill, Write"
+allowed-tools: "Bash(pwd:*), Bash(echo:*), Bash(grep:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git fetch:*), Bash(git tag:*), Bash(git log:*), Bash(bash:*), Bash(gh pr list:*), Bash(gh release view:*), AskUserQuestion, Skill, Write"
 ---
 
 # Release Command

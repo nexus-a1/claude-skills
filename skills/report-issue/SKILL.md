@@ -5,7 +5,7 @@ category: analysis
 userInvocable: true
 description: Draft and submit a bug report or feature request to the nexus plugin repository, using current conversation context to auto-populate details.
 argument-hint: "[--feature-request]"
-allowed-tools: "Read, Bash(gh issue create:*), Bash(gh auth status:*), Bash(jq:*), Bash(mktemp:*), Bash(grep:*), Bash(sed:*), Bash(sort:*), Bash(rm:*), AskUserQuestion"
+allowed-tools: "Read, Bash(gh issue create:*), Bash(gh auth status:*), Bash(jq:*), Bash(mktemp:*), Bash(grep:*), Bash(sed:*), Bash(sort:*), Bash(rm:*), Bash(cat:*), Bash(echo:*), Bash(false:*), AskUserQuestion"
 ---
 
 # Report Issue

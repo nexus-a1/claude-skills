@@ -5,7 +5,7 @@ model: claude-opus-4-8
 userInvocable: true
 description: Create a formal design document for a feature or component. Guides through requirements, approach brainstorming, and iterative proposal drafts with approval gate before optional implementation. Use when you need a written design approved before committing to code.
 argument-hint: "[--light] [proposal-name or identifier]"
-allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(git:*), Bash(mkdir:*), Bash(yq:*), Bash(grep:*), Bash(cp:*), Task, AskUserQuestion"
+allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(pwd:*), Bash(jq:*), Bash(flock:*), Bash(touch:*), Bash(mv:*), Bash(rm:*), Bash(git:*), Bash(mkdir:*), Bash(yq:*), Bash(grep:*), Bash(cp:*), Task, AskUserQuestion"
 ---
 
 # Create Proposal

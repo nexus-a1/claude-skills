@@ -5,7 +5,7 @@ model: claude-haiku-4-5
 userInvocable: true
 description: Merge an approved release PR into its target branch. Validates approval/checks/conflicts via gh, then merges. Step 3 of the release workflow.
 argument-hint: "[release-branch | version]"
-allowed-tools: "Bash(pwd:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git fetch:*), Bash(bash:*), AskUserQuestion"
+allowed-tools: "Bash(pwd:*), Bash(echo:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git fetch:*), Bash(bash:*), AskUserQuestion"
 ---
 
 # Merge Release PR Command
