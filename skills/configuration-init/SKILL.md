@@ -22,7 +22,7 @@ Set up project-specific configuration that skills and agents use for storage loc
 
 - Setting up a new project for use with Claude Code skills
 - Adding a shared team-knowledge repository for requirements, proposals, and product docs
-- After running `install.sh` to install skills globally
+- After installing the nexus plugin (`/plugin install nexus@claude-skills`), to configure the current project
 
 ## Process
 
@@ -40,14 +40,14 @@ If `$ARGUMENTS` contains "migrate":
 
 ```bash
 # Source resolve-config: marketplace installs get ${CLAUDE_PLUGIN_ROOT} substituted
-# inline before bash runs; ./install.sh users fall back to ~/.claude. If neither
+# inline before bash runs; legacy local copies fall back to ~/.claude. If neither
 # path resolves, fail loudly rather than letting resolve_artifact be undefined.
 if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
   source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
 elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
   source "$HOME/.claude/shared/resolve-config.sh"
 else
-  echo "ERROR: resolve-config.sh not found. Install via marketplace or run ./install.sh" >&2
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
   exit 1
 fi
 EXISTING_CONFIG="$CONFIG"

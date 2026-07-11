@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.16.5] - 2026-07-11
+
+## What's Changed
+
+1 commit: 1 chore. No breaking changes.
+
+### Chores
+
+- **skills**: remove deprecated `install.sh` references — SKILLS-064
+
+`install.sh` was replaced by marketplace install (`/plugin install nexus@claude-skills`), but ~21 skills still stamped a shared config-sourcing block referencing it: a comment claiming "`./install.sh` users fall back to `~/.claude`" and an error message telling users to "Install via marketplace or run `./install.sh`". Both are reworded — the comment now says "legacy local copies fall back to `~/.claude`", and the error points users to reinstall the plugin (`/plugin install nexus@claude-skills`). `configuration-init`'s "When to Use" bullet, which told users to run `install.sh` to install skills globally, now references the marketplace install command instead.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.16.4...v1.16.5
+
 ## [1.16.4] - 2026-07-11
 
 ## What's Changed

@@ -39,7 +39,7 @@ if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
 elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
   source "$HOME/.claude/shared/resolve-config.sh"
 else
-  echo "ERROR: resolve-config.sh not found. Install via marketplace or run ./install.sh" >&2
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
   exit 1
 fi
 
