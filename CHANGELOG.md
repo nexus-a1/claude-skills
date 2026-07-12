@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.16.7] - 2026-07-12
+
+## What's Changed
+
+1 commit: 1 docs fix. No breaking changes.
+
+### Documentation
+
+- **skills**: fix stale git-operator delegation claims — SKILLS-066
+
+The narrow-git-operator policy (mutations run inline under `git-mutation-guard.sh`; `git-operator` only for merge conflicts, complex rebases, and large-range PR body authoring) is correctly implemented in `/implement`, `/monitor-pr`, and `/troubleshoot`'s actual steps, but stale prose in all three still described the old delegate-everything convention — a model reading only those lines would spawn unnecessary agents.
+
+`/implement`'s Purpose bullet, agent cost table, and Important Notes are rewritten; the cost table's "Phase 3,5 | Commits and PR" row was wrong on both counts — Phase 3 commits already run inline, and only Phase 5's large-range PR body authoring still uses `git-operator`. `/monitor-pr`'s Step 2 prose, comment-handling table, and Design Notes bullet now match Step 3.3's actual inline commit+push. `/troubleshoot`'s orchestration table and example session now match Phase 7's actual inline commit.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.16.6...v1.16.7
+
 ## [1.16.6] - 2026-07-11
 
 ## What's Changed

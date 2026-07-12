@@ -94,7 +94,7 @@ REMOTE_SHA=$(git rev-parse "origin/$BRANCH")
 [ "$LOCAL_SHA" = "$REMOTE_SHA" ] || { echo "HEAD ($LOCAL_SHA) != origin/$BRANCH ($REMOTE_SHA)"; exit 1; }
 ```
 
-`--ff-only` prevents an implicit merge if local history has diverged — in that case surface the error to the user rather than attempting recovery here; monitor-pr assumes the PR branch is a clean mirror of origin. If fetch, checkout, or pull fails, stop and surface the error. All subsequent **mutations** (commits, pushes in Step 3.3) still delegate to `git-operator` per repo convention.
+`--ff-only` prevents an implicit merge if local history has diverged — in that case surface the error to the user rather than attempting recovery here; monitor-pr assumes the PR branch is a clean mirror of origin. If fetch, checkout, or pull fails, stop and surface the error. All subsequent **mutations** (commits, pushes in Step 3.3) run inline via Bash, hook-guarded by `git-mutation-guard.sh` (credential scan on commit, security-auditor push gate via `record-audit.sh`).
 
 ---
 
@@ -512,8 +512,8 @@ For each new comment:
 
 | Comment type | Action |
 |--------------|--------|
-| Suggested change (contains `suggestion` block) | Read the file, apply the suggestion, commit via git-operator. Mark addressed. |
-| Actionable request (e.g., "please rename X", "add a test for Y") | Read the referenced file, apply the change, commit via git-operator. Mark addressed. |
+| Suggested change (contains `suggestion` block) | Read the file, apply the suggestion, commit + push inline (Step 3.3). Mark addressed. |
+| Actionable request (e.g., "please rename X", "add a test for Y") | Read the referenced file, apply the change, commit + push inline (Step 3.3). Mark addressed. |
 | Question | If the answer is unambiguous from code, reply via `gh pr comment $PR_NUMBER --repo "$REPO" --body "..."`. If ambiguous, skip and flag to the user at end-of-run. |
 | Praise / LGTM / purely informational | Mark as processed without action. Do NOT reply. |
 | Request that conflicts with existing code decisions | Skip, log to the end-of-run report, and flag as needing user judgment. |
@@ -695,7 +695,7 @@ Invoke `/monitor-pr` to shepherd it through CI and review without manually polli
   referenced line is still present.
 - **One loop iteration ≠ one minute.** Iterations advance when state changes (CI finishes, comments arrive, a push lands). Between state changes the loop sleeps briefly (10s) and re-polls.
 - **Iteration cap protects from runaway token spend.** 10 iterations is enough for most PRs; escalate to the user beyond that.
-- **Mutating git operations that are visible to others (commit, push) delegate to `git-operator`.** This preserves the plugin's mandatory security-auditor / branch-protection checks before every push. Local-only alignment operations (fetch, checkout, `--ff-only` pull) in Step 2 run inline with `GIT_AUTHORIZED=1` to avoid the ~17k-token cost of a subagent spin-up for a trivial read-through operation.
+- **Mutating git operations that are visible to others (commit, push) run inline, hook-guarded.** `git-mutation-guard.sh` enforces branch protection and the credential scan on every commit; `record-audit.sh` records the security-auditor confirmation before each push (Step 3.3). Local-only alignment operations (fetch, checkout, `--ff-only` pull) in Step 2 also run inline with `GIT_AUTHORIZED=1` to avoid the ~17k-token cost of a subagent spin-up for a trivial read-through operation. `git-operator` is not used anywhere in this skill's routine loop.
 - **No destructive actions.** The skill never force-pushes, never amends, never resets, never closes the PR.
 - **Conservative comment handling.** When in doubt about a comment, the skill flags it for the user rather than guessing. Silent wrong fixes are worse than skipped comments.
 - **Token discipline.** monitor-pr is the longest-lived skill in the plugin and the only one that polls a remote system. Without care it is the only Sonnet skill that routinely crosses the 200k context window (which requires the 1M-context tier on the Anthropic API). Three rules keep it bounded:

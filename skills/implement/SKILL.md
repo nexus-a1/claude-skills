@@ -17,7 +17,7 @@ End-to-end implementation skill that:
 2. Understands requirements from multiple input formats
 3. Explores codebase and plans implementation
 4. Implements changes with state persistence
-5. Commits each chunk separately using `git-operator`
+5. Commits each chunk separately inline (hook-guarded, `record-audit.sh`)
 6. Ensures test coverage for new code
 7. Reviews and auto-fixes issues
 8. Enforces quality gate with auto-fix feedback loop before PR
@@ -1777,7 +1777,7 @@ Skill: /implement
 | quality-guard | opus | Phase 4 | Skeptic validation |
 | test-fixer | sonnet | Phase 4 | Test fixes (if needed) |
 | refactorer | sonnet | Phase 4.7 | Auto-fix (if needed) |
-| git-operator | sonnet | Phase 3,5 | Commits and PR |
+| git-operator | sonnet | Phase 5 | PR body authoring (large ranges only, conditional) |
 
 ## Summary
 - Opus agents: {count}
@@ -1852,7 +1852,7 @@ Read `references/branch-safety-rules.md` for the complete branch safety rules. *
 - **State persistence**: Progress saved after each chunk for resume capability
 - **Chunk commits**: Each logical unit committed separately for clean history
 - **Smart detection**: Scans `$WORK_DIR/` for incomplete work
-- **Git-operator delegation**: All git mutation operations (checkout, commit, push, PR creation) go through git-operator agent. Read-only checks (`git branch --show-current`, `git diff-index`) and worktree setup (`git worktree add`) run inline — git-operator does not support worktree operations
+- **Git mutations run inline**: commit, push, checkout, and worktree setup run inline via Bash, hook-guarded by `git-mutation-guard.sh` (branch protection, credential scan, security-auditor push gate via `record-audit.sh`). `git-operator` is used only for large-commit-range PR body authoring (Phase 5, conditional) — not for routine commits or pushes
 - **Quality gate**: Critical QA issues must be resolved (or explicitly overridden) before PR creation
 - **Auto-fix feedback loop**: Critical issues get up to 2 auto-fix attempts via refactorer (second attempt includes failure context), with targeted re-validation
 - **PR workflow**: Target branch from requirements phase, with confirmation

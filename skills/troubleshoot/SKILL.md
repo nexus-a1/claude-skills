@@ -518,7 +518,7 @@ Task(test-fixer, "Fix all failing tests after changing /api/users status code")
 | Fix | Direct (Edit tool) | Apply code/test changes |
 | Verification | test-writer, test-fixer | Ensure fix works |
 | Review | security-auditor, quality-guard | Validate fix quality and security |
-| Commit | git-operator | Save and document fix |
+| Commit | Direct (Bash, hook-guarded) | Save and document fix |
 
 ---
 
@@ -587,6 +587,6 @@ Before completing troubleshoot session:
    - Run tests → All passing
    - Task(security-auditor) → No issues
 7. **Commit:**
-   - Task(git-operator) → Committed fix
+   - Inline `git commit` (hook-guarded) → Committed fix
 
 **Result:** Issue resolved, tests passing, fix committed.
