@@ -83,6 +83,14 @@ After syncing the knowledge base and before researching, check if `${KB_PATH}/ma
 
 **If manifest exists and is fresh:** Use it for faster keyword searches before falling back to full file reads.
 
+> **This agent does not commit.** The manifest you write here is a local read
+> cache. When the knowledge base is a `git` location, an uncommitted
+> `manifest.json` is persisted (committed + pushed) by
+> `/rebuild-index product-knowledge`, which owns KB writes and applies the
+> sanctioned KB-write pattern (`${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md`).
+> Do not push from this agent — it is read-oriented. If a rebuilt manifest must
+> be persisted immediately, tell the caller to run `/rebuild-index product-knowledge`.
+
 ---
 
 ## What You Research

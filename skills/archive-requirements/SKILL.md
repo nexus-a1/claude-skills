@@ -179,16 +179,16 @@ Tasks:
 1. Sync requirements repository
 2. Read all state and context files
 3. Extract metadata from git commits and code changes
-4. Copy the Spec-Driven triad verbatim into the archive:
-   - $WORK_DIR/${identifier}/spec.md             → archive/${identifier}/spec.md
-   - $WORK_DIR/${identifier}/plan.md             → archive/${identifier}/plan.md
-   - $WORK_DIR/${identifier}/tasks.md            → archive/${identifier}/tasks.md
-   - $WORK_DIR/${identifier}/${identifier}-JIRA_TICKET.md → archive/${identifier}/${identifier}-JIRA_TICKET.md
+4. Copy the Spec-Driven triad verbatim into the archive — destination is `{repository_path}/${identifier}/`, the same directory every other reader (search-requirements, load-requirements, rebuild-requirements-index) expects; `rebuild-requirements-index` explicitly skips an `archive/` subdirectory, so anything written there is invisible to the index:
+   - $WORK_DIR/${identifier}/spec.md             → {repository_path}/${identifier}/spec.md
+   - $WORK_DIR/${identifier}/plan.md             → {repository_path}/${identifier}/plan.md
+   - $WORK_DIR/${identifier}/tasks.md            → {repository_path}/${identifier}/tasks.md
+   - $WORK_DIR/${identifier}/${identifier}-JIRA_TICKET.md → {repository_path}/${identifier}/${identifier}-JIRA_TICKET.md
    If the triad is absent (legacy work from pre-SDD runs), fall back to copying ${identifier}-TECHNICAL_REQUIREMENTS.md.
 5. Generate a concatenated human-readable requirements.md in the archive by joining spec.md + plan.md + tasks.md under clearly marked section headers (## Spec / ## Plan / ## Tasks). This preserves KB search compatibility without duplicating authoring.
 6. Copy all files to requirements repository (including context/ agent outputs)
 7. Update searchable index.json — extract tags from spec.md user stories and plan.md sections
-8. Commit and push to repository
+8. Commit and push using the sanctioned KB-write pattern (see `${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md`): `cd` into `{repository_path}` (never `git -C`). `git commit` must LEAD its own Bash tool call so the credential scan runs (a compound `cd && git commit` starts with `cd` and the guard's anchored regex silently skips the scan). The `git push` must ALSO lead its own separate call so the guard's push block engages and logs the bypass WARNs — if anything precedes `git push` (e.g. a `default_branch=...` assignment) the anchored regex misses and the whole push block is silently skipped. Since shell variables don't survive across Bash calls, resolve the branch INLINE in the push argument on one line: `NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1 git push origin -- "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' | grep . || timeout 10 git ls-remote --symref origin HEAD 2>/dev/null | awk '/^ref:/{sub("refs/heads/","",$2);print $2;exit}' | grep . || echo master)"`. Both bypasses are logged; do NOT call `record-audit.sh` (it would rubber-stamp an audit that never ran)
 
 Provide detailed success report with archive location.
 ")
@@ -220,7 +220,7 @@ Index updated:
 - Tags: ${extracted_tags}
 - Components: ${extracted_components}
 
-Changes committed and pushed to: origin/main
+Changes committed and pushed to the requirements repository's default branch
 
 This work is now discoverable by the archivist agent
 when searching for similar past implementations.

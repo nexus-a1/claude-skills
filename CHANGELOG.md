@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.16.8] - 2026-07-14
+
+## What's Changed
+
+4 commits since v1.16.7 (3 fix, 1 test). No breaking changes. A KB-integrity and framework-correctness maintenance release hardening the git-backed knowledge-base write path, the doc-writer agent boundary, and the `/update-documentation` skill.
+
+### Bug Fixes
+
+- **kb**: sanctioned git-write pattern + default-branch helper — the KB-write pattern now works correctly under `git-mutation-guard.sh` (commit and push each lead their own Bash call so the credential scan and bypass WARNs engage; branch resolved inline in the push), a 3-tier `_default_branch()` resolver (symref → `ls-remote` → `master`) that no longer crashes release scripts on an offline remote, an explicit credential scan on the manifest-rebuild loop, and `NEXUS_KB_WRITE`/`SECURITY_AUDITOR_BYPASS` honest logged bypasses (#241, SKILLS-067)
+- **skills**: `/update-documentation` assessment remediations — work-dir resolution via `resolve_artifact`, guarded git context, single Task stub, skip-condition ordering, scoped lead fixes (1 P2, 4 P3) (#244)
+- **agents**: doc-writer git boundary + `Edit` tool + team-mode completion fallback — doc-writer now declares it has no git access (caller commits), gained `Edit` for targeted doc changes, and `/update-documentation` uses output-file existence as the completion signal (#242)
+
+### Tests
+
+- **skills**: add `test-team-task-tools` Layer 2 test + ADR-010 — empirically confirms no subagent receives task tools in this harness, so teammate completion must key on output files, not `TaskUpdate` (#243)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.16.7...v1.16.8
+
 ## [1.16.7] - 2026-07-12
 
 ## What's Changed

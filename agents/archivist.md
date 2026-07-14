@@ -148,8 +148,15 @@ Archive completed requirements after PR creation.
 1. **Gather context:** Read `.claude/work/{identifier}/` state and context files
 2. **Extract metadata from code:**
    ```bash
-   git log origin/master..feature/{identifier} --oneline
-   git diff origin/master...feature/{identifier} --name-only
+   # Full 3-tier resolution (matches the push step below and kb-write-pattern.md):
+   # symref → remote query → master. A CI checkout with an unset local
+   # origin/HEAD on a main-default repo would otherwise diff the wrong range.
+   default_branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+   [ -z "$default_branch" ] && default_branch=$(timeout 10 git ls-remote --symref origin HEAD 2>/dev/null \
+     | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2; exit}')
+   default_branch="${default_branch:-master}"
+   git log "origin/${default_branch}..feature/{identifier}" --oneline
+   git diff "origin/${default_branch}...feature/{identifier}" --name-only
    ```
    Extract: components changed, APIs added/modified, migrations, new dependencies
 3. **Generate metadata.json:**
@@ -171,13 +178,21 @@ Archive completed requirements after PR creation.
 4. **Generate requirements.md:** Human-readable summary (overview, requirements, architecture, decisions, lessons learned). Use `${CLAUDE_PLUGIN_ROOT}/templates/requirements-repo/requirements.template.md` (or `~/.claude/templates/requirements-repo/requirements.template.md` for local/dev copies) as guide.
 5. **Copy to repository:** Create `{repository_path}/{identifier}/` with metadata, requirements, state files, and context directory
 6. **Update index.json:** Add ticket entry, update tag/component/project frequencies
-7. **Commit and push:**
+7. **Commit and push** — follow the sanctioned KB-write pattern in full: [`plugin/shared/kb-write-pattern.md`](../shared/kb-write-pattern.md). In brief: `cd` into the KB repo (never `git -C`); **both** `git commit` (Call 2) and `git push` (Call 3) must **lead their own Bash tool calls** so the guard engages — for the push that means resolving the branch inline in the push argument, on one line, since shell variables do not survive across Bash tool calls. Prefix the push with `NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1` (both logged to stderr — that WARN is the tripwire); do **not** call `record-audit.sh`.
+
    ```bash
+   # Call 1 — stage (cd + git add are not guarded).
    cd "{repository_path}"
    git add "{identifier}/" index.json
+   ```
+   ```bash
+   # Call 2 — commit must lead the call (credential scan); then sync.
    git commit -m "[Archive] {identifier}: Feature title"
-   git pull --rebase origin main
-   git push origin main
+   git pull --rebase
+   ```
+   ```bash
+   # Call 3 — push must lead, on ONE line, so the guard engages and logs the bypass WARNs.
+   NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1 git push origin -- "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' | grep . || timeout 10 git ls-remote --symref origin HEAD 2>/dev/null | awk '/^ref:/{sub("refs/heads/","",$2);print $2;exit}' | grep . || echo master)"
    ```
 
 ## Responsibility 4: MAINTAIN (On-Demand)

@@ -13,6 +13,17 @@
 #                                  git-operator callers and release skills.
 #   SECURITY_AUDITOR_BYPASS=1    — skip only the security-auditor state check
 #                                  (branch protection + credential scan still run).
+#   NEXUS_KB_WRITE=1             — skip only branch protection (credential scan
+#                                  + security-auditor state check still run).
+#                                  For the sanctioned git-backed knowledge-base
+#                                  write pattern: KB repos (requirements,
+#                                  product-knowledge) are separate git remotes
+#                                  with no PR/review process of their own, so a
+#                                  direct push to their default branch is the
+#                                  intended workflow, not a bypass of *this*
+#                                  project's review requirement. Set this only
+#                                  immediately before the push step, never for
+#                                  pushes to the project's own repo.
 #
 # Scope: this guard only inspects Bash tool calls. Other tools are untouched.
 
@@ -42,9 +53,15 @@ if [[ "$input" =~ ^GIT_AUTHORIZED=1[[:space:]]+git[[:space:]] ]]; then
 fi
 
 # Strip leading env assignments (KEY=val ... git <subcmd>) we know about so
-# the mutation regexes below see the git invocation cleanly.
+# the mutation regexes below see the git invocation cleanly. NEXUS_KB_WRITE is
+# stripped alongside the two bypass vars: without it, a real
+# `NEXUS_KB_WRITE=1 git push …` command would fail the anchored `git push`
+# regex and silently skip the ENTIRE push block (branch protection AND the
+# audit gate) instead of just branch protection — defeating the guarantee that
+# the audit gate still applies. The value is still read from the environment
+# below; stripping only cleans the string used for regex matching.
 cmd="$input"
-while [[ "$cmd" =~ ^[[:space:]]*(GIT_AUTHORIZED|SECURITY_AUDITOR_BYPASS)=[^[:space:]]+[[:space:]]+(.*)$ ]]; do
+while [[ "$cmd" =~ ^[[:space:]]*(GIT_AUTHORIZED|SECURITY_AUDITOR_BYPASS|NEXUS_KB_WRITE)=[^[:space:]]+[[:space:]]+(.*)$ ]]; do
     cmd="${BASH_REMATCH[2]}"
 done
 
@@ -55,17 +72,22 @@ repo_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
 # ---------------------------------------------------------------------------
 if [[ "$cmd" =~ ^[[:space:]]*git[[:space:]]+push([[:space:]]|$) ]]; then
     current_branch=$(git branch --show-current 2>/dev/null || true)
-    case "$current_branch" in
-        main|master|release/*)
-            # Allow the initial creating push (remote branch doesn't exist yet).
-            # Subsequent pushes to an existing protected branch must go through a PR.
-            if git ls-remote --exit-code --heads origin "$current_branch" >/dev/null 2>&1; then
-                echo "BLOCKED: direct push to protected branch '$current_branch'." >&2
-                echo "Remote branch already exists — subsequent changes must go through a PR." >&2
-                exit 2
-            fi
-            ;;
-    esac
+    if [[ "${NEXUS_KB_WRITE:-}" == "1" ]]; then
+        echo "WARN: NEXUS_KB_WRITE=1 — skipping branch-protection check (sanctioned direct-to-trunk push to a git-backed KB repo, not this project). Credential scan and security-auditor state check still apply." >&2
+    else
+        case "$current_branch" in
+            main|master|release/*)
+                # Allow the initial creating push (remote branch doesn't exist yet).
+                # Subsequent pushes to an existing protected branch must go through a PR.
+                if git ls-remote --exit-code --heads origin "$current_branch" >/dev/null 2>&1; then
+                    echo "BLOCKED: direct push to protected branch '$current_branch'." >&2
+                    echo "Remote branch already exists — subsequent changes must go through a PR." >&2
+                    echo "Pushing to a git-backed knowledge-base repo (not this project)? Prefix with NEXUS_KB_WRITE=1." >&2
+                    exit 2
+                fi
+                ;;
+        esac
+    fi
 
     if [[ "${SECURITY_AUDITOR_BYPASS:-}" != "1" ]]; then
         state_file="$repo_root/.claude/session-state/git-audit.json"

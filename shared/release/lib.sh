@@ -261,6 +261,40 @@ _strip_origin_prefix() {
   printf '%s' "${ref#origin/}"
 }
 
+# Echo the repo's actual default branch (e.g. "main" or "master").
+# Resolution order:
+#   1. Local origin/HEAD symref (fast, offline) — the common case.
+#   2. If unset (fresh clones and CI checkouts frequently leave origin/HEAD
+#      unpopulated), ask the remote directly via `git ls-remote --symref`,
+#      bounded by `timeout` so a restricted network cannot stall the workflow.
+#   3. Only if both fail (no remote / offline), fall back to "master" — but
+#      WARN loudly, because silently assuming "master" on a "main"-default repo
+#      pushes/branches against the wrong trunk. Callers on a "main" repo should
+#      pass an explicit branch rather than rely on this last resort.
+# Used anywhere a release/KB script would otherwise hardcode "master".
+_default_branch() {
+  local ref symref
+  if ref=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null); then
+    printf '%s' "${ref#origin/}"
+    return 0
+  fi
+  if git remote get-url origin >/dev/null 2>&1; then
+    # `|| true` is load-bearing: this is a bare assignment (not an `if`
+    # condition), so under the caller's `set -euo pipefail` a failing
+    # `git ls-remote` (unreachable/offline — the exact case `timeout 10`
+    # guards) would propagate non-zero through the pipe and abort the whole
+    # release script BEFORE the graceful `master` fallback below runs.
+    symref=$(timeout 10 git ls-remote --symref origin HEAD 2>/dev/null \
+             | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2; exit}') || true
+    if [[ -n "$symref" ]]; then
+      printf '%s' "$symref"
+      return 0
+    fi
+  fi
+  echo "WARN: _default_branch: could not resolve origin/HEAD (no remote or offline); assuming 'master'. Pass an explicit branch if this repo's default is 'main'." >&2
+  printf '%s' "master"
+}
+
 # ---------------------------------------------------------------------------
 # JSON helpers
 # ---------------------------------------------------------------------------

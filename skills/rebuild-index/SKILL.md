@@ -90,14 +90,18 @@ See `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for manifest schema detail
 
 ### Step 2: Sync Git Locations
 
-For any artifact location with `type: git`, sync before scanning:
+For any artifact directory whose storage type is `git`, sync before scanning
+(loop over the four rebuild-eligible artifacts here — `requirements` and
+`product-knowledge` are synced by their own delegated skill/agent):
 
 ```bash
-if [[ "$_TYPE" == "git" ]]; then
-  _LOC=$(yq -r ".storage.artifacts.${artifact}.location" "$CONFIG")
-  _BASE=$(yq -r ".storage.locations.${_LOC}.path" "$CONFIG")
-  cd "$_BASE" && git pull --quiet
-fi
+for pair in "work:$WORK_TYPE:$WORK_DIR" "brainstorms:$BRAIN_TYPE:$BRAINSTORM_DIR" \
+            "proposals:$PROP_TYPE:$PROPOSALS_DIR" "refactoring:$REFAC_TYPE:$REFACTOR_DIR"; do
+  IFS=':' read -r _artifact _type _dir <<< "$pair"
+  if [[ "$_type" == "git" && -d "$_dir" ]]; then
+    ( cd "$_dir" && git pull --quiet )
+  fi
+done
 ```
 
 ### Step 3: Execute Rebuild(s)
@@ -219,6 +223,42 @@ Include the extra 'categories' and 'tags' top-level fields.
 ")
 ```
 
+`product-expert` only **writes** `manifest.json` — it has no git steps. If the
+product-knowledge location is `type: git`, commit and push the rebuilt manifest
+here (owner of the rebuild), otherwise it sits uncommitted and the next KB
+`git pull` conflicts with it. Skip when `$PROD_TYPE != git`. Follows the
+sanctioned KB-write pattern
+([`${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md`](../../shared/kb-write-pattern.md)) —
+`cd` in, push with the two logged bypasses, no `record-audit.sh`:
+
+```bash
+if [[ "$PROD_TYPE" == "git" && -d "$PRODUCT_DIR" ]]; then
+  (
+    cd "$PRODUCT_DIR"
+    git add manifest.json
+    if ! git diff --cached --quiet; then
+      # Explicit credential scan — the single-call form misses the hook's
+      # automatic one, and the product-knowledge manifest embeds first-paragraph
+      # excerpts from user docs (see Step 3.5 note).
+      if ! "${CLAUDE_PLUGIN_ROOT}/hooks/credential-scan.sh" manifest.json >&2; then
+        echo "WARN: credential finding in product-knowledge manifest.json — skipping its KB push" >&2
+      else
+        default_branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+        [ -z "$default_branch" ] && default_branch=$(timeout 10 git ls-remote --symref origin HEAD 2>/dev/null \
+          | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2; exit}')
+        default_branch="${default_branch:-master}"
+        git commit -m "Rebuild product-knowledge manifest"
+        NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1 git push origin -- "$default_branch"
+      fi
+    fi
+  )
+fi
+```
+
+(The single-call caveat from Step 3.5 applies — branch protection and the audit
+gate are intentionally skipped for this KB push; the credential scan is run
+explicitly above rather than dropped.)
+
 ---
 
 ## Rebuild: Requirements
@@ -231,6 +271,71 @@ Delegating to /rebuild-requirements-index...
 ```
 
 Trigger the `/rebuild-requirements-index` skill.
+
+---
+
+## Step 3.5: Commit Git-Backed Manifests
+
+After writing `manifest.json` for Work, Brainstorms, Proposals, or
+Refactoring, commit and push it if that artifact's storage location is
+`type: git` — otherwise the rebuilt manifest sits uncommitted locally and
+the next `git pull` on that repo conflicts with it. This follows the
+sanctioned KB-write pattern
+([`${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md`](../../shared/kb-write-pattern.md)):
+`cd` into the artifact directory (never `git -C`), and push with
+`NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1` (both logged) rather than a
+mechanical `record-audit.sh` rubber-stamp.
+
+```bash
+for pair in "work:$WORK_TYPE:$WORK_DIR" "brainstorms:$BRAIN_TYPE:$BRAINSTORM_DIR" \
+            "proposals:$PROP_TYPE:$PROPOSALS_DIR" "refactoring:$REFAC_TYPE:$REFACTOR_DIR"; do
+  IFS=':' read -r _artifact _type _dir <<< "$pair"
+  if [[ "$_type" == "git" && -d "$_dir" ]]; then
+    (
+      cd "$_dir"
+      git add manifest.json
+      if ! git diff --cached --quiet; then
+        # The single-call loop misses git-mutation-guard.sh's automatic
+        # credential scan (see note below), so run it EXPLICITLY on the
+        # manifest — its summary/title fields carry freeform excerpts from
+        # user/agent docs and could contain a pasted secret. Skip the push on a
+        # finding rather than committing it.
+        if ! "${CLAUDE_PLUGIN_ROOT}/hooks/credential-scan.sh" manifest.json >&2; then
+          echo "WARN: credential finding in ${_artifact} manifest.json — skipping its KB push" >&2
+        else
+          default_branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+          [ -z "$default_branch" ] && default_branch=$(timeout 10 git ls-remote --symref origin HEAD 2>/dev/null \
+            | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2; exit}')
+          default_branch="${default_branch:-master}"
+          git commit -m "Rebuild ${_artifact} manifest"
+          NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1 git push origin -- "$default_branch"
+        fi
+      fi
+    )
+  fi
+done
+```
+
+> **Note on the single-call loop.** Because this loop runs as one Bash tool
+> call, the input string begins with `for`, so `git-mutation-guard.sh`'s
+> anchored regexes (`^\s*git\s+commit`, `^\s*git\s+push`) match **nothing** —
+> the inner `git commit`/`git push` are invisible to the guard, so all three of
+> its checks (branch protection, credential scan, audit gate) are skipped.
+> Branch protection and the audit gate are *intentionally* bypassed for KB
+> writes; the credential scan is **not** something to drop — manifest
+> summary/title fields embed freeform excerpts from user/agent docs — so it is
+> run **explicitly** via `credential-scan.sh` before each commit above. ⚠️ If an
+> artifact location is ever misconfigured to `type: git` pointing at the project
+> repo, this loop would still push there with branch protection and the audit
+> gate skipped — the explicit scan only covers credentials. Keep KB locations
+> pointed at real KB repos. For any interactive or user-content KB write, use the
+> separate-Bash-call form in the shared pattern doc so the guard runs in full.
+
+Requirements manifests are committed by their own delegated skill
+(`/rebuild-requirements-index`). The product-knowledge manifest is committed by
+the **Rebuild: Product Knowledge** step below (it is *not* committed by
+`product-expert`, which only writes the manifest) — do not duplicate either
+here.
 
 ---
 

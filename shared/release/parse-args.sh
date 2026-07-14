@@ -19,9 +19,9 @@
 # Output (with --json):
 #   { "version": "v1.2.0" | null,
 #     "version_raw": "v1.2.0" | null,    # exactly what the user typed
-#     "source": "origin/master" | null,
+#     "source": "origin/<default-branch>" | null,   # e.g. origin/master or origin/main
 #     "source_kind": "branch" | "tag" | null,
-#     "target": "master" | null,
+#     "target": "<default-branch>" | null,   # e.g. master or main
 #     "release_branch": "release/v1.2.0" | null,
 #     "prerelease": true | false | null,
 #     "fasttrack": true | false,
@@ -81,7 +81,7 @@ _looks_like_version() {
 case "$skill" in
   branch-create)
     # /create-release-branch <version> [source]
-    # source defaults to origin/master; tag@vX.Y.Z syntax is supported.
+    # source defaults to origin/<repo default branch>; tag@vX.Y.Z syntax is supported.
     pos1="${positional[0]:-}"
     pos2="${positional[1]:-}"
 
@@ -123,7 +123,7 @@ case "$skill" in
       fi
     else
       source_kind="branch"
-      source_ref="origin/master"
+      source_ref="origin/$(_default_branch)"
     fi
 
     if [[ -z "$version" && ${#errors[@]} -eq 0 ]]; then
@@ -168,7 +168,7 @@ case "$skill" in
 
   pr-create)
     # /create-release [target] [version]
-    # 0 args   → target defaults to master, version missing.
+    # 0 args   → target defaults to the repo default branch, version missing.
     # 1 arg    → if version-shaped → version; else → target.
     # 2 args   → target, version.
     pos1="${positional[0]:-}"
@@ -183,10 +183,10 @@ case "$skill" in
 
     if (( ${#errors[@]} == 0 )); then
       if [[ -z "$pos1" && -z "$pos2" ]]; then
-        target="master"
+        target="$(_default_branch)"
       elif [[ -n "$pos1" && -z "$pos2" ]]; then
         if _looks_like_version "$pos1"; then
-          target="master"
+          target="$(_default_branch)"
           version_raw="$pos1"
           if normalized=$(_normalize_version "$pos1"); then
             version="$normalized"
@@ -223,8 +223,9 @@ case "$skill" in
   release-create)
     # /release [version] [branch] [--pre-release] [--fasttrack|-y|--yes]
     #
-    # Branch defaults to origin/master (per release-concepts: stable releases
-    # come off master). Users may pass a different branch — most commonly a
+    # Branch defaults to origin/<repo default branch> (per release-concepts:
+    # stable releases come off the default branch). Users may pass a different
+    # branch — most commonly a
     # release/* branch when publishing an RC.
     #
     # Sweep the release-create-specific flags out of `positional`, then
@@ -255,7 +256,7 @@ case "$skill" in
       }
 
       if [[ -z "$pos1" && -z "$pos2" ]]; then
-        target="origin/master"
+        target="origin/$(_default_branch)"
       elif [[ -n "$pos1" && -z "$pos2" ]]; then
         if classify_release_branch "$pos1"; then
           # release/vX.Y.Z — treat as both branch and version source.
@@ -273,7 +274,7 @@ case "$skill" in
             prerelease="true"
           fi
         elif _looks_like_version "$pos1"; then
-          target="origin/master"
+          target="origin/$(_default_branch)"
           version_raw="$pos1"
           if normalized=$(_normalize_version "$pos1"); then
             version="$normalized"

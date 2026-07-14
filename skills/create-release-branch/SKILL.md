@@ -3,7 +3,7 @@ name: create-release-branch
 category: release-management
 model: claude-haiku-4-5
 userInvocable: true
-description: Create a release/vX.Y.Z branch from origin/master (default), any branch, or a specific tag using tag@vX.Y.Z syntax
+description: Create a release/vX.Y.Z branch from the repo's default branch (default), any branch, or a specific tag using tag@vX.Y.Z syntax
 argument-hint: <version> [source]
 allowed-tools: "Bash(pwd:*), Bash(echo:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git fetch:*), Bash(bash:*), AskUserQuestion"
 ---
@@ -66,7 +66,7 @@ If the parser returned exit 10 with `missing` containing `version`:
 
 3. Re-run `parse-args.sh` with the chosen version included in `$ARGUMENTS`.
 
-If `source` was not supplied, default to `origin/master` (parse-args already does this). The user may override via the second positional argument or the `tag@vX.Y.Z` syntax.
+If `source` was not supplied, default to `origin/<repo default branch>` (parse-args already does this via `_default_branch()`, resolved from `origin/HEAD`). The user may override via the second positional argument or the `tag@vX.Y.Z` syntax.
 
 ### Step 3 — Show plan and confirm
 
@@ -106,7 +106,7 @@ On success, show:
   source: <ref>
 
 Next:
-  /create-release          # open PR to master
+  /create-release          # open PR to the default branch
   /merge-release           # merge once approved
   /release                 # tag + GitHub release
 ```

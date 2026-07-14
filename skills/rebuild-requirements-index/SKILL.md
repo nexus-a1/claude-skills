@@ -141,7 +141,22 @@ Process:
 6. Generate new index.json
 7. Validate JSON structure
 8. Write to repository
-9. Report statistics and issues
+9. If the repository is a git-backed KB location: commit and push using the
+   sanctioned KB-write pattern (see
+   ${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md) — `cd` into ${repo_path}
+   (never `git -C`). `git commit -m "Rebuild requirements index"` must LEAD its
+   own Bash tool call so the credential scan runs (a compound `cd && git commit`
+   starts with `cd` and the guard's anchored regex silently skips the scan).
+   Then, in a SEPARATE call, the `git push` must ALSO lead its own call so the
+   guard's push block engages and logs the bypass WARNs (if anything precedes
+   `git push` — e.g. a `default_branch=...` assignment — the anchored regex
+   misses and the whole push block, WARNs included, is silently skipped). Since
+   shell variables do not survive across Bash calls, resolve the branch INLINE
+   in the push argument on one line:
+   `NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1 git push origin -- "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' | grep . || timeout 10 git ls-remote --symref origin HEAD 2>/dev/null | awk '/^ref:/{sub("refs/heads/","",$2);print $2;exit}' | grep . || echo master)"`.
+   Both bypasses are logged; do NOT call `record-audit.sh`, which would
+   rubber-stamp an audit that never ran.
+10. Report statistics and issues
 
 Return:
 - Tickets scanned
@@ -327,13 +342,22 @@ ls -lt index.json.backup.*
 cp index.json.backup.20260203_143022 index.json
 ```
 
-Then commit and push inline. Record a security-auditor confirmation for the restoration commit before pushing:
+Then commit and push using the sanctioned KB-write pattern
+(`${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md`) — both `git commit` and
+`git push` lead their own Bash calls so the guard engages; the push resolves the
+branch inline (shell variables do not persist across Bash tool calls):
 
 ```bash
+# Call 1 (cwd is already ${repo_path} from the cd above)
 git add index.json
+```
+```bash
+# Call 2 — commit leads the call (credential scan).
 git commit -m "Restore index from backup"
-bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
-git push
+```
+```bash
+# Call 3 — push must lead, on ONE line, so the guard engages and logs the bypass WARNs.
+NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1 git push origin -- "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' | grep . || timeout 10 git ls-remote --symref origin HEAD 2>/dev/null | awk '/^ref:/{sub("refs/heads/","",$2);print $2;exit}' | grep . || echo master)"
 ```
 
 ## Validation

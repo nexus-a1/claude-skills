@@ -34,7 +34,7 @@ Arguments provided: $ARGUMENTS
 
 Thin dispatcher over `${CLAUDE_PLUGIN_ROOT}/shared/release/`. Run all steps in a single message; use parallel tool calls where independent. Do not re-derive parsing, version normalization, RC bumping, tag-existence checks, or workflow-case detection — call the scripts and surface their structured output.
 
-The default release source is `origin/master`. Users can override by passing a branch as the second argument (e.g. `/release v1.2.0-rc.1 release/v1.2.0` for an RC off a release branch). Note: passing a `release/*` branch as the target automatically implies `--pre-release`; stable releases must target master/main. When no branch arg is given and the user appears to want something other than master, hint that they can pass one explicitly.
+The default release source is `origin/<repo default branch>` (resolved from `origin/HEAD` via `_default_branch()`, falling back to `master`). Users can override by passing a branch as the second argument (e.g. `/release v1.2.0-rc.1 release/v1.2.0` for an RC off a release branch). Note: passing a `release/*` branch as the target automatically implies `--pre-release`; stable releases must target the default branch. When no branch arg is given and the user appears to want something other than the default branch, hint that they can pass one explicitly.
 
 ### Step 0 — Pre-flight: verify git repo
 
@@ -193,7 +193,7 @@ On success:
 
 - **Single message execution** — all steps in one assistant turn.
 - **No re-derived gh/git logic in prose** — every gh/git operation goes through the shared scripts.
-- **Default branch is `origin/master`** — if the user appears to want a different source (e.g. an RC off a release branch), ask them to pass it as the second argument: `/release <version> <branch>`.
+- **Default source is `origin/<repo default branch>`** — if the user appears to want a different source (e.g. an RC off a release branch), ask them to pass it as the second argument: `/release <version> <branch>`.
 - **Workflow gate** — when `release/<version>` exists, the action script enforces "no-pr → /create-release", "open-pr → /merge-release", "closed-not-merged → confirm with --allow-unmerged-pr". Do not bypass.
 - **Fasttrack** (`--fasttrack | -y | --yes`) — auto-confirm the recommended version/branch/prerelease and skip the final confirmation. **Abort** (do not auto-route) if the workflow case is `no-pr`, `open-pr`, or `closed-not-merged`, or if `has_breaking_change` is true and no explicit version was supplied.
 - **Notes authoring is your job** — the shell scripts deliberately don't template prose; the JSON from `commits-data.sh` is what you have to work with. Keep it factual and grouped, no marketing voice.

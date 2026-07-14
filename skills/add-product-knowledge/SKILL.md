@@ -5,7 +5,7 @@ category: context-indexing
 description: Add a new entry to the product knowledge base. Wizard-guided — prompts for category, title, and content, then writes a structured markdown file and rebuilds the manifest.
 argument-hint: "[title]"
 userInvocable: true
-allowed-tools: "Read, Write, Bash(source:*), Bash(echo:*), Bash(yq:*), Bash(jq:*), Bash(find:*), Bash(git:*), Bash(date:*), Bash(mkdir:*), Bash(mv:*), Bash(mktemp:*), Bash(tr:*), Bash(sed:*), Bash(xargs:*), Bash(basename:*), Bash(sort:*), AskUserQuestion"
+allowed-tools: "Read, Write, Bash(source:*), Bash(echo:*), Bash(yq:*), Bash(jq:*), Bash(find:*), Bash(git:*), Bash(date:*), Bash(mkdir:*), Bash(mv:*), Bash(mktemp:*), Bash(tr:*), Bash(sed:*), Bash(grep:*), Bash(awk:*), Bash(timeout:*), Bash(xargs:*), Bash(basename:*), Bash(sort:*), Bash(cd:*), AskUserQuestion"
 ---
 
 # Add Product Knowledge
@@ -180,12 +180,27 @@ fi
 
 ### Step 8: Commit (git locations only)
 
-If `$_TYPE == "git"`:
+If `$_TYPE == "git"`, follow the sanctioned KB-write pattern in full:
+[`${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md`](../../shared/kb-write-pattern.md).
+**Both** `git commit` (Call 2) and `git push` (Call 3) must **lead their own
+Bash tool calls** so the guard engages — for the push that means resolving the
+branch inline in the push argument, on one line, since shell variables do not
+survive across Bash tool calls. Prefix the push with `NEXUS_KB_WRITE=1
+SECURITY_AUDITOR_BYPASS=1` (both logged to stderr — that WARN is the tripwire);
+do **not** call `record-audit.sh`:
 
 ```bash
-git -C "$KB_PATH" add "$DEST" "$MANIFEST"
-git -C "$KB_PATH" commit -m "docs(product-knowledge): add {title}"
-git -C "$KB_PATH" push
+# Call 1 — stage.
+cd "$KB_PATH"
+git add "$DEST" "$MANIFEST"
+```
+```bash
+# Call 2 — commit leads the call (credential scan).
+git commit -m "docs(product-knowledge): add {title}"
+```
+```bash
+# Call 3 — push must lead, on ONE line, so the guard engages and logs the bypass WARNs.
+NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1 git push origin -- "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' | grep . || timeout 10 git ls-remote --symref origin HEAD 2>/dev/null | awk '/^ref:/{sub("refs/heads/","",$2);print $2;exit}' | grep . || echo master)"
 ```
 
 ### Step 9: Confirm

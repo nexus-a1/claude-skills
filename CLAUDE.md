@@ -63,6 +63,7 @@ The following operations **MUST** always use their designated agents:
 
 **Bypass** (logged to stderr, use only with an explicit reason):
 - `SECURITY_AUDITOR_BYPASS=1 git push …` — skip only the audit state check. Branch protection and credential scan still run.
+- `NEXUS_KB_WRITE=1 git push …` — skip only branch protection, for the sanctioned direct-to-trunk push to a **git-backed KB repo** (requirements/product-knowledge remote, not this project). Credential scan and audit gate still run. See [`plugin/shared/kb-write-pattern.md`](shared/kb-write-pattern.md) for the full pattern (cd-not-`git -C`, separate Bash calls per command, combine with `SECURITY_AUDITOR_BYPASS=1`).
 - `GIT_AUTHORIZED=1 git …` — legacy full bypass; kept for backward compatibility with existing skills still using the old flow. New code should not use it.
 
 ##### When to delegate to `git-operator` (narrow)
@@ -93,6 +94,8 @@ Every time documentation needs to be created or updated, delegate to the `doc-wr
 Use Task tool with subagent_type: "doc-writer"
 Prompt: Document the {feature/component} including: {details}
 ```
+
+**doc-writer has no git access** — it writes/edits documentation files and returns their paths. Never ask it to commit. After it returns, commit its output inline (`git add <files> && git commit …`, hook-guarded as usual).
 
 #### Pre-Commit Security Scan → `security-auditor`
 Before every commit in the implementation pipeline, run the `security-auditor` agent via the **Task tool with `subagent_type: "security-auditor"`**.

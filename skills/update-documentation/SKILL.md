@@ -5,7 +5,7 @@ category: documentation
 userInvocable: true
 description: Review and update project documentation using an agent team. Inventories docs, identifies gaps and drift, updates technical and API docs in parallel.
 argument-hint: "[scope|path]"
-allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(git log:*), Bash(git diff:*), Bash(mkdir:*), Bash(date:*), Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
+allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-list:*), Bash(mkdir:*), Bash(date:*), Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
 ---
 
 # Update Documentation
@@ -61,7 +61,9 @@ Check $ARGUMENTS for a scope hint (e.g., a specific path, "api", "readme").
 
 #### 1.2 Get Documentation Scope
 
-Use AskUserQuestion:
+**If $ARGUMENTS specified a path, use that path as the scope and skip the question below.**
+
+Otherwise, use AskUserQuestion:
 ```
 question: "What documentation should we review and update?"
 options:
@@ -74,8 +76,6 @@ options:
   - label: "Recently changed areas"
     description: "Docs related to recently modified code"
 ```
-
-If $ARGUMENTS specified a path, skip this question and use that path as scope.
 
 #### 1.3 Get Update Trigger
 
@@ -95,25 +95,41 @@ options:
 
 #### 1.4 Gather Git Context
 
-Determine recent changes to inform the update:
+Determine recent changes to inform the update. Either command may fail — outside a git repo, or `HEAD~10` on a repo with fewer than 10 commits. A failure here is never fatal: use whatever output succeeded.
 
 ```bash
-# Recent commits
+# Recent commits (fails harmlessly outside a git repo)
 git log --oneline -20
 
-# Files changed recently
+# Files changed recently — if HEAD~10 does not exist (young repo), retry
+# against the root commit: git diff --stat $(git rev-list --max-parents=0 HEAD)
 git diff --stat HEAD~10
 ```
 
-Store as `{git_context}`.
+Store the combined output as `{git_context}`. If both commands failed, set `{git_context}` to empty and continue — the skill works without git history.
 
 #### 1.5 Create Work Directory
 
+Anchor the work directory to the configured artifact location (`resolve_artifact` falls back to `.claude/work` when no configuration exists) so state resolves to the workspace root even under worktrees or custom storage.
+
+Shell state does not persist between Bash tool calls, so this block re-sources `resolve-config.sh` and must run as a single invocation:
+
 ```bash
-mkdir -p .claude/work/doc-update-$(date +%Y%m%d-%H%M%S)/context
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+WORK_BASE=$(resolve_artifact work work)
+WORK_DIR="${WORK_BASE}/doc-update-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "${WORK_DIR}/context"
+echo "$WORK_DIR"
 ```
 
-Store path as `{work_dir}`.
+Store the echoed path as `{work_dir}` and use it verbatim in all later phases (the shell variable will not survive into subsequent Bash calls).
 
 ---
 
@@ -145,18 +161,8 @@ Skip TeamCreate. Agents run as independent sub-agent tasks. No task graph needed
 
 #### 2.2 Run Context Builder
 
-**Team mode** — Spawn context-builder as a teammate:
-
-```
-Task(
-  subagent_type="context-builder",
-  team_name="doc-update-{timestamp}",
-  name="context-builder",
-  ...
-)
-```
-
-**Sub-agent mode** — Run context-builder as independent task:
+**Team mode** — Spawn as teammate with `team_name` and `name` parameters.
+**Sub-agent mode** — Run as independent Task (no `team_name`/`name`).
 
 ```
 Task(
@@ -203,11 +209,11 @@ Save output to {work_dir}/context/discovery.json as structured JSON with:
   ]
 }
 
-Mark your task as completed when done."
+Mark your task as completed when done. If task tools are unavailable to you, the saved discovery.json file signals completion."
 )
 ```
 
-**Team mode**: Monitor T1 completion via TaskList.
+**Team mode**: Monitor T1 completion via TaskList. If the teammate has finished but T1 never shows completed (context-builder may not have task tools available), check for `{work_dir}/context/discovery.json` — if it exists, treat the work as done and mark T1 completed via TaskUpdate yourself.
 **Sub-agent mode**: Wait for Task result.
 
 ---
@@ -257,11 +263,11 @@ Save analysis to {work_dir}/context/analysis.md in this format:
 ## LOW PRIORITY (Style/Minor)
 1. **{file}** - {description}
 
-Mark your task as completed when done."
+Mark your task as completed when done. If task tools are unavailable to you, the saved analysis.md file signals completion."
 )
 ```
 
-**Team mode**: Monitor T2 completion via TaskList.
+**Team mode**: Monitor T2 completion via TaskList. If the teammate has finished but T2 never shows completed (business-analyst may not have task tools available), check for `{work_dir}/context/analysis.md` — if it exists, treat the work as done and mark T2 completed via TaskUpdate yourself.
 **Sub-agent mode**: Wait for Task result.
 
 #### 3.2 Present Plan to User
@@ -332,13 +338,15 @@ Save a summary of changes to {work_dir}/context/doc-writer-changes.md listing:
 - Files updated with brief description of changes
 - Files created (if any)
 
-Mark your task as completed when done."
+Do not run git or attempt to commit — the lead commits changes after review.
+
+Mark your task as completed when done. If task tools are unavailable to you, the saved summary file signals completion."
 )
 ```
 
 #### 4.2 Monitor Progress
 
-**Team mode**: Monitor doc-writer progress via TaskList until T3 completes.
+**Team mode**: Monitor doc-writer progress via TaskList until T3 completes. If the teammate has finished but T3 never shows completed (doc-writer may not have task tools available), check for `{work_dir}/context/doc-writer-changes.md` — if it exists, treat the work as done and mark T3 completed via TaskUpdate yourself.
 **Sub-agent mode**: Wait for Task result.
 
 ---
@@ -359,7 +367,7 @@ Once doc-writer completes (T3 done):
    - Cross-references are correct (links, file paths)
    - Terminology is consistent
 
-3. If inconsistencies found, make targeted fixes directly.
+3. If inconsistencies are found, fix only trivial mechanical issues directly (broken links, wrong file paths, typos). Route anything substantive — content rewrites, new sections, changed behavior descriptions — back to doc-writer via a follow-up Task: the lead does not author documentation content.
 
 #### 5.2 Cleanup
 
