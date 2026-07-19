@@ -5,7 +5,7 @@ category: documentation
 userInvocable: true
 description: Review and update project documentation using an agent team. Inventories docs, identifies gaps and drift, updates technical and API docs in parallel.
 argument-hint: "[scope|path]"
-allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-list:*), Bash(mkdir:*), Bash(date:*), Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
+allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-list:*), Bash(git rev-parse:*), Bash(mkdir:*), Bash(date:*), Task, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
 ---
 
 # Update Documentation
@@ -53,7 +53,7 @@ Use `$DOC_EXEC_MODE` to determine team vs sub-agent behavior in Phases 2-4.
 
 ### Phase 1: Setup & Scope
 
-**Goal**: Determine what documentation to review and what triggered the update.
+**Goal**: Determine what documentation to review and what triggered the update. Beyond file changes, this phase is **session-aware** — it also folds in what was discussed and agreed during the session, gated by whether the code actually implements it (1.5).
 
 #### 1.1 Parse Scope
 
@@ -108,7 +108,56 @@ git diff --stat HEAD~10
 
 Store the combined output as `{git_context}`. If both commands failed, set `{git_context}` to empty and continue — the skill works without git history.
 
-#### 1.5 Create Work Directory
+#### 1.5 Gather Session Context (code-confirmed)
+
+Git history tells you *what* changed; it does not tell you *why*, or which discussed solution a change represents. This step adds that missing signal — but **only for solutions the code actually implements**. A solution that was merely discussed, rejected, or deferred is not documentation-worthy and must be excluded.
+
+**Source A — this conversation (primary).** Reason over the current context window and extract candidate items: solutions discussed and agreed for implementation, design decisions with their rationale, renamed or newly-introduced concepts, and behavior changes. This is inline reasoning — do **not** delegate to a subagent and do **not** read raw transcript files; only the in-context conversation is available.
+
+**Source B — persisted session notes (enrichment, optional).** If this work has an active ticket, its `state.json` `updates[]` already holds the decisions and scope notes `/update-context` recorded (entries tagged `source:"synthesis"` plus plain manual notes). Resolve the ticket from the branch and locate its state file. Shell state does not persist between Bash tool calls, so this block re-sources `resolve-config.sh` and resolves `WORK_BASE` itself — it does not depend on 1.6 having run — and must run as a single invocation:
+
+```bash
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+WORK_BASE=$(resolve_artifact work work)
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+case "$BRANCH" in
+  feature/*) TICKET_ID="${BRANCH#feature/}" ;;
+  *)         TICKET_ID="" ;;
+esac
+
+# A branch name is untrusted input flowing into a filesystem path. Reject
+# anything that is not a safe path segment before using it (mirrors
+# update-context/SKILL.md and auto-context.sh:84).
+if [ -n "$TICKET_ID" ] && ! [[ "$TICKET_ID" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  TICKET_ID=""
+fi
+
+if [ -n "$TICKET_ID" ] && [ -f "${WORK_BASE}/${TICKET_ID}/state.json" ]; then
+  echo "SESSION_STATE=${WORK_BASE}/${TICKET_ID}/state.json"
+else
+  echo "SESSION_STATE=none"   # no active ticket / no state file — Source A only
+fi
+```
+
+If the block echoes a `SESSION_STATE=` path, Read that file and fold its `updates[].note` values into the candidate list. `SESSION_STATE=none` (missing ticket or file) is not an error — fall back to Source A alone.
+
+**The code-confirmation gate (mandatory).** For every candidate from A or B, verify it is reflected in the actual changes before treating it as a documentation driver:
+
+- Cross-check against `{git_context}` (the diff/log from 1.4); when a candidate names a symbol or file, confirm with `git diff HEAD~10 -- <path>` or a `Grep` of the working tree.
+- **Include** a candidate only when the code implements the discussed solution — discussed **and** agreed **and** present in the diff/tree.
+- **Exclude** anything discussed-but-not-implemented (rejected alternatives, deferred ideas, hypotheticals). Keep these in a short `{excluded_context}` list so the exclusion stays transparent in the final summary (5.3) — never silently drop them, and never document them.
+
+Store the surviving, code-confirmed items as `{session_context}` — concise bullets, each paired with the file or commit that confirms it. If nothing is both discussed and confirmed, set `{session_context}` empty and continue; the skill still works from git history alone.
+
+#### 1.6 Create Work Directory
 
 Anchor the work directory to the configured artifact location (`resolve_artifact` falls back to `.claude/work` when no configuration exists) so state resolves to the workspace root even under worktrees or custom storage.
 
@@ -174,6 +223,7 @@ Task(
 
 Scope: {scope}
 Recent git changes: {git_context}
+Code-confirmed session decisions: {session_context}
 
 Discover and catalog:
 1. All .md files with their purpose and last-modified date
@@ -182,6 +232,7 @@ Discover and catalog:
 4. Map each doc to the source code it describes
 5. Identify recently changed code without corresponding doc updates
 6. Detect documentation drift (docs describing behavior code no longer implements)
+7. For each code-confirmed session decision above, locate the doc that should explain it (the decision supplies the *why*/intent the diff alone cannot); flag it as a gap if no doc covers it
 
 Save output to {work_dir}/context/discovery.json as structured JSON with:
 {
@@ -240,6 +291,7 @@ Task(
 Read the discovery inventory: {work_dir}/context/discovery.json
 Update trigger: {trigger}
 Scope: {scope}
+Code-confirmed session decisions: {session_context}
 
 Tasks:
 1. Categorize each finding: Outdated / Missing / Inaccurate / Drift / Style-only
@@ -411,6 +463,9 @@ Created Files:
 
 Skipped (out of scope):
   - {skipped items if any}
+
+Excluded (discussed this session but not implemented — not documented):
+  - {excluded_context items if any}
 
 Review changes: git diff
 Commit changes: /commit

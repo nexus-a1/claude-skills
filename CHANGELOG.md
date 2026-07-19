@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.17.0] - 2026-07-19
+
+## What's Changed
+
+1 commit since v1.16.8 (1 feat). No breaking changes. A minor release that makes `/update-documentation` session-aware, so doc updates can reflect decisions discussed during a session — gated by whether the code actually implements them.
+
+### Features
+
+- **skills**: make `/update-documentation` Phase 1 session-aware (#245) — a new step 1.5 folds solutions discussed and agreed during the session into the doc-update scope, sourced from the current conversation and, on a `feature/<ticket>` branch, from that ticket's `state.json` `updates[]` (the notes `/update-context` persists). Every candidate passes a mandatory **code-confirmation gate**: it is documented only when the diff/working tree actually implements it. Discussed-but-not-implemented items (rejected, deferred, hypothetical) are surfaced in the summary and never documented — the code stays the arbiter. The 1.5 block is self-contained (resolves `WORK_BASE` inline) and validates the branch-derived ticket id before path use.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.16.8...v1.17.0
+
 ## [1.16.8] - 2026-07-14
 
 ## What's Changed
