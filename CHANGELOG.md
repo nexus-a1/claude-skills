@@ -1,5 +1,52 @@
 # Changelog
 
+## [1.18.0] - 2026-07-26
+
+## What's Changed
+
+5 commits: 1 feat, 3 chore, 1 docs. No breaking changes.
+
+This release adds the `/meeting` skill and completes the model-tier move to Opus 5.
+
+### Features
+
+- **skills**: add `/meeting`, a live meeting-capture pipeline — SKILLS-000 (#248)
+
+  Capture notes as a meeting happens while background probes ground each topic against the Product Knowledge Base and the live codebase, surfacing findings inline without stalling capture. On wrap it emits two distinct documents — a shareable summary and a technical changes/risks doc — as Markdown plus printable HTML under `$WORK_DIR/meetings/{slug}/`. Supports live, one-shot (`--file`/`--dir`), `--resume`, `--wrap`, and `--lite` modes.
+
+  Ships two new shared components:
+  - `shared/meeting-schema.md` — the meeting record and document schema
+  - `shared/render-doc-html.sh` — zero-dependency Markdown/HTML → self-contained printable HTML. Uses pandoc when present, otherwise falls back to a caller-authored HTML body, so no pandoc/LaTeX/headless-browser install is assumed.
+
+### Other Changes
+
+- **models**: bump Opus 4.8 → Opus 5 across skills and agents — SKILLS-068 (#250)
+
+  Repins the 9 components that were on the superseded `claude-opus-4-8`: agents `business-analyst`, `code-reviewer`, `quality-guard`, `security-auditor`, and skills `brainstorm`, `create-proposal`, `create-requirements`, `implement`, `troubleshoot`.
+
+- **models**: pin `/meeting` to `claude-opus-5` — SKILLS-068 (#252)
+
+  `/meeting` shipped in #248 carrying the bare alias `model: opus`, which matched neither the #250 sweep nor the A3 validator glob. Every shipped skill and agent now uses a pinned model ID.
+
+- **todo**: track deferred model-version drift prevention — SKILLS-068 (#251)
+
+  Records the drift-prevention work deferred out of #250: a model catalog as single source of truth, validator hardening to fail on superseded IDs, CI trigger coverage for `.claude/**` and `docs/**`, and generated tier tables with a drift check.
+
+- **todo**: file the `/work-status` `updates[]` lock race — SKILLS-000 (#249)
+
+  `/work-status --update` writes `state.json` without the `flock` guard `/update-context` uses, so a concurrent `auto-context.sh` hook write can drop an `updates[]` entry. Narrow window; filed as correctness hygiene.
+
+### Documentation
+
+- New workflow guide at `docs/workflows/meetings/README.md`; `/meeting` added to `docs/skills.md` and the workflows index.
+- Skill count updated 31 → 32 across `README.md`, `CLAUDE.md`, and `docs/installation.md`.
+
+### Validation
+
+`scripts/validate.sh` — 302 passed, 0 failed. No new warnings.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.17.0...v1.18.0
+
 ## [1.17.0] - 2026-07-19
 
 ## What's Changed

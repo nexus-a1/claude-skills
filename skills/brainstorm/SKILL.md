@@ -1,7 +1,7 @@
 ---
 name: brainstorm
 category: planning
-model: claude-opus-4-8
+model: claude-opus-5
 userInvocable: true
 description: Explore implementation strategies for business requirements. Interactive brainstorming that presents multiple approaches, trade-offs, and creates high-level implementation picture before committing to detailed specs.
 argument-hint: "[--light] [feature-description] | promote <slug> [ticket-id]"

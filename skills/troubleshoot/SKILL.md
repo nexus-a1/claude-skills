@@ -1,7 +1,7 @@
 ---
 name: troubleshoot
 category: implementation
-model: claude-opus-4-8
+model: claude-opus-5
 userInvocable: true
 description: Systematically troubleshoot a failing feature or error. Discovers code, investigates root cause, applies fix, verifies with tests, and commits. Use when something isn't working as expected. Runs in the current working tree by default — set `worktree.enabled: true` in `.claude/configuration.yml` to isolate work in a git worktree.
 argument-hint: <error-or-description>
