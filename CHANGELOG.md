@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.18.1] - 2026-07-26
+
+## What's Changed
+
+2 commits: 1 feat, 1 docs. No breaking changes.
+
+**No user-facing changes.** Nothing under `plugin/` was modified, so the installed plugin is identical to v1.18.0. This release tags maintainer tooling that prevents a class of bug from reaching future releases. Installers can skip it.
+
+### Repository Tooling
+
+- **validators**: enforce pinned model IDs via a model catalog — SKILLS-068 (#253)
+
+  Model assignments had drifted twice without CI noticing. SKILLS-060 left 9 components on `claude-opus-4-8` after Opus 5 shipped (fixed by hand in #250), and `/meeting` shipped in v1.18.0 on the bare alias `model: opus`, caught only by a manual pre-release read (#252). Both slipped through because the A3/B5 validators asked *"does this look like a model field?"* rather than *"is this the model we intend to ship?"* — the `claude-opus-*` glob matches every Opus ever released, and bare aliases were whitelisted outright.
+
+  `scripts/model-catalog.sh` is now the single source of truth. Both validators source it and accept only current IDs; superseded, retired, policy-excluded, alias, and unknown values each fail with a distinct actionable message. Moving an ID from `CURRENT` to `SUPERSEDED` turns CI red on every component still declaring it, and that failure list is the maintainer's work queue.
+
+  `validate.yml` now also triggers on `scripts/model-catalog.sh` — without it, editing the catalog (the forcing action itself) would not have fired CI.
+
+- **docs**: document `/work-feedback` and `/work-issue`, fix project-local counts — SKILLS-068 (#254)
+
+  Both skills existed on disk, fully formed and user-invocable, but appeared in no documentation. `README.md` claimed 3 project-local skills, `CLAUDE.md` claimed 4, and 6 exist. All three sources now agree with the filesystem.
+
+### Decisions
+
+- **[ADR-011](https://github.com/nexus-a1/claude/blob/v1.18.1/docs/decisions/011-model-version-bump-policy.md)** — pinned model IDs enforced by a validator-sourced catalog.
+
+  Records why component frontmatter must pin an exact ID rather than an alias (an alias silently re-points for already-installed users, outside the release cycle), why `claude-fable-5`/`claude-mythos-5` are excluded by policy (they require 30-day data retention and return 400 for Zero-Data-Retention orgs, and frontmatter ships one static string to everyone), and why project-local skills under `.claude/skills/` are exempt by decision rather than omission.
+
+  Scope-limited: it governs *which ID* a component may declare, not *which tier* it belongs in. The tier rubric remains open work.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.18.0...v1.18.1
+
 ## [1.18.0] - 2026-07-26
 
 ## What's Changed
