@@ -3,7 +3,7 @@ name: meeting
 category: planning
 model: claude-opus-5
 userInvocable: true
-description: Live meeting companion — capture notes as the meeting happens while background probes ground each topic against the Product Knowledge Base and the live codebase, surfacing relevant findings inline without stalling capture. On wrap it emits two distinct professional documents (a shareable summary and a technical changes/risks doc) as Markdown + printable HTML, stored under $WORK_DIR/meetings/{slug}/. Use at the START of a meeting; also has a one-shot mode for after-the-fact notes.
+description: Live meeting companion — capture notes as the meeting happens while background probes ground each topic against the Product Knowledge Base and the live codebase, surfacing relevant findings inline without stalling capture. On wrap it emits two distinct professional documents (a shareable summary and a technical changes/risks doc) as Markdown + printable HTML, stored under $MEETINGS_DIR/{slug}/. Use at the START of a meeting; also has a one-shot mode for after-the-fact notes.
 argument-hint: "[--file <path>] [--dir <path>] [--resume [slug]] [--wrap [slug]] [--lite] [topic]"
 allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(pwd:*), Bash(mkdir:*), Bash(bash:*), Bash(date:*), Bash(jq:*), Bash(cat:*), Bash(mv:*), Bash(mktemp:*), Bash(git branch:*), Bash(git rev-parse:*), Task, AskUserQuestion"
 ---
@@ -65,14 +65,49 @@ else
   echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
   exit 1
 fi
+MEETINGS_DIR=$(resolve_artifact meetings meetings)
+
+# Back-compat: meetings used to be nested under the work artifact
+# ($WORK_DIR/meetings). Records written before that fix still live there, so
+# lookups fall back to the legacy path. Writes ALWAYS go to $MEETINGS_DIR.
 WORK_DIR=$(resolve_artifact work work)
-MEETINGS_DIR="$WORK_DIR/meetings"
+LEGACY_MEETINGS_DIR="$WORK_DIR/meetings"
+[ "$LEGACY_MEETINGS_DIR" = "$MEETINGS_DIR" ] && LEGACY_MEETINGS_DIR=""
+
 echo "MEETINGS_DIR=$MEETINGS_DIR"
+[ -n "$LEGACY_MEETINGS_DIR" ] && [ -d "$LEGACY_MEETINGS_DIR" ] && \
+  echo "LEGACY_MEETINGS_DIR=$LEGACY_MEETINGS_DIR (read-only fallback)"
 ```
 
-Every meeting lives in `$MEETINGS_DIR/{slug}/` (a dedicated `meetings/` root so
-records are easy to search). `WORK_DIR` resolves from `.claude/configuration.yml`
-(default `.claude/work`).
+Every meeting lives in `$MEETINGS_DIR/{slug}/`. `MEETINGS_DIR` resolves from
+`.claude/configuration.yml` as a first-class artifact type (default
+`.claude/meetings`) — a sibling of `work/`, not a child of it. Meetings are
+finished documents rather than resumable work sessions, so they do not belong in
+the work session store.
+
+**Reading an existing meeting** (resume, `--wrap`, listing): search
+`$MEETINGS_DIR` first, then `$LEGACY_MEETINGS_DIR` when it is set and exists.
+
+Whenever a mode resolves an *existing* meeting, **rebind `MDIR` to the directory
+it was actually found in** — not unconditionally to `$MEETINGS_DIR`:
+
+```bash
+# Resolve {slug} to the directory that holds it.
+if [ -f "$MEETINGS_DIR/{slug}/state.json" ]; then
+  MDIR="$MEETINGS_DIR/{slug}"
+elif [ -n "$LEGACY_MEETINGS_DIR" ] && [ -f "$LEGACY_MEETINGS_DIR/{slug}/state.json" ]; then
+  MDIR="$LEGACY_MEETINGS_DIR/{slug}"   # pre-migration meeting: continue in place
+else
+  echo "ERROR: meeting '{slug}' not found in $MEETINGS_DIR or $LEGACY_MEETINGS_DIR" >&2
+  exit 1
+fi
+echo "MDIR=$MDIR"
+```
+
+A pre-migration meeting is resumed, wrapped, and has its documents written **in
+place** in the legacy directory. Never half-write a meeting across two locations:
+reading the record from one and emitting `summary.md` to the other would split it.
+Only a *new* meeting (Step L1) creates its directory under `$MEETINGS_DIR`.
 
 ---
 
@@ -197,7 +232,11 @@ Same untrusted-input discipline as Step L1 applies to file/dir content.
 
 Triggered by `wrap up` (live) or `--wrap [slug]`. If the slug isn't obvious from
 context, resolve it from the open `state.json` (`status == "in-progress"`) under
-`$MEETINGS_DIR`; if more than one is open, ask which.
+`$MEETINGS_DIR`, then `$LEGACY_MEETINGS_DIR` if set; if more than one is open,
+ask which. Then **rebind `MDIR`** using the resolution block in *Configuration &
+output location* — every Wrap step below reads and writes `$MDIR`, so a
+pre-migration meeting wrapped without rebinding would write its summary to an
+empty new-location directory.
 
 **Step W1 — Reconcile.** Merge captured decisions with `state.json.findings[]`.
 Apply the grounding convention from `$SCHEMA`: only `[Fact]` items become
@@ -233,7 +272,9 @@ Then export HTML (Section 5).
 ## 4. Resume mode (`--resume [slug]`)
 
 Re-open a meeting whose session dropped. Resolve the slug (from the arg, or the
-single `in-progress` meeting under `$MEETINGS_DIR`; if several, list them and
+single `in-progress` meeting under `$MEETINGS_DIR`, then `$LEGACY_MEETINGS_DIR`
+if set — then **rebind `MDIR`** via the resolution block in *Configuration &
+output location*; if several, list them and
 ask). A slug taken from a raw `--resume`/`--wrap` argument is untrusted input and
 flows into a filesystem path, so **re-apply the Step L1 guard before using it**:
 
@@ -314,9 +355,9 @@ Only invoke another skill on explicit confirmation.
 
 ```
 ✓ Meeting wrapped — {slug}
-  record:  $MEETINGS_DIR/{slug}/meeting-record.md
-  summary: $MEETINGS_DIR/{slug}/summary.md  + summary.html   (open → Ctrl/Cmd-P → Save as PDF)
-  changes: $MEETINGS_DIR/{slug}/changes.md  + changes.html   (omitted with --lite)
+  record:  $MDIR/meeting-record.md
+  summary: $MDIR/summary.md  + summary.html   (open → Ctrl/Cmd-P → Save as PDF)
+  changes: $MDIR/changes.md  + changes.html   (omitted with --lite)
 
 Decisions captured: {n}
 Action items:       {n}  ({m} without an owner — flagged)

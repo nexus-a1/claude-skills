@@ -41,7 +41,8 @@ Read `.claude/configuration.yml` for project-specific paths. If the file doesn't
 
 | Config Key | Default | Purpose |
 |-----------|---------|---------|
-| `storage.artifacts.work` | `location: local, subdir: work` | Work sessions |
+| `storage.artifacts.brainstorms` | `location: local, subdir: brainstorm` | Brainstorm sessions |
+| `storage.artifacts.work` | `location: local, subdir: work` | Session registry (`.active-sessions`) only |
 
 ```bash
 # Source resolve-config: marketplace installs get ${CLAUDE_PLUGIN_ROOT} substituted
@@ -55,12 +56,41 @@ else
   echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
   exit 1
 fi
+BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
+
+# The cross-skill session registry (.active-sessions) is shared with /implement,
+# /create-requirements and friends, so it stays under the work artifact. Only
+# brainstorm *content* lives in $BRAINSTORM_DIR.
 WORK_DIR=$(resolve_artifact work work)
+
+# Back-compat: brainstorm sessions used to be written into $WORK_DIR/{slug}.
+# Sessions created before that fix still live there, so lookups fall back.
+# Writes go to $BRAINSTORM_ROOT (below) — which is $BRAINSTORM_DIR for a new
+# session and the legacy directory for a resumed pre-migration one.
+LEGACY_BRAINSTORM_DIR="$WORK_DIR"
+[ "$LEGACY_BRAINSTORM_DIR" = "$BRAINSTORM_DIR" ] && LEGACY_BRAINSTORM_DIR=""
+
+# BRAINSTORM_ROOT is the directory this run reads and writes. It defaults to the
+# new artifact (correct for every new session) and is REBOUND to the legacy
+# directory when Phase 0 or promote resolves a pre-migration session. Every
+# per-session path below uses $BRAINSTORM_ROOT/{slug}/... — writing some files
+# via $BRAINSTORM_DIR while state.json lives in the legacy directory would split
+# one session across two locations.
+BRAINSTORM_ROOT="$BRAINSTORM_DIR"
+echo "BRAINSTORM_DIR=$BRAINSTORM_DIR"
 ```
 
-Use `$WORK_DIR` instead of hardcoded `.claude/work` throughout this workflow.
+Use `$BRAINSTORM_DIR` instead of hardcoded `.claude/brainstorm` throughout this workflow.
 
-**Important:** All path references in this skill MUST use `$WORK_DIR`. Never use hardcoded `.claude/work/` paths.
+**Important:** All brainstorm content paths in this skill MUST use
+`$BRAINSTORM_DIR`. The only permitted `$WORK_DIR` uses are the
+`.active-sessions` registry and the legacy read fallback. Never use hardcoded
+paths.
+
+**Reading an existing session** (resume, promote, active-session listing): look
+under `$BRAINSTORM_DIR` first, then `$LEGACY_BRAINSTORM_DIR/{slug}/state.json`
+when it is set and the state has `"type": "brainstorm"`. A session found only in
+the legacy location is read and updated in place; do not move it silently.
 
 ---
 
@@ -73,11 +103,19 @@ If `$ARGUMENTS` begins with `promote`, handle the promote flow instead of normal
 **Behavior:**
 
 1. Parse `$ARGUMENTS`: extract `{slug}` (word after "promote") and optional `{ticket-id}` (next word).
-2. Verify `$WORK_DIR/{slug}/state.json` exists. If not found, output error and stop:
+2. Locate the session. Check `$BRAINSTORM_DIR/{slug}/state.json` first; if
+   absent and `$LEGACY_BRAINSTORM_DIR` is set, check
+   `$LEGACY_BRAINSTORM_DIR/{slug}/state.json` and require
+   `"type": "brainstorm"` there (the legacy directory also holds non-brainstorm
+   work sessions, so the type check is what disambiguates). Bind
+   `BRAINSTORM_ROOT` to whichever matched and use it for every read and write in
+   steps 3-6 — a legacy session is promoted in place, not moved.
+
+   If neither location has it, output error and stop:
    ```
    Error: Brainstorm session not found: {slug}
    Available sessions:
-   {list from manifest.json or $WORK_DIR/ dirs}
+   {list from both manifests, or $BRAINSTORM_DIR/ and $LEGACY_BRAINSTORM_DIR/ dirs}
    ```
 3. Read `state.json`. Warn if `"status"` is already `"promoted"`:
    ```
@@ -96,7 +134,7 @@ If `$ARGUMENTS` begins with `promote`, handle the promote flow instead of normal
    validation failure downstream). `/create-requirements` Stage 1.1 will prompt
    for the ticket itself when none was pre-filled.
 
-5. **Update brainstorm state** (`$WORK_DIR/{slug}/state.json`):
+5. **Update brainstorm state** (`$BRAINSTORM_ROOT/{slug}/state.json`):
    ```json
    {
      "status": "promoted",
@@ -108,7 +146,10 @@ If `$ARGUMENTS` begins with `promote`, handle the promote flow instead of normal
    `/create-requirements` Stage 1.3b overwrites `promoted_to` with the final
    identifier once one is assigned, so a `null` here is only transient.
 
-6. **Update manifest** (`$WORK_DIR/manifest.json`) — find the entry where `identifier == {slug}`, update `status` to `"promoted"` and add `promoted_to`.
+6. **Update manifest** (`$BRAINSTORM_ROOT/manifest.json`) — match on
+   `.slug == {slug}` for a new-style manifest or `.identifier == {slug}` for a
+   legacy work manifest, then set `status` to `"promoted"` and add
+   `promoted_to`.
 
 7. Announce:
    ```
@@ -159,9 +200,16 @@ This reduces cost for exploratory brainstorming where deep reasoning is less cri
 Before starting, check whether an active brainstorm session already exists for this topic.
 
 ```bash
-# Check manifest for active brainstorm sessions
-if [[ -f "${WORK_DIR}/manifest.json" ]]; then
-  jq -r '.items[] | select(.type == "brainstorm" and .status != "completed") | "\(.identifier)\t\(.title)\t\(.current_phase)\t\(.updated_at)"' "${WORK_DIR}/manifest.json"
+# Brainstorms manifest: slug-keyed, no `type` field (every item is a brainstorm).
+# "promoted" is terminal — the work continues under the requirements session.
+if [[ -f "${BRAINSTORM_DIR}/manifest.json" ]]; then
+  jq -r '.items[] | select(.status != "completed" and .status != "promoted") | "\(.slug)\t\(.title)\t\(.current_phase)\t\(.updated_at)"' "${BRAINSTORM_DIR}/manifest.json"
+fi
+
+# Legacy sessions are still indexed in the work manifest, where they DO carry
+# `type` and are keyed by `identifier`.
+if [[ -n "$LEGACY_BRAINSTORM_DIR" && -f "${LEGACY_BRAINSTORM_DIR}/manifest.json" ]]; then
+  jq -r '.items[] | select(.type == "brainstorm" and .status != "completed" and .status != "promoted") | "\(.identifier)\t\(.title)\t\(.current_phase)\t\(.updated_at)"' "${LEGACY_BRAINSTORM_DIR}/manifest.json"
 fi
 ```
 
@@ -169,13 +217,19 @@ fi
 Check whether any session identifier or title fuzzy-matches `$ARGUMENTS`. If a match is found, present it:
 
 ```
-Found active brainstorm: {title} ({identifier})
+Found active brainstorm: {title} ({slug})
 Status: {current_phase} — last updated {updated_at}
 
 Resume this session? [y] Yes  [n] No, start fresh  [s] Show status
 ```
 
-Use AskUserQuestion. On **yes**: load state from `$WORK_DIR/{identifier}/state.json` and resume from the last incomplete phase. On **show status**: display phase completion table, then ask again. On **no**: continue to Phase 1.
+Use AskUserQuestion. On **yes**: rebind `BRAINSTORM_ROOT` to the directory the
+session was listed from — `$BRAINSTORM_DIR` for a new-style entry,
+`$LEGACY_BRAINSTORM_DIR` for one surfaced by the legacy query above — then load
+state from `$BRAINSTORM_ROOT/{slug}/state.json` and resume from the last
+incomplete phase. A legacy session is resumed and updated in place. On **show
+status**: display phase completion table, then ask again. On **no**: continue to
+Phase 1.
 
 **If no argument and active sessions exist:** Skip this check — Phase 1 will ask for the feature description and can detect duplicates at that point.
 
@@ -236,12 +290,12 @@ Questions:
 #### 1.3 Create Work Directory and State File
 
 ```bash
-mkdir -p $WORK_DIR/{slug}/context
+mkdir -p $BRAINSTORM_ROOT/{slug}/context
 ```
 
 Where `{slug}` is kebab-case version of feature (e.g., "user-data-export").
 
-Initialize state file `$WORK_DIR/{slug}/state.json`:
+Initialize state file `$BRAINSTORM_ROOT/{slug}/state.json`:
 
 ```json
 {
@@ -278,7 +332,7 @@ Register active session for the optional `auto-context.sh` PostToolUse hook (no-
 ```bash
 SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
 if [ -n "$SID" ] && command -v jq >/dev/null 2>&1; then
-  mkdir -p "$WORK_DIR"
+  mkdir -p "$BRAINSTORM_ROOT" "$WORK_DIR"
   touch "$WORK_DIR/.active-sessions.lock"
   (
     flock -x -w 2 200 || exit 0
@@ -302,13 +356,13 @@ fi
 
 Use Task tool with `subagent_type: "Explore"`. Read `references/agent-prompts.md` (Phase 2.1 section) for the prompt template.
 
-Save output to `$WORK_DIR/{slug}/context/exploration.md`. Update state: `phases.exploration = completed`.
+Save output to `$BRAINSTORM_ROOT/{slug}/context/exploration.md`. Update state: `phases.exploration = completed`.
 
 #### 2.2 Understand Business Requirements
 
 Use Task tool with `subagent_type: "business-analyst"`. Read `references/agent-prompts.md` (Phase 2.2 section) for the prompt template.
 
-Save output to `$WORK_DIR/{slug}/context/business-context.md`. Update state: `phases.exploration = completed` (covers both exploration agents).
+Save output to `$BRAINSTORM_ROOT/{slug}/context/business-context.md`. Update state: `phases.exploration = completed` (covers both exploration agents).
 
 **Before launching parallel agents, define non-overlapping scopes.** Each agent should own one domain of knowledge with no shared territory. Split by system/component boundary, not by feature keyword. Example:
 - Agent 1 (Explore): "How does {system A} work — services, commands, flags, data flow"
@@ -328,7 +382,7 @@ Do NOT include supporting context from one agent's domain in the other's prompt.
 
 Use Task tool with `subagent_type: "Plan"`. Read `references/agent-prompts.md` (Phase 3.1 section) for the prompt template, including the architectural-distinction and trade-off rules.
 
-Save output to `$WORK_DIR/{slug}/context/approaches.md`. Update state: `phases.approaches = in_progress`.
+Save output to `$BRAINSTORM_ROOT/{slug}/context/approaches.md`. Update state: `phases.approaches = in_progress`.
 
 #### 3.1b Validate Architecture Context
 
@@ -356,7 +410,7 @@ Provide:
 - A feasibility checklist for evaluating approaches
 ```
 
-Save output to `$WORK_DIR/{slug}/context/architecture-validation.md`.
+Save output to `$BRAINSTORM_ROOT/{slug}/context/architecture-validation.md`.
 
 **IMPORTANT: Wait for both 3.1 (Plan agent) and 3.1b (architect) to complete before proceeding.** After both complete: Annotate each approach from 3.1 with architect constraints from 3.1b. Flag any approach that violates identified constraints. Add feasibility rating: Recommended / Feasible / Risky / Not Recommended.
 
@@ -392,7 +446,7 @@ Update state with selected approach: `"selected_approach": "{approach_name}", "p
 
 Based on user selection, use Task tool with `subagent_type: "Plan"`. Read `references/agent-prompts.md` (Phase 4.1 section) for the refinement prompt covering component breakdown, data flow, database changes, API design, security, and testing strategy.
 
-Save to `$WORK_DIR/{slug}/implementation-picture.md`. Update state: `phases.refinement = completed`.
+Save to `$BRAINSTORM_ROOT/{slug}/implementation-picture.md`. Update state: `phases.refinement = completed`.
 
 #### 4.2 Validate Architecture
 
@@ -435,7 +489,7 @@ Use Task tool with `subagent_type: "quality-guard"`. Read `references/agent-prom
   1. Return to Phase 3 to select/refine a different approach
   2. Override and proceed (user accepts the risk)
 
-Save quality-guard output to `$WORK_DIR/{slug}/context/quality-guard.md`. Update state: `phases.quality_guard = completed`.
+Save quality-guard output to `$BRAINSTORM_ROOT/{slug}/context/quality-guard.md`. Update state: `phases.quality_guard = completed`.
 
 ---
 
@@ -491,7 +545,7 @@ Based on the implementation picture, create logical work items:
 {Additional work items...}
 ```
 
-Save to `$WORK_DIR/{slug}/work-breakdown.md`. Update state: `phases.work_breakdown = completed`.
+Save to `$BRAINSTORM_ROOT/{slug}/work-breakdown.md`. Update state: `phases.work_breakdown = completed`.
 
 #### 5.2 Create Visual Summary
 
@@ -532,7 +586,7 @@ Estimated Effort: {X} days/weeks
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Files Created:
 
-$WORK_DIR/{slug}/
+$BRAINSTORM_ROOT/{slug}/
 ├── state.json
 ├── context/
 │   ├── exploration.md
@@ -561,29 +615,52 @@ Next Steps:
 
 After saving all brainstorm outputs, update the brainstorms manifest.
 
-**Read or initialize** `${WORK_DIR}/manifest.json` (see `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for the envelope/upsert contract):
+Update the manifest that **owns this session** — `$BRAINSTORM_ROOT`, not
+`$BRAINSTORM_DIR`. For a resumed pre-migration session those differ, and writing
+to the new artifact would leave the legacy entry permanently un-completed, so it
+would keep reappearing as resumable in Phase 0, `/resume-work` and
+`/work-status` (see `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for the
+envelope/upsert contract):
 
 ```bash
-MANIFEST="${WORK_DIR}/manifest.json"
-# Initialize if missing
+MANIFEST="${BRAINSTORM_ROOT}/manifest.json"
+# Initialize if missing. artifact_type follows the manifest being written:
+# "brainstorms" for $BRAINSTORM_DIR. A legacy $WORK_DIR manifest already exists
+# with artifact_type "work" — never rewrite that envelope.
 if [[ ! -f "$MANIFEST" ]]; then
-  # Create empty manifest with artifact_type: "work"
+  # Create empty manifest with artifact_type: "brainstorms"
 fi
 ```
 
-**Upsert item** using `identifier` (the slug) as unique key:
+**Upsert item.** The two manifests use different key shapes, so match on either
+and *keep the shape the existing entry already has* — converting a legacy work
+entry to the brainstorms schema would orphan it from `/resume-work`'s
+identifier-keyed work scan:
+
+- **`$BRAINSTORM_DIR` (normal):** brainstorms schema below, unique key `slug`.
+- **`$WORK_DIR` (resumed legacy session):** the entry is already there under
+  `identifier` with `type: "brainstorm"`. Update `status`, `current_phase` and
+  `updated_at` on that entry in place. Do **not** insert a second, slug-keyed
+  entry beside it.
+
+Match with `select(.slug == $id or .identifier == $id)`, the same dual-key form
+the Promote flow uses.
+
+Brainstorms schema (for `$BRAINSTORM_DIR`) — *not* the work schema; brainstorms
+carry both catalog fields and session fields because a brainstorm is resumable
+until it is promoted:
 
 ```json
 {
-  "identifier": "{slug}",
+  "slug": "{slug}",
   "title": "{feature_description_summary}",
-  "type": "brainstorm",
-  "status": "completed",
+  "status": "in_progress|completed|promoted",
   "created_at": "{ISO_TIMESTAMP}",
   "updated_at": "{ISO_TIMESTAMP}",
   "current_phase": "completed",
-  "progress": "Brainstorm complete",
-  "branch": null,
+  "selected_approach": "{chosen_approach_name}",
+  "alternatives_count": {n},
+  "promoted_to": null,
   "tags": [],
   "path": "{slug}/"
 }
@@ -597,7 +674,7 @@ Update `last_updated` and `total_items` in the envelope.
 
 Write a comprehensive summary document:
 
-**`$WORK_DIR/{slug}/brainstorm-summary.md`:**
+**`$BRAINSTORM_ROOT/{slug}/brainstorm-summary.md`:**
 
 ```markdown
 # Brainstorm Summary: {feature}
@@ -725,7 +802,7 @@ Read `references/error-handling.md` for error-scenario message templates (no fea
 ## Important Notes
 
 - **Non-committal** - Brainstorming doesn't create branches or modify code
-- **Lightweight** - Files saved to `$WORK_DIR/` for reference only
+- **Lightweight** - Files saved to `$BRAINSTORM_ROOT/` for reference only
 - **Flexible** - Can iterate multiple times before moving forward
 - **Educational** - Explains trade-offs to help decision-making
 - **Transition-ready** - Outputs can feed into next workflow stage

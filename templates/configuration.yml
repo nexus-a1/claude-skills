@@ -104,7 +104,10 @@ storage:
   #   proposals         — /create-proposal
   #   product-knowledge — product-expert agent
   #   brainstorms       — /brainstorm
-  #   work              — /create-requirements, /implement, /resume-work, /epic
+  #   meetings          — /meeting
+  #   work              — /create-requirements, /implement, /resume-work, /epic,
+  #                       /create-proposal, /brainstorm promote, and any skill
+  #                       that keeps a resumable session (16 components total)
   #   refactoring       — refactorer agent
   # ---------------------------------------------------------------------------
   artifacts:
@@ -112,6 +115,7 @@ storage:
     proposals:         { location: team-knowledge, subdir: proposals }
     product-knowledge: { location: team-knowledge, subdir: . }
     brainstorms:       { location: local, subdir: brainstorm }
+    meetings:          { location: local, subdir: meetings }
     work:              { location: local, subdir: work }
     refactoring:       { location: local, subdir: work/refactoring-sessions }
 
@@ -302,6 +306,7 @@ requirements:
 #       proposals:         { location: team-knowledge, subdir: proposals }
 #       product-knowledge: { location: team-knowledge, subdir: . }
 #       brainstorms:       { location: local, subdir: brainstorm }
+#       meetings:          { location: local, subdir: meetings }
 #       work:              { location: local, subdir: work }
 #       refactoring:       { location: local, subdir: work/refactoring-sessions }
 #   requirements:

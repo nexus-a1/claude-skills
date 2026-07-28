@@ -83,6 +83,7 @@ else
 fi
 WORK_DIR=$(resolve_artifact work work)
 REQUIREMENTS_DIR=$(resolve_artifact requirements requirements)
+BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
 EXEC_MODE=$(resolve_exec_mode requirements_deep_dive team)
 ```
 
@@ -268,27 +269,34 @@ Enter the brainstorm slug (e.g., "user-data-export"), or leave blank to skip.
 
 **If a slug is provided:**
 
-1. Check `$WORK_DIR/{brainstorm-slug}/state.json` exists and has `"type": "brainstorm"`.
-2. If not found, warn and continue without brainstorm context.
-3. If found, load available context files:
+1. Locate the brainstorm session. Check `$BRAINSTORM_DIR/{brainstorm-slug}/state.json`
+   first; if absent, fall back to the legacy location `$WORK_DIR/{brainstorm-slug}/state.json`
+   (where sessions lived before brainstorms became their own artifact). Either way
+   the state must have `"type": "brainstorm"`.
+2. If not found in either location, warn and continue without brainstorm context.
+3. If found, bind `BRAINSTORM_ROOT` to whichever directory matched, then load
+   available context files:
    ```bash
-   BRAINSTORM_CONTEXT_DIR="$WORK_DIR/{brainstorm-slug}/context"
-   BRAINSTORM_STATE="$WORK_DIR/{brainstorm-slug}/state.json"
+   # BRAINSTORM_ROOT is $BRAINSTORM_DIR normally, $WORK_DIR for a legacy session
+   BRAINSTORM_CONTEXT_DIR="$BRAINSTORM_ROOT/{brainstorm-slug}/context"
+   BRAINSTORM_STATE="$BRAINSTORM_ROOT/{brainstorm-slug}/state.json"
    ```
 4. Store as `{brainstorm_slug}` and `{has_brainstorm_context: true}`.
 5. **Write bidirectional link** — mark the brainstorm as promoted and link both directions:
    ```bash
-   # Update brainstorm state: mark promoted
+   # Update brainstorm state in place, wherever it was found
    jq --arg tid "{identifier}" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
      '.status = "promoted" | .promoted_to = $tid | .updated_at = $ts' \
-     "$WORK_DIR/{brainstorm-slug}/state.json" > /tmp/bs-tmp.json \
-     && mv /tmp/bs-tmp.json "$WORK_DIR/{brainstorm-slug}/state.json"
+     "$BRAINSTORM_ROOT/{brainstorm-slug}/state.json" > /tmp/bs-tmp.json \
+     && mv /tmp/bs-tmp.json "$BRAINSTORM_ROOT/{brainstorm-slug}/state.json"
 
-   # Update manifest entry for brainstorm (if manifest exists)
-   if [[ -f "$WORK_DIR/manifest.json" ]]; then
+   # Update the brainstorms manifest (keyed by slug, not identifier).
+   # A legacy session is indexed in the work manifest under `identifier`, so
+   # update whichever manifest actually holds the entry.
+   if [[ -f "$BRAINSTORM_ROOT/manifest.json" ]]; then
      jq --arg slug "{brainstorm-slug}" --arg tid "{identifier}" \
-       '(.items[] | select(.identifier == $slug)) |= (.status = "promoted" | .promoted_to = $tid)' \
-       "$WORK_DIR/manifest.json" > /tmp/mf-tmp.json && mv /tmp/mf-tmp.json "$WORK_DIR/manifest.json"
+       '(.items[] | select(.slug == $slug or .identifier == $slug)) |= (.status = "promoted" | .promoted_to = $tid)' \
+       "$BRAINSTORM_ROOT/manifest.json" > /tmp/mf-tmp.json && mv /tmp/mf-tmp.json "$BRAINSTORM_ROOT/manifest.json"
    fi
    ```
 6. Store `{promoted_from: "{brainstorm-slug}"}` — this will be written into the requirements state file at Stage 1.6.

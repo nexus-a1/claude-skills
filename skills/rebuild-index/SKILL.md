@@ -147,15 +147,34 @@ For `all`, run each artifact type sequentially (or report results for each). For
 
 1. Back up existing manifest
 2. Scan subdirectories of `$BRAINSTORM_DIR`
-3. For each subdirectory:
-   - `slug`: directory name
-   - `title`: extract from first heading in `brainstorm-summary.md` or `approaches.md`, or use slug
-   - `created_at`: earliest file modification time in directory
-   - `selected_approach`: extract from `brainstorm-summary.md` if exists
+3. For each subdirectory, prefer `state.json` as the source of truth for session
+   fields — a brainstorm is a resumable session, and a rebuild that drops its
+   status makes completed and promoted sessions look resumable again:
+   - `slug`: `state.json.slug`, else directory name
+   - `title`: `state.json.title`, else first heading in `brainstorm-summary.md`
+     or `approaches.md`, else slug
+   - `status`: `state.json.status`. **If `state.json` is missing or has no
+     status, derive it** — `promoted` when `promoted_to` is set,
+     `completed` when `brainstorm-summary.md` exists, otherwise `in_progress`.
+     Never emit a null status.
+   - `created_at`: `state.json.created_at`, else earliest file mtime
+   - `updated_at`: `state.json.updated_at`, else latest file mtime
+   - `current_phase`: last key in `state.json.phases` marked `completed`, else `unknown`
+   - `promoted_to`: `state.json.promoted_to`, else `null`
+   - `selected_approach`: `state.json.selected_approach`, else extract from
+     `brainstorm-summary.md` if it exists
    - `alternatives_count`: count approach sections in `approaches.md` if exists
-   - `tags`: empty array
+   - `tags`: preserve from the backed-up manifest entry if present, else empty array
+   - `path`: `"{slug}/"` (required by the schema)
 4. Build manifest with `artifact_type: "brainstorms"`
 5. Write to `${BRAINSTORM_DIR}/manifest.json`
+
+**Legacy sessions.** Brainstorms created before brainstorms became their own
+artifact still sit under `$WORK_DIR/{slug}/` and are indexed in the work
+manifest with `type: "brainstorm"`. `/rebuild-index brainstorms` scans
+`$BRAINSTORM_DIR` only — it does not migrate them, and `/rebuild-index work`
+will keep re-indexing them where they are. That is intentional: rebuilds
+reindex, they never move data.
 
 ---
 

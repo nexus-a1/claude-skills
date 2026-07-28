@@ -239,6 +239,7 @@ storage:
     proposals:         { location: team-knowledge, subdir: proposals }
     product-knowledge: { location: team-knowledge, subdir: . }
     brainstorms:       { location: local, subdir: brainstorm }
+    meetings:          { location: local, subdir: meetings }
     work:              { location: local, subdir: work }
     refactoring:       { location: local, subdir: work/refactoring-sessions }
 
@@ -297,6 +298,7 @@ All skills that use multiple agents support configurable execution mode (`"subag
 |----------|-----------------|----------------|---------|
 | `work` | `local` | `work` | `/create-requirements`, `/implement`, `/resume-work`, `/epic`, `/create-proposal` |
 | `brainstorms` | `local` | `brainstorm` | `/brainstorm` |
+| `meetings` | `local` | `meetings` | `/meeting` |
 | `refactoring` | `local` | `work/refactoring-sessions` | `refactorer` agent |
 | `proposals` | `local` | `proposals` | `/create-proposal` |
 | `requirements` | `local` | `requirements` | `/archive-requirements`, `/search-requirements`, `archivist` agent |

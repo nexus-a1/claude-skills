@@ -1,5 +1,58 @@
 # Changelog
 
+## [1.19.0] - 2026-07-28
+
+## What's Changed
+
+5 commits: 1 feat, 1 fix, 3 docs. No breaking changes.
+
+The headline change is that `meetings` and `brainstorms` are now first-class artifact types, resolved from `.claude/configuration.yml` like every other artifact instead of being written inside the work session store.
+
+### Upgrade notes
+
+**Where meetings and brainstorms are written has changed.** Artifacts are meant to be siblings under the storage location root (`locations[<name>].path` + `subdir`). Two skills did not honour that:
+
+| Artifact | Before | After |
+|---|---|---|
+| `meetings` | `<location>/work/meetings/` | `<location>/meetings/` |
+| `brainstorms` | `<location>/work/{slug}/` | `<location>/brainstorm/{slug}/` |
+
+**No configuration change is required.** The resolver falls back to `location: local` plus the default subdir, so both resolve correctly even when absent from an existing `configuration.yml`. A `meetings` key is now documented if you want to override it.
+
+**Existing records stay reachable.** Every reader falls back to the previous location, and a session or meeting found there is read, resumed, wrapped, and updated **in place** — nothing is moved automatically. If you prefer the new layout, move the directories yourself and run `/rebuild-index brainstorms`.
+
+### Features
+
+- **skills**: `/work-status --brief` — a narrative digest of active work sessions instead of the table view (#246)
+
+### Bug Fixes
+
+- **storage**: resolve `meetings` and `brainstorms` as first-class artifact types (#258) — SKILLS-069
+
+  `/meeting` hardcoded `$WORK_DIR/meetings`, and `/brainstorm` wrote sessions into `$WORK_DIR` while upserting them into the *work* manifest using the work schema. The `brainstorms` artifact key was therefore documented but never written by anything, and `/load-context` read a directory that was always empty.
+
+  Also fixed in the same change:
+  - The brainstorms manifest schema could not represent an in-flight session (it had no `status` or `current_phase`), which is why the work schema was used instead. It now carries session fields alongside the catalog fields.
+  - `/rebuild-index brainstorms` omitted `status` entirely. Because a null status satisfies both `!= "completed"` and `!= "promoted"` in jq, a rebuild made every brainstorm ever created reappear as resumable — including promoted ones.
+  - `/resume-work`, `/work-status`, `/load-context` and `/create-requirements --from-brainstorm` now read both the new and legacy locations, and write back to whichever one owns the session.
+
+### Other Changes
+
+- **claude-md**: sync the repository structure tree with the files on disk — `plugin/shared/` was missing 6 files, `docs/workflows/` the `meetings/` subdirectory, and `tests/` listed 4 of 12 entries (#256)
+- **todo**: split tier-assignment governance out of the SKILLS-068 drift-prevention item after an architect/quality-guard plan review, and record a live docs-vs-frontmatter drift instance (#255)
+- **todo**: extend the generated-tables item to cover the `CLAUDE.md` structure tree (#257)
+
+### Testing
+
+New `tests/storage/` suite (17 tests), wired into CI as a `storage-tests` job:
+
+- `01-artifact-resolution.test` — artifact path resolution across defaults, custom location paths, explicit subdir overrides, absolute second locations, and workspace anchoring from a subdirectory. Two tests assert the core invariant that artifacts resolve as **siblings, never nested**; verified to fail against the pre-fix behaviour rather than merely pass against the fix.
+- `02-manifest-filters.test` — the jq filters that decide which sessions are actionable, plus the producer contract they depend on (a status-less manifest defeats the filter entirely).
+
+CI test triggers now include `shared/resolve-config.sh`, `shared/manifest-schema.md`, and the six skills these paths flow through.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.18.1...v1.19.0
+
 ## [1.18.1] - 2026-07-26
 
 ## What's Changed

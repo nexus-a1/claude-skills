@@ -93,18 +93,32 @@ else
   [[ -d "${WORK_DIR}/${slug}" ]]
 fi
 
-# Brainstorms (stored in WORK_DIR since brainstorm writes to work dir):
-# Brainstorm sessions have type="brainstorm" in the work manifest.
-# Also check legacy BRAINSTORM_DIR for sessions created before this change.
-if [[ -f "${WORK_DIR}/manifest.json" ]]; then
-  jq -e ".items[] | select(.identifier == \"${slug}\" and .type == \"brainstorm\")" "${WORK_DIR}/manifest.json"
-elif [[ -d "${WORK_DIR}/${slug}" ]] && [[ -f "${WORK_DIR}/${slug}/state.json" ]]; then
-  echo "found"
-elif [[ -f "${BRAINSTORM_DIR}/manifest.json" ]]; then
-  jq -e ".items[] | select(.slug == \"${slug}\")" "${BRAINSTORM_DIR}/manifest.json"
-else
-  [[ -d "${BRAINSTORM_DIR}/${slug}" ]]
+# Brainstorms live in their own artifact ($BRAINSTORM_DIR), slug-keyed.
+# Sessions created before that fix are still indexed in the work manifest with
+# type="brainstorm".
+#
+# Gate each probe on MATCH FOUND, not on file existence. An elif chain keyed on
+# "does this manifest exist" would make the legacy branch unreachable as soon as
+# any new-style brainstorm exists, silently breaking lookup for pre-fix sessions.
+BS_ROOT=""
+# 1. Current location: manifest, then bare directory.
+if [[ -f "${BRAINSTORM_DIR}/manifest.json" ]] \
+   && jq -e ".items[] | select(.slug == \"${slug}\")" "${BRAINSTORM_DIR}/manifest.json" >/dev/null 2>&1; then
+  BS_ROOT="${BRAINSTORM_DIR}"
+elif [[ -f "${BRAINSTORM_DIR}/${slug}/state.json" ]]; then
+  BS_ROOT="${BRAINSTORM_DIR}"
 fi
+# 2. Legacy location — only if the current one produced no match.
+if [[ -z "$BS_ROOT" ]]; then
+  if [[ -f "${WORK_DIR}/manifest.json" ]] \
+     && jq -e ".items[] | select(.identifier == \"${slug}\" and .type == \"brainstorm\")" "${WORK_DIR}/manifest.json" >/dev/null 2>&1; then
+    BS_ROOT="${WORK_DIR}"
+  elif [[ -f "${WORK_DIR}/${slug}/state.json" ]] \
+       && jq -e 'select(.type == "brainstorm")' "${WORK_DIR}/${slug}/state.json" >/dev/null 2>&1; then
+    BS_ROOT="${WORK_DIR}"
+  fi
+fi
+# BS_ROOT is the directory holding the session, or empty if there is no brainstorm.
 
 # Proposals:
 if [[ -f "${PROPOSALS_DIR}/manifest.json" ]]; then
@@ -135,20 +149,25 @@ If `${WORK_DIR}/${slug}/` exists:
 - Summarize: identifier, current phase, status, last updated, key files
 - **If `state.json` has a non-empty `updates` array:** surface all entries as a **Session Updates** section (timestamp + note, newest last). Entries with `"auto": true` are from the `auto-context.sh` hook — prefix their display with `[auto]` to distinguish from manually recorded `/update-context` annotations.
 - **If `state.json` has `brainstorm.promoted_from`:** also load the linked brainstorm as prior art:
-  - Read `$WORK_DIR/{promoted_from}/state.json`
-  - Read `$WORK_DIR/{promoted_from}/context/approaches.md`, `context/exploration.md`, `implementation-picture.md` (if exist)
+  - Resolve the brainstorm's directory the same way Phase 1 resolves `$BS_ROOT`:
+    `$BRAINSTORM_DIR/{promoted_from}/` if it exists, else `$WORK_DIR/{promoted_from}/`
+  - Read `{resolved}/state.json`
+  - Read `{resolved}/context/approaches.md`, `context/exploration.md`, `implementation-picture.md` (if exist)
   - Surface as "Prior art: Brainstorm '{promoted_from}'" section in context output
 
 #### Brainstorms
-If `${WORK_DIR}/${slug}/` exists and contains `state.json`:
+Use `$BS_ROOT` from Phase 1 — it already resolved to whichever location holds the
+session (`$BRAINSTORM_DIR` normally, `$WORK_DIR` for a pre-migration one). Skip
+this section when `$BS_ROOT` is empty.
+
+If `${BS_ROOT}/${slug}/state.json` exists:
 - Read `state.json` for status, selected approach, phase completion
 - Read `context/approaches.md`, `context/exploration.md`, `context/architecture-validation.md` (if exist)
 - Read `implementation-picture.md`, `work-breakdown.md` (if exist)
 - Summarize: selected approach, alternatives considered, key decisions, completion status
 
-Legacy: If `${BRAINSTORM_DIR}/${slug}/` exists (pre-migration sessions):
-- Read all `.md` files in the directory
-- Summarize: selected approach, alternatives considered, key decisions
+If the directory exists but has no `state.json` (an incomplete or hand-made
+session), fall back to reading all `.md` files in it and summarize what is there.
 
 #### Proposals
 If `${PROPOSALS_DIR}/${slug}/` exists:

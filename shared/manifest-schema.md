@@ -54,15 +54,28 @@ Unique key: `identifier`. Required: `identifier`, `title`, `type`, `status`, `cr
 {
   "slug": "user-authentication",
   "title": "User Authentication Options",
+  "status": "in_progress|completed|promoted",
   "created_at": "2026-02-10T12:00:00Z",
+  "updated_at": "2026-02-10T14:30:00Z",
+  "current_phase": "approaches",
   "selected_approach": "JWT with refresh tokens",
   "alternatives_count": 3,
+  "promoted_to": "JIRA-123",
   "tags": [],
   "path": "user-authentication/"
 }
 ```
 
-Unique key: `slug`. Required: `slug`, `title`, `created_at`, `path`.
+Unique key: `slug`. Required: `slug`, `title`, `status`, `created_at`,
+`updated_at`, `path`.
+
+Brainstorms carry **both** catalog fields (`selected_approach`,
+`alternatives_count`) and session fields (`status`, `current_phase`,
+`updated_at`). A brainstorm is a resumable session until it is promoted, so
+`/resume-work` and `/work-status` read this manifest alongside the work
+manifest. `promoted_to` holds the requirements identifier once
+`/brainstorm promote` or `/create-requirements --from-brainstorm` has run;
+it is `null` beforehand.
 
 ### Proposals (`{PROPOSALS_DIR}/manifest.json`)
 

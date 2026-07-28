@@ -42,6 +42,7 @@ else
   exit 1
 fi
 WORK_DIR=$(resolve_artifact work work)
+BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
 ```
 
 Use `$WORK_DIR` instead of hardcoded `.claude/work` throughout this workflow.
@@ -93,20 +94,36 @@ esac
 
 **Scan for incomplete work (manifest-first):**
 
-Prefer reading `${WORK_DIR}/manifest.json` over directory scans. Fall back to `ls` + per-directory reads if manifest is missing.
+Prefer reading manifests over directory scans. Fall back to `ls` + per-directory reads if a manifest is missing.
+
+Resumable sessions live in **two** artifacts: `work` (requirements,
+implementation, proposal, epic) and `brainstorms`. Scan both. Brainstorm entries
+are keyed by `slug` rather than `identifier` and carry no `progress` field, so
+normalize them onto the same shape before presenting.
 
 ```bash
+# 1. Work sessions
 MANIFEST="${WORK_DIR}/manifest.json"
 if [[ -f "$MANIFEST" ]]; then
-  # Filter items where status != "completed"
-  # This gives identifiers, titles, types, statuses, and progress without reading individual state files
   jq -r '.items[] | select(.status != "completed") | "\(.identifier)\t\(.title)\t\(.type)\t\(.current_phase)\t\(.progress)\t\(.updated_at)"' "$MANIFEST"
 else
-  # Fallback: scan directories
   ls -1 "${WORK_DIR}/" 2>/dev/null
-  # For each directory, check state files
+fi
+
+# 2. Brainstorm sessions (own artifact; slug-keyed, no progress field).
+#    "promoted" is terminal here — the work continues under the requirements
+#    session that promoted it, so do not offer a promoted brainstorm to resume.
+BS_MANIFEST="${BRAINSTORM_DIR}/manifest.json"
+if [[ -f "$BS_MANIFEST" ]]; then
+  jq -r '.items[] | select(.status != "completed" and .status != "promoted") | "\(.slug)\t\(.title)\tbrainstorm\t\(.current_phase)\t-\t\(.updated_at)"' "$BS_MANIFEST"
+elif [[ "$BRAINSTORM_DIR" != "$WORK_DIR" ]]; then
+  ls -1 "${BRAINSTORM_DIR}/" 2>/dev/null
 fi
 ```
+
+Legacy brainstorms written before brainstorms became their own artifact still
+appear in the work manifest with `type: "brainstorm"`; the work scan above
+already surfaces them. Resolve such a session under `$WORK_DIR/{slug}/`.
 
 **Present options to user:**
 
