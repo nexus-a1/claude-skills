@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.20.0] - 2026-07-28
+
+## What's Changed
+
+3 commits: 1 feat, 1 refactor, 1 ci. No breaking changes.
+
+A new read-only Jira skill, plus two fixes to CI trustworthiness — a self-assessment that was reporting false criticals, and a test runner that silently skipped 16 test files.
+
+### Features
+
+- **jira**: add read-only `/jira` skill via the Atlassian CLI — SKILLS-070
+
+  Read a work item and its recent comments from the terminal. Strictly read-only; every result is labelled with the Jira site it came from. Requires `acli` installed and authenticated.
+
+  Write verbs are deliberately unimplemented: `acli` returns exit 0 even when a write fails completely, and its success-response shape has not been verified against a live instance, so a wrongly-reported success could mean a duplicate public comment or a ticket moved to the wrong state. The v2 design is specified and blocked on five observations recorded in `TODO.md`.
+
+### Changes
+
+- **healthcheck**: deterministic backstop for LLM-graded checks — SKILLS-071
+
+  The CI healthcheck graded all 22 of its checks by having a model read files by hand, with no mechanical verification and no requirement to cite evidence, yet any check could emit a critical. It reported a skill as absent from `CLAUDE.md` across three consecutive commits while a deterministic validator checked the same property and passed in the same run.
+
+  Split into two tiers: `scripts/validate.sh` is the only tier permitted to emit FAIL; judged checks are capped at WARN, must cite `file:line` plus the verbatim line, and a judged claim contradicting a deterministic PASS marks the run untrustworthy. Adds two new validator checks — `C6` (skill/agent listing across docs and `CLAUDE.md`) and `C7` (phantom agent references) — which mechanize the coverage the hallucinating check had no deterministic equivalent for.
+
+- **tests**: discover test suites instead of listing them — SKILLS-072
+
+  `tests.yml` registered suites by explicit allowlist, so a suite on disk but absent from the workflow produced no CI signal at all — it did not fail, it never ran, and nothing reported the omission. Three suites were in that state, including the tests for `credential-scan.sh` and `git-mutation-guard.sh`.
+
+  A `discover` job now enumerates `tests/*/` and feeds a matrix, so adding a suite means adding the directory. Test coverage in CI goes from 27 of 43 files to 43 of 43.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.19.0...v1.20.0
+
 ## [1.19.0] - 2026-07-28
 
 ## What's Changed
