@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.21.0] - 2026-07-30
+
+## What's Changed
+
+1 commit since v1.20.0: 1 feat, no breaking changes. This release makes the `/jira` work-item key optional, behind a mandatory confirmation gate.
+
+### Features
+
+- **jira**: make the work-item key optional, gated on explicit confirmation — SKILLS-073
+
+  Invoked bare, `/jira` now proposes a work-item key from four signals — the current branch, the active work session, recent commit subjects, and the conversation — and reads only what the user explicitly confirms. No flag skips confirmation, and neither does unanimous agreement between signals.
+
+  The typed-key path is unchanged, including for typos: inference fires only when `$ARGUMENTS` is empty, so `/jira PROJ-12X` still prints usage rather than guessing. `/jira` remains strictly read-only.
+
+  Adds `plugin/shared/jira/key-inference.sh` (self-collecting, so the skill needs only `AskUserQuestion` added to its grants) and 50 hermetic tests.
+
+  Supersedes the decision closed in SKILLS-070 (OQ-3 / AC-3.5). Of its two objections, the first is answered — nothing is silent, since confirmation is mandatory and shows the source text a key came from — and the second, that this re-adds an interactive tool grant removed on minimum-grant grounds, is accepted as a cost rather than refuted.
+
+### Other Changes
+
+- **ci**: fix D1, which had never actually run shellcheck — `shell-quality.sh` warns and skips without the tool, and `validate.yml` ran the validators without installing it.
+
+### Known Limitations
+
+- The confirmation gate is enforced by `SKILL.md` prose only. `invoke_claude()` in the test harness is a stub, so six acceptance criteria are graded by review rather than CI. This was declared in `spec.md` before implementation.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.20.0...v1.21.0
+
 ## [1.20.0] - 2026-07-28
 
 ## What's Changed
