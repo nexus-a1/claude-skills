@@ -31,6 +31,7 @@
 
 **Exceptions:**
 - `/brainstorm` is pre-ticket and uses slug-only directories (`$WORK_DIR/{slug}/`). On promotion (`/brainstorm promote`), the resulting requirements/proposal work uses the `{TICKET}-{slug}` form.
+- `/meeting` uses `{YYYY-MM-DD-HHMM}-{slug}` under `$MEETINGS_DIR`, not `$WORK_DIR`. Meetings are unticketed and recur, so the local-time prefix — not a ticket ID — provides ordering and makes a directory listing sort chronologically. Meetings recorded before this format shipped keep their bare `{slug}` directory names and are never renamed or migrated.
 - Epic ticket subdirectories follow `$WORK_DIR/{EPIC-TICKET}-{slug}/{TICKET}-{slug}/`.
 
 **Slug derivation:** summarize the feature description into 2–5 meaningful words (drop filler words like "add", "the", "a"), lowercase, join with `-`. Strip any characters outside `[a-z0-9-]`. When unsure between candidates, ask the user to confirm the slug before initializing the directory.

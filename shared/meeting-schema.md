@@ -1,7 +1,9 @@
 # Meeting Pipeline — Canonical Schemas
 
 The `/meeting` skill produces up to three artifacts per meeting, all under
-`$WORK_DIR/meetings/{slug}/`. This file is the **single source of truth** for
+`$MEETINGS_DIR/{YYYY-MM-DD-HHMM}-{slug}/` — or the legacy `$MEETINGS_DIR/{slug}/`
+for meetings recorded before that format shipped, which are never migrated.
+This file is the **single source of truth** for
 their structure, section order, and conventions. Do not invent a divergent
 layout per run.
 

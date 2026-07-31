@@ -3,7 +3,7 @@ name: meeting
 category: planning
 model: claude-opus-5
 userInvocable: true
-description: Live meeting companion — capture notes as the meeting happens while background probes ground each topic against the Product Knowledge Base and the live codebase, surfacing relevant findings inline without stalling capture. On wrap it emits two distinct professional documents (a shareable summary and a technical changes/risks doc) as Markdown + printable HTML, stored under $MEETINGS_DIR/{slug}/. Use at the START of a meeting; also has a one-shot mode for after-the-fact notes.
+description: Live meeting companion — capture notes as the meeting happens while background probes ground each topic against the Product Knowledge Base and the live codebase, surfacing relevant findings inline without stalling capture. On wrap it emits two distinct professional documents (a shareable summary and a technical changes/risks doc) as Markdown + printable HTML, stored under $MEETINGS_DIR/{YYYY-MM-DD-HHMM}-{slug}/ so records sort chronologically (pre-existing meetings under the legacy $MEETINGS_DIR/{slug}/ layout stay readable in place). Use at the START of a meeting; also has a one-shot mode for after-the-fact notes.
 argument-hint: "[--file <path>] [--dir <path>] [--resume [slug]] [--wrap [slug]] [--lite] [topic]"
 allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(pwd:*), Bash(mkdir:*), Bash(bash:*), Bash(date:*), Bash(jq:*), Bash(cat:*), Bash(mv:*), Bash(mktemp:*), Bash(git branch:*), Bash(git rev-parse:*), Task, AskUserQuestion"
 ---
@@ -67,6 +67,17 @@ else
 fi
 MEETINGS_DIR=$(resolve_artifact meetings meetings)
 
+# Meeting-directory resolution helpers (resolve_meeting_dir,
+# find_in_progress_meetings). Same two-tier lookup as resolve-config.sh above.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/meeting/resolve-meeting-dir.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/meeting/resolve-meeting-dir.sh"
+elif [ -f "$HOME/.claude/shared/meeting/resolve-meeting-dir.sh" ]; then
+  source "$HOME/.claude/shared/meeting/resolve-meeting-dir.sh"
+else
+  echo "ERROR: resolve-meeting-dir.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+
 # Back-compat: meetings used to be nested under the work artifact
 # ($WORK_DIR/meetings). Records written before that fix still live there, so
 # lookups fall back to the legacy path. Writes ALWAYS go to $MEETINGS_DIR.
@@ -79,7 +90,14 @@ echo "MEETINGS_DIR=$MEETINGS_DIR"
   echo "LEGACY_MEETINGS_DIR=$LEGACY_MEETINGS_DIR (read-only fallback)"
 ```
 
-Every meeting lives in `$MEETINGS_DIR/{slug}/`. `MEETINGS_DIR` resolves from
+A new meeting lives in `$MEETINGS_DIR/{TS}-{slug}/`, where `{TS}` is
+`YYYY-MM-DD-HHMM` in **local** time, captured once when the meeting is opened —
+e.g. `2026-07-31-1430-q3-roadmap-sync`. The timestamp prefix makes a plain
+directory listing sort chronologically. Meetings created before this format
+shipped stay at `$MEETINGS_DIR/{slug}/` with no prefix; they are **never**
+renamed or migrated, and are read and written exactly as before.
+
+`MEETINGS_DIR` resolves from
 `.claude/configuration.yml` as a first-class artifact type (default
 `.claude/meetings`) — a sibling of `work/`, not a child of it. Meetings are
 finished documents rather than resumable work sessions, so they do not belong in
@@ -92,17 +110,21 @@ Whenever a mode resolves an *existing* meeting, **rebind `MDIR` to the directory
 it was actually found in** — not unconditionally to `$MEETINGS_DIR`:
 
 ```bash
-# Resolve {slug} to the directory that holds it.
-if [ -f "$MEETINGS_DIR/{slug}/state.json" ]; then
-  MDIR="$MEETINGS_DIR/{slug}"
-elif [ -n "$LEGACY_MEETINGS_DIR" ] && [ -f "$LEGACY_MEETINGS_DIR/{slug}/state.json" ]; then
-  MDIR="$LEGACY_MEETINGS_DIR/{slug}"   # pre-migration meeting: continue in place
+# Resolve {slug} to the directory that holds it. The argument may be a bare
+# slug (newest match wins) or a full directory name. resolve_meeting_dir
+# searches both roots and both naming shapes — see
+# shared/meeting/resolve-meeting-dir.sh.
+if MDIR=$(resolve_meeting_dir "{slug}"); then
+  echo "MDIR=$MDIR"
 else
-  echo "ERROR: meeting '{slug}' not found in $MEETINGS_DIR or $LEGACY_MEETINGS_DIR" >&2
-  exit 1
+  exit 1   # resolve_meeting_dir already printed the ERROR to stderr
 fi
-echo "MDIR=$MDIR"
 ```
+
+**Not found is a hard stop.** If resolution fails, report the error and stop.
+Never fall through to Step L1 — that would create a *second* directory for a
+meeting the user believes already exists. `resolve_meeting_dir` is read-only by
+construction; only Step L1 may create a meeting.
 
 A pre-migration meeting is resumed, wrapped, and has its documents written **in
 place** in the legacy directory. Never half-write a meeting across two locations:
@@ -139,10 +161,31 @@ diffable). Confirm the slug with the user if ambiguous.
 case "{slug}" in
   *[!a-z0-9-]*|''|-*|*-) echo "ERROR: unsafe slug '{slug}' — expected kebab-case [a-z0-9-], no slashes/dots" >&2; exit 1 ;;
 esac
-TODAY=$(date +%Y-%m-%d)
-NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-MDIR="$MEETINGS_DIR/{slug}"
-mkdir -p "$MDIR"
+# Resolve-or-create. Because the directory name now embeds the current time,
+# "open" and "resume" are no longer the same path by construction — an
+# unconditional mkdir would mint a SECOND directory when a live session is
+# re-entered, splitting one meeting across two folders. So: reuse an existing
+# *in-progress* meeting for this slug; otherwise mint a fresh timestamp.
+MDIR=""
+if CAND=$(resolve_meeting_dir "{slug}" 2>/dev/null); then
+  if [ "$(jq -r '.status // empty' "$CAND/state.json")" = "in-progress" ]; then
+    MDIR="$CAND"
+  fi
+fi
+if [ -z "$MDIR" ]; then
+  NOW_LOCAL=$(date +%Y-%m-%d-%H%M)   # ONE call — TODAY is derived from it, so
+  TODAY="${NOW_LOCAL%-*}"            # the two can never straddle midnight
+  MDIR="$MEETINGS_DIR/${NOW_LOCAL}-{slug}"
+  if [ -e "$MDIR" ]; then            # same slug, same minute, prior one wrapped
+    n=2
+    while [ -e "${MDIR}-${n}" ]; do n=$((n + 1)); done
+    MDIR="${MDIR}-${n}"
+  fi
+  mkdir -p "$MDIR"
+else
+  TODAY=$(date +%Y-%m-%d)
+fi
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)   # created_at stays UTC
 # Seed state.json (idempotent — do not clobber an existing in-progress meeting)
 if [ ! -f "$MDIR/state.json" ]; then
   jq -n --arg slug "{slug}" --arg d "$TODAY" --arg t "$NOW" \
@@ -230,13 +273,32 @@ Same untrusted-input discipline as Step L1 applies to file/dir content.
 
 ## 3. Wrap / synthesis (both modes)
 
-Triggered by `wrap up` (live) or `--wrap [slug]`. If the slug isn't obvious from
-context, resolve it from the open `state.json` (`status == "in-progress"`) under
-`$MEETINGS_DIR`, then `$LEGACY_MEETINGS_DIR` if set; if more than one is open,
-ask which. Then **rebind `MDIR`** using the resolution block in *Configuration &
-output location* — every Wrap step below reads and writes `$MDIR`, so a
-pre-migration meeting wrapped without rebinding would write its summary to an
-empty new-location directory.
+Triggered by `wrap up` (live) or `--wrap [slug]`. Bind `MDIR` by the first
+branch that applies:
+
+- **`MDIR` already bound in this session** (live `wrap up` after Step L1, or
+  one-shot mode falling through) — use it as-is. Do **not** re-resolve by slug.
+- **A `[slug]` argument was given** — re-apply the Step L1 slug guard (it is
+  untrusted input flowing into a path), then **rebind `MDIR`** using the
+  resolution block in *Configuration & output location*.
+- **No `MDIR` and no argument** — enumerate open meetings and bind `MDIR` to the
+  discovered path **directly**:
+
+  ```bash
+  find_in_progress_meetings   # emits "path<TAB>slug<TAB>status", both roots/shapes
+  ```
+
+  Zero rows → report that no meeting is open and stop. Exactly one → bind `MDIR`
+  to that row's path column. More than one → list the slugs and ask which.
+
+  **Do not** take the slug from that row and feed it back through
+  `resolve_meeting_dir`. That resolver ranks by timestamp with no status
+  awareness, so for a recurring slug it can return a newer *wrapped* directory
+  instead of the open one just found — silently wrapping the wrong meeting.
+
+Every Wrap step below reads and writes `$MDIR`, so a pre-migration meeting
+wrapped without rebinding would write its summary to an empty new-location
+directory.
 
 **Step W1 — Reconcile.** Merge captured decisions with `state.json.findings[]`.
 Apply the grounding convention from `$SCHEMA`: only `[Fact]` items become
@@ -271,11 +333,32 @@ Then export HTML (Section 5).
 
 ## 4. Resume mode (`--resume [slug]`)
 
-Re-open a meeting whose session dropped. Resolve the slug (from the arg, or the
-single `in-progress` meeting under `$MEETINGS_DIR`, then `$LEGACY_MEETINGS_DIR`
-if set — then **rebind `MDIR`** via the resolution block in *Configuration &
-output location*; if several, list them and
-ask). A slug taken from a raw `--resume`/`--wrap` argument is untrusted input and
+Re-open a meeting whose session dropped. Bind `MDIR` by the same branches as
+Wrap:
+
+- **A `[slug]` argument was given** — guard it (below), then **rebind `MDIR`**
+  via the resolution block in *Configuration & output location*.
+- **No argument** — run `find_in_progress_meetings` and bind `MDIR` to the
+  discovered path **directly** (never re-resolve by slug — see Wrap for why).
+  Zero rows → report that no meeting is open and stop. Several → list and ask.
+
+Resume never creates a directory. If resolution fails, stop — do not fall
+through to Step L1.
+
+**If the resolved meeting is already wrapped** (`status != "in-progress"`), the
+newest meeting for that slug is a finished record. Do not silently reopen it —
+appending to a record that has already been synthesized and shared corrupts it.
+Ask first, via AskUserQuestion:
+
+> The most recent meeting for `{slug}` (`{dirname}`) is already wrapped.
+> [1] Start a new occurrence — opens a fresh record via Step L1
+> [2] Reopen the wrapped record anyway — continues capture in place
+
+Write nothing until the user answers. On **[1]**, go to Step L1 (which mints a
+new timestamped directory). On **[2]**, set `status` back to `in-progress` and
+continue.
+
+A slug taken from a raw `--resume`/`--wrap` argument is untrusted input and
 flows into a filesystem path, so **re-apply the Step L1 guard before using it**:
 
 ```bash

@@ -74,6 +74,20 @@ artifact_subdir_is_safe() {
   return 0
 }
 
+# True when a string is usable as a plain mapping key: ASCII letters, digits,
+# underscore, dash. Used for location names, which are emitted into YAML and
+# interpolated into yq path expressions.
+#
+# LC_ALL=C for exactly the reason artifact_template_keys pins it, and it is just
+# as easy to miss here: bash compiles [[ =~ ]] against the current locale, so
+# under a UTF-8 locale [A-Za-z] expands by collation order and admits accented
+# letters. Verified — `téam` passes under en_US.UTF-8 and is rejected under C.
+# `local` scopes the setting to this function and bash restores it on return.
+artifact_key_is_safe() {
+  local LC_ALL=C
+  [[ "$1" =~ ^[A-Za-z0-9_-]+$ ]]
+}
+
 # Read one field (location|subdir) of one artifact. Prints the empty string when
 # the artifact or field is absent, so callers can test with -z.
 artifact_template_field() {
@@ -114,6 +128,55 @@ artifact_config_has_location() {
         "$cfg" 2>/dev/null)" == "true" ]]
 }
 
+# Historical names for storage locations, one `<legacy>:<canonical>` pair per
+# line.
+#
+# This is the one place a superseded location name is recorded, and it is the
+# only hardcoded name list this library carries. It has to be hardcoded: a
+# rename maps a name that no longer appears anywhere onto one that does, so
+# there is nothing left to read it from. The canonical half is not free —
+# `test_every_canonical_alias_is_a_real_template_location` fails the suite if it
+# ever stops matching plugin/templates/configuration.yml, which is what keeps
+# this from drifting the way the artifact lists did.
+#
+# `team-repo` is what /configuration-init generated for the shared location
+# before SKILLS-074; the shipped template has always called it `team-knowledge`.
+artifact_legacy_locations() {
+  printf 'team-repo:team-knowledge\n'
+}
+
+# Plan location renames for one config.
+#
+# Emits one `location-rename:<config>:<legacy>:<canonical>` line per applicable
+# pair. Warnings go to stderr, matching artifact_plan_backfill.
+#
+# A config that already defines both names is reported and skipped. That is a
+# merge, not a rename: the two locations may point at different paths, and
+# picking a winner would silently discard one of them.
+artifact_plan_location_rename() {
+  local cfg="$1" pair legacy canon
+  [[ -r "$cfg" ]] || return 1
+
+  while IFS= read -r pair; do
+    [[ -n "$pair" ]] || continue
+    legacy="${pair%%:*}"
+    canon="${pair##*:}"
+
+    # `if` rather than `... || continue`: under `set -e` a failing left operand
+    # of a list aborts the caller, and callers are free to set -e.
+    if ! artifact_config_has_location "$cfg" "$legacy"; then
+      continue
+    fi
+    if artifact_config_has_location "$cfg" "$canon"; then
+      printf '⚠ Skipping location rename "%s" → "%s" in %s — both names are already defined. Reconcile them by hand.\n' \
+        "$legacy" "$canon" "$cfg" >&2
+      continue
+    fi
+
+    printf 'location-rename:%s:%s:%s\n' "$cfg" "$legacy" "$canon"
+  done < <(artifact_legacy_locations)
+}
+
 # Diff a template's artifact catalog against a config.
 #
 # Emits one `artifact-backfill:<config>:<name>` line per artifact that is
@@ -125,9 +188,22 @@ artifact_config_has_location() {
 #   - location undefined in the target config — writing it would leave a
 #     dangling reference that validation then reports as a failure, i.e. the
 #     migration would break the config it just "fixed"
+#
+# $3.. are locations that do not exist in the config yet but will by the time
+# apply runs — the canonical halves of any location renames planned in the same
+# migration. Without them a config still on a legacy location name has every
+# team-located artifact skipped, so `validate` keeps naming a remedy that had
+# just run: rename lands, backfill does not, and the next run is needed to
+# finish a job the user was told was complete. Passing a location here does not
+# make apply write a dangling reference — artifact_apply_backfill re-checks
+# against the real config, by which point the rename has landed.
 artifact_plan_backfill() {
   local cfg="$1" tmpl="$2"
-  local name loc sub
+  # "${@:3}" rather than `shift 2`: shift returns non-zero when fewer than two
+  # arguments were passed, which aborts a `set -e` caller instead of letting the
+  # readability check below return 1.
+  local pending=("${@:3}")
+  local name loc sub p pending_match
   [[ -r "$cfg" && -r "$tmpl" ]] || return 1
 
   while IFS= read -r name; do
@@ -147,9 +223,22 @@ artifact_plan_backfill() {
     fi
 
     if ! artifact_config_has_location "$cfg" "$loc"; then
-      printf '⚠ Skipping artifact "%s" — its location "%s" is not defined in %s.\n' \
-        "$name" "$loc" "$cfg" >&2
-      continue
+      pending_match=false
+      # ${#pending[@]} is safe on an empty array even under `set -u`, which a
+      # bare "${pending[@]}" is not on older bash.
+      if (( ${#pending[@]} > 0 )); then
+        for p in "${pending[@]}"; do
+          if [[ "$p" == "$loc" ]]; then
+            pending_match=true
+            break
+          fi
+        done
+      fi
+      if [[ "$pending_match" == false ]]; then
+        printf '⚠ Skipping artifact "%s" — its location "%s" is not defined in %s.\n' \
+          "$name" "$loc" "$cfg" >&2
+        continue
+      fi
     fi
 
     printf 'artifact-backfill:%s:%s\n' "$cfg" "$name"
@@ -210,7 +299,7 @@ artifact_wizard_yaml() {
     # Warn rather than skip silently: dropping every shared artifact without a
     # word would produce exactly the incomplete config this function exists to
     # prevent, and the caller would have no way to notice.
-    if ! [[ "$loc" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    if ! artifact_key_is_safe "$loc"; then
       printf 'Skipping artifact "%s" — location name "%s" is not a valid key.\n' \
         "$name" "$loc" >&2
       continue
@@ -369,4 +458,70 @@ artifact_apply_backfill() {
   # both, a silent partial write would be reported as success.
   yq -e '.' "$cfg" >/dev/null 2>&1 || return 1
   artifact_config_has "$cfg" "$name"
+}
+
+# Rename a storage location and repoint every artifact that referenced it.
+#
+# Both halves land in a single `yq -i` write. Splitting them would leave a
+# window — and, on a failure between the two, a permanent state — where every
+# artifact points at a location that no longer exists, which is precisely the
+# dangling reference the backfill verb refuses to create.
+#
+# Callers must run artifact_backup_once first; this function does not back up,
+# matching artifact_apply_backfill and the other migration verbs.
+artifact_apply_location_rename() {
+  local cfg="$1" old="$2" new="$3" yq_expr artifacts_type
+
+  [[ -r "$cfg" && -w "$cfg" ]] || return 1
+  # Both names are interpolated into a yq path expression via strenv(), so they
+  # cannot escape it; this is the second layer, and it also rejects the
+  # nonsensical cases (empty, identical) outright.
+  artifact_key_is_safe "$old" || return 1
+  artifact_key_is_safe "$new" || return 1
+  [[ "$old" != "$new" ]] || return 1
+
+  # Re-check both preconditions rather than trusting the plan phase, for the
+  # same reason artifact_apply_backfill re-checks its own: this is public API,
+  # and a caller applying an entry directly would otherwise overwrite a
+  # canonical location the user already has.
+  artifact_config_has_location "$cfg" "$old" || return 1
+  if artifact_config_has_location "$cfg" "$new"; then
+    return 1
+  fi
+
+  yq_expr='with(select(document_index == 0);
+      .storage.locations[strenv(n)] = .storage.locations[strenv(o)]
+      | del(.storage.locations[strenv(o)])'
+
+  # The repoint clause is appended only when the config actually has a mapping
+  # of artifacts. Included unconditionally, yq creates the path it assigns
+  # through, so a config with no `storage.artifacts` came back with
+  # `artifacts: []` — an empty *sequence* where a mapping belongs, which then
+  # breaks has() for every later reader. Verified against yq v4.52.2; `[]?`
+  # does not avoid it, because path creation happens on the assignment target.
+  artifacts_type="$(yq -r \
+    'select(document_index == 0) | .storage.artifacts | type' "$cfg" 2>/dev/null)"
+  if [[ "$artifacts_type" == "!!map" ]]; then
+    yq_expr="$yq_expr
+      | (.storage.artifacts[] | select(.location == strenv(o)) | .location) = strenv(n)"
+  fi
+  yq_expr="$yq_expr)"
+
+  o="$old" n="$new" yq -i "$yq_expr" "$cfg" || return 1
+
+  # Verify the whole rename landed: the file still parses, the canonical name
+  # exists, the legacy name is gone, and nothing still references it. A partial
+  # write reported as success is how a config ends up with the dangling
+  # references this verb exists to remove.
+  yq -e '.' "$cfg" >/dev/null 2>&1 || return 1
+  artifact_config_has_location "$cfg" "$new" || return 1
+  if artifact_config_has_location "$cfg" "$old"; then
+    return 1
+  fi
+  [[ -z "$(o="$old" yq -r '
+    select(document_index == 0)
+    | .storage.artifacts // {} | to_entries | .[]
+    | select(.value | type == "!!map")
+    | select(.value.location == strenv(o))
+    | .key' "$cfg" 2>/dev/null)" ]]
 }

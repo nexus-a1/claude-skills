@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.23.0] - 2026-07-31
+
+## What's Changed
+
+2 commits: 2 feat. No breaking changes.
+
+### Features
+
+- **meeting**: meeting records are now written to `$MEETINGS_DIR/{YYYY-MM-DD-HHMM}-{slug}/` instead of `$MEETINGS_DIR/{slug}/`, so a plain directory listing sorts chronologically and recurring meetings are distinguishable without opening each one. Meetings recorded before this format keep their bare `{slug}` directory names permanently — nothing is renamed, moved, or migrated. Lookups still accept a bare slug and resolve to the newest match, or a full directory name. Directory resolution moves into a new shared library (`shared/meeting/resolve-meeting-dir.sh`) covered by shellcheck and 34 new tests — SKILLS-077
+
+  Two behaviour changes worth noting for existing users:
+  - Resuming a meeting whose newest match is already **wrapped** now warns and asks whether you meant to start a new occurrence, rather than silently reopening a finished record.
+  - Re-entering a dropped live session continues the same record instead of creating a second directory for it.
+
+- **configuration-init**: adds a `location-rename` migration verb. Configs generated before SKILLS-074 call the shared storage location `team-repo`, while the shipped template has always called it `team-knowledge`. Backfill matched a template artifact's location against the keys defined in the target config, so every team-located artifact was silently skipped and `validate` named a migration that then refused to run. The rename and the backfill it unblocks now land in one run. A config defining *both* names is reported and skipped — that is a merge, not a rename, and picking a winner would discard a definition — SKILLS-075
+
+### Other Changes
+
+- `plugin/shared/meeting/` is registered in the D1 shellcheck target list, so the new shared library is statically checked in CI.
+- Corrects a stale path in `shared/meeting-schema.md`, which still documented the pre-SKILLS-069 `$WORK_DIR/meetings/{slug}/` location.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.22.0...v1.23.0
+
 ## [1.22.0] - 2026-07-31
 
 ## What's Changed

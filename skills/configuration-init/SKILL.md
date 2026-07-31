@@ -527,6 +527,19 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
    → "path": check if directory exists → if not, WARN ("path does not exist: {path}")
    → If type is "git": check if path contains .git/ → if not, WARN ("not a git repository: {path}")
 
+3b. storage.locations legacy names
+   → For each `location-rename:{config}:{old}:{new}` entry from:
+       artifact_plan_location_rename "$EXISTING_CONFIG"
+     WARN ("legacy location name '{old}' — the current template calls this
+     '{new}'; run /configuration-init migrate to rename it")
+   → Print any warning the planner wrote to stderr as-is: a config defining
+     BOTH names cannot be renamed automatically and the user has to reconcile
+     it by hand.
+   → Nothing else reports this. A legacy name is internally consistent, so
+     every other check passes — the config only breaks later, when the template
+     gains an artifact in the canonical location and that artifact can never be
+     backfilled.
+
 4. storage.artifacts
    → Each artifact must have "location" and "subdir"
    → "location" must reference a key defined in storage.locations → else FAIL ("artifact '{name}' references undefined location '{loc}'")
@@ -568,6 +581,9 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
   [PASS] execution_mode: "subagent"
   [PASS] storage.locations.local: type=directory, path=.claude (exists)
   [WARN] storage.locations.team-knowledge: path /home/user/code/team-knowledge does not exist
+  [WARN] storage.locations: legacy location name "team-repo" — the current
+         template calls this "team-knowledge"; run /configuration-init migrate
+         to rename it
   [PASS] storage.artifacts: all ${count} artifacts reference valid locations
   [FAIL] storage.artifacts.proposals: references undefined location "shared"
   [WARN] storage.artifacts: missing artifact "meetings" — defined in the current
@@ -589,12 +605,19 @@ If any FAIL results exist, suggest fixes. If only WARN or PASS, report "Configur
 
 Scan the project for legacy configuration and state file formats left over from past breaking changes and rewrite them in place. All rewrites create a `.bak-YYYYMMDD-HHMMSS` copy beside the original so nothing is destroyed.
 
-**Four migrations are checked:**
+**Five migrations are checked:**
 
 1. `configuration.json` → `configuration.yml` (JSON to YAML)
 2. `*-state.json` (per-skill state files) → unified `state.json` with `type` field
 3. `domain_knowledge` configuration key → `product_knowledge`
-4. artifacts the current template defines but the config is missing
+4. superseded `storage.locations` names → the names the current template uses
+5. artifacts the current template defines but the config is missing
+
+**4 must be planned and applied before 5.** An artifact is only backfillable
+when its location exists in the target config, so a config still on a legacy
+location name has every artifact in that location skipped. Renaming first is
+what lets both land in one run; the alternative is telling the user a migration
+succeeded and then having `validate` immediately name the same remedy again.
 
 #### 10.1 Plan phase (dry run — no writes)
 
@@ -654,18 +677,35 @@ if [[ -f ".claude/configuration.yml" ]] && grep -q '^[[:space:]]*domain_knowledg
   PLAN+=("rename-key:.claude/configuration.yml:domain_knowledge:product_knowledge")
 fi
 
-# 4. Artifacts the template defines but this config is missing.
+# 4. Superseded storage.locations names.
+# Planned before the backfill below, and PENDING_LOCS carries the canonical
+# names forward so step 5 can see the locations this rename is about to create.
+PENDING_LOCS=()
+if [[ -f ".claude/configuration.yml" ]]; then
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    PLAN+=("$entry")
+    PENDING_LOCS+=("${entry##*:}")
+  done < <(artifact_plan_location_rename ".claude/configuration.yml")
+fi
+
+# 5. Artifacts the template defines but this config is missing.
 # artifact_plan_backfill skips anything already present (whatever it maps to)
 # and skips anything whose location is undefined here, warning on stderr rather
-# than writing a reference that would then fail validation.
+# than writing a reference that would then fail validation. PENDING_LOCS is the
+# exception: those locations do not exist yet but will, because the renames
+# above are applied first.
 if [[ -f ".claude/configuration.yml" && -n "$TEMPLATE" ]]; then
   while IFS= read -r entry; do
     [[ -n "$entry" ]] && PLAN+=("$entry")
-  done < <(artifact_plan_backfill ".claude/configuration.yml" "$TEMPLATE")
+  done < <(artifact_plan_backfill ".claude/configuration.yml" "$TEMPLATE" \
+             ${PENDING_LOCS[@]+"${PENDING_LOCS[@]}"})
 elif [[ -f ".claude/configuration.yml" ]]; then
   echo "ℹ Template not readable — skipping the missing-artifact check. Other migrations still run."
 fi
 ```
+
+`${PENDING_LOCS[@]+"${PENDING_LOCS[@]}"}` rather than a bare `"${PENDING_LOCS[@]}"`: an empty array expands to an unbound-variable error under `set -u`, which most configs — the ones needing no rename — would hit.
 
 **Report the plan to the user:**
 
@@ -677,13 +717,17 @@ fi
   Legacy config file  .claude/configuration.json → .claude/configuration.yml
   Legacy state file   .claude/work/JIRA-123/requirements-state.json → state.json (type: requirements)
   Legacy config key   .claude/configuration.yml: domain_knowledge → product_knowledge
+  Legacy location     .claude/configuration.yml: team-repo → team-knowledge
+                      (and every artifact that referenced it)
   Missing artifact    .claude/configuration.yml: + meetings (local → meetings)
 
   Backups will be written as *.bak-${TIMESTAMP}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Print any warnings `artifact_plan_backfill` wrote to stderr above this box — an artifact skipped because its location is undefined is something the user may want to act on.
+List the entries in `PLAN` order. That order is the apply order, and a rename shown after the backfill it enables would misdescribe what is about to happen.
+
+Print any warnings `artifact_plan_location_rename` or `artifact_plan_backfill` wrote to stderr above this box — an artifact skipped because its location is undefined, or a rename skipped because both names are already defined, is something the user may want to act on.
 
 When the plan includes a `.yml` rewrite, add:
 
@@ -720,9 +764,9 @@ This phase runs in a fresh shell, and the `AskUserQuestion` gate sits between it
 
 **Always back up through `artifact_backup_once`, never a bare `cp`, and always check its return value.** The run computes one `TIMESTAMP` and every verb writes `<file>.bak-${TIMESTAMP}`. Until backfill existed, each verb targeted a distinct file so a plain `cp` was safe; now two verbs can target `configuration.yml` in the same run, and the second `cp` would overwrite the first verb's backup with the already-rewritten intermediate, leaving no copy of the original. `artifact_backup_once` keeps the earliest copy. This applies to every verb, not just the new one — a guard on backfill alone still loses the original when backfill runs first. It returns non-zero when it could not produce a real backup (the path is a symlink, a directory, or `cp` failed); proceeding past that would rewrite a file whose only "backup" does not exist.
 
-**Check the YAML tooling once, before any verb runs.** Both `rename-key` and `artifact-backfill` rewrite `configuration.yml` with `yq -i`. Gating only the new verb would still let `rename-key` strip every comment in the same run.
+**Check the YAML tooling once, before any verb runs.** `rename-key`, `location-rename`, and `artifact-backfill` all rewrite `configuration.yml` with `yq -i`. Gating only one of them would still let the others strip every comment in the same run.
 
-Run this whenever the confirmed plan contains **any** verb that writes a `.yml` file — that is `config-json-to-yml`, `rename-key`, or `artifact-backfill`. Decide that from the plan you showed the user; do not branch on a `PLAN` array, which does not exist in this shell:
+Run this whenever the confirmed plan contains **any** verb that writes a `.yml` file — that is `config-json-to-yml`, `rename-key`, `location-rename`, or `artifact-backfill`. Decide that from the plan you showed the user; do not branch on a `PLAN` array, which does not exist in this shell:
 
 ```bash
 NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
@@ -773,6 +817,22 @@ artifact_backup_once "${file}" "${TIMESTAMP}" || exit 1
 yq -i '.product_knowledge = .domain_knowledge | del(.domain_knowledge)' "${file}"
 ```
 
+**location-rename** (rename a storage location and repoint every artifact that used it). Plan entries have the form `location-rename:<config-path>:<old>:<new>`. **Apply every one of these before any `artifact-backfill` entry** — a backfill whose location has not been renamed yet is skipped, and the run would report success while leaving the config exactly as drifted as it found it:
+```bash
+entry="${plan_entry}"                  # e.g. location-rename:.claude/configuration.yml:team-repo:team-knowledge
+new="${entry##*:}"
+rest="${entry%:*}"; old="${rest##*:}"
+file="${rest%:*}"; file="${file#location-rename:}"
+
+artifact_backup_once "${file}" "${TIMESTAMP}" || exit 1
+if ! artifact_apply_location_rename "${file}" "${old}" "${new}"; then
+  echo "✗ Renaming location ${old} → ${new} failed. The original is at ${file}.bak-${TIMESTAMP}" >&2
+  exit 1
+fi
+```
+
+The rename and the artifact repointing are one write inside the library, so there is no state in which the config references a location that no longer exists. It refuses rather than guessing when the config already defines both names.
+
 **artifact-backfill** (add one missing artifact using the template's mapping). Plan entries have the form `artifact-backfill:<config-path>:<artifact-name>`, so split on the last colon — an artifact name never contains one:
 ```bash
 entry="${plan_entry}"                  # e.g. artifact-backfill:.claude/configuration.yml:meetings
@@ -792,6 +852,7 @@ After each action, print a single line confirmation:
 ✓ .claude/configuration.json → .claude/configuration.yml  (backup: .bak-20260423-160500)
 ✓ .claude/work/JIRA-123/requirements-state.json → state.json  (backup: .bak-20260423-160500)
 ✓ .claude/configuration.yml: domain_knowledge → product_knowledge  (backup: .bak-20260423-160500)
+✓ .claude/configuration.yml: storage.locations.team-repo → team-knowledge, 3 artifacts repointed  (backup: .bak-20260423-160500)
 ✓ .claude/configuration.yml: + storage.artifacts.meetings  (backup: .bak-20260423-160500)
 ```
 
@@ -805,6 +866,7 @@ If any step fails, stop and report which action failed. The user can retry after
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Actions applied: {count}
+  Locations renamed: {count}
   Artifacts backfilled: {count}
   Backups created: {count}   # at most one per file, holding its pre-run state
 
