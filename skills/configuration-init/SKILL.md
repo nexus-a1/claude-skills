@@ -26,6 +26,21 @@ Set up project-specific configuration that skills and agents use for storage loc
 
 ## Process
 
+### Library Preamble
+
+**Every `bash` block below that calls `resolve_artifact` or an `artifact_*` function must start with these six lines.** Each block runs as a separate shell invocation — functions and variables do not carry over from an earlier block, so sourcing once at the top of the skill would leave every later block calling undefined functions:
+
+```bash
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+source "$NEXUS_SHARED/resolve-config.sh"
+source "$NEXUS_SHARED/config/artifacts.sh"
+TEMPLATE=$(artifact_template_path) || TEMPLATE=""   # empty = degrade, never fail
+```
+
+`$TEMPLATE` is empty whenever no template is readable. Every use of it must degrade with an explanatory message rather than failing the run.
+
 ### Step 0: Check Arguments
 
 If `$ARGUMENTS` contains "validate":
@@ -39,31 +54,32 @@ If `$ARGUMENTS` contains "migrate":
 ### Step 1: Check Existing Configuration
 
 ```bash
-# Source resolve-config: marketplace installs get ${CLAUDE_PLUGIN_ROOT} substituted
-# inline before bash runs; legacy local copies fall back to ~/.claude. If neither
-# path resolves, fail loudly rather than letting resolve_artifact be undefined.
-if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
-  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
-elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
-  source "$HOME/.claude/shared/resolve-config.sh"
-else
-  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
-  exit 1
-fi
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+source "$NEXUS_SHARED/resolve-config.sh"
+source "$NEXUS_SHARED/config/artifacts.sh"
+TEMPLATE=$(artifact_template_path) || TEMPLATE=""
+
 EXISTING_CONFIG="$CONFIG"
 # New configurations are always written to CWD
 WRITE_CONFIG=".claude/configuration.yml"
 ```
 
-If `$EXISTING_CONFIG` is found (in current or parent directory), read it and show current state:
+If `$EXISTING_CONFIG` is found (in current or parent directory), read it and show current state. Read the location and artifact names out of the file rather than listing them from memory — a fixed list here would misreport any config that differs from it:
+
+```bash
+yq -r '.storage.locations // {} | keys | join(", ")' "$EXISTING_CONFIG"
+yq -r '.storage.artifacts // {} | keys | join(", ")' "$EXISTING_CONFIG"
+```
 
 ```
 Configuration already exists: .claude/configuration.yml
 
 Current configuration:
   execution_mode: subagent
-  storage.locations: local, team-repo (if configured)
-  storage.artifacts: work, brainstorms, proposals, requirements, product-knowledge, refactoring
+  storage.locations: ${locations}
+  storage.artifacts: ${artifacts}
 ```
 
 Use AskUserQuestion:
@@ -224,6 +240,8 @@ fi
 
 Determine the location type: `git` if `.git/` exists, otherwise `directory`.
 
+Set `TEAM_LOCATION=team-knowledge` — this is the key name Step 6 will write, and the name the template and `plugin/CLAUDE.md` already use. Leave `TEAM_LOCATION` unset for a solo setup.
+
 #### Ask about local storage path (if team repo configured):
 
 Use AskUserQuestion:
@@ -262,7 +280,45 @@ If `LOCAL_PATH` was not set (e.g., user selected "Create new" in Step 5 and exec
 LOCAL_PATH="${LOCAL_PATH:-.claude}"
 ```
 
-Build the YAML configuration using the `LOCAL_PATH` value. The `storage` section always includes a `local` location and default artifact mappings. If the user configured a team repo, add a `team-repo` location and map shared artifacts to it.
+Build the YAML configuration using the `LOCAL_PATH` value. The `storage` section always includes a `local` location. If the user configured a team repo, add a `team-knowledge` location as well.
+
+**Generate the artifact mappings from the template, never from a list written here.** A hardcoded list drifts the moment the template gains an artifact, and a config missing an artifact resolves it to a fallback path that is silently wrong whenever `LOCAL_PATH` is not the conventional `.claude` — which is the defect this step exists to stop producing:
+
+```bash
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+source "$NEXUS_SHARED/resolve-config.sh"
+source "$NEXUS_SHARED/config/artifacts.sh"
+TEMPLATE=$(artifact_template_path) || TEMPLATE=""
+
+# Bind TEAM_LOCATION HERE. Step 5 decided it, but that was a different shell,
+# so nothing carries it into this block. Set it to team-knowledge if Step 4
+# answered Yes, and to the empty string otherwise — an accidental empty value
+# would silently remap every shared artifact to local, which is the
+# higher-impact half of the defect this ticket fixes.
+TEAM_LOCATION=""          # or: TEAM_LOCATION="team-knowledge"
+LOCAL_PATH="${LOCAL_PATH:-.claude}"   # likewise: whatever Step 4/5 selected
+
+ARTIFACTS_YAML=""
+if [[ -n "$TEMPLATE" ]]; then
+  ARTIFACTS_YAML=$(artifact_wizard_yaml "$TEMPLATE" "$TEAM_LOCATION")
+fi
+
+# Gate on the OUTPUT, not on whether a template was found: a readable template
+# with no storage.artifacts section yields an empty render, and writing that
+# would emit `artifacts:` with nothing under it — the incomplete config this
+# step exists to prevent.
+if [[ -z "$ARTIFACTS_YAML" ]]; then
+  echo "Template artifact list unavailable — use the built-in set below."
+else
+  # Print it: this block's stdout is what gets pasted under `artifacts:`.
+  # A variable assignment alone would die with the block.
+  printf '%s\n' "$ARTIFACTS_YAML"
+fi
+```
+
+The block's stdout **is** the `artifacts:` mapping. Paste it verbatim where `${ARTIFACTS_YAML}` appears below; if the block printed the "unavailable" message instead, use the built-in set further down.
 
 **Base config (always included):**
 
@@ -281,50 +337,37 @@ storage:
   locations:
     local:
       type: directory
-      path: ${LOCAL_PATH}    # e.g., .claude, .claude-data, or custom
+      path: "${LOCAL_PATH}"  # quoted: a custom path may contain a space or start with a dash
   artifacts:
-    work:
-      location: local
-      subdir: work
-    brainstorms:
-      location: local
-      subdir: brainstorm
-    proposals:
-      location: local
-      subdir: proposals
-    refactoring:
-      location: local
-      subdir: work/refactoring-sessions
-    requirements:
-      location: local
-      subdir: requirements
-    product-knowledge:
-      location: local
-      subdir: .
+${ARTIFACTS_YAML}
 ```
 
-**If team repo configured** — override shared artifacts to point to the team repo:
+**If team repo configured** — set `TEAM_LOCATION=team-knowledge` before rendering, and add the location. `team-knowledge` is the name the template, `plugin/CLAUDE.md`, and Step 5's own prompt all use; generating a different name here would mean the template's shared artifacts could never be matched against a config this wizard wrote:
 
 ```yaml
 storage:
   locations:
     local:
       type: directory
-      path: ${LOCAL_PATH}    # e.g., .claude, .claude-data, or custom
-    team-repo:
+      path: "${LOCAL_PATH}"  # quoted: a custom path may contain a space or start with a dash
+    team-knowledge:
       type: git       # or directory
       path: /absolute/path/to/team-knowledge
   artifacts:
-    # ... local artifacts as above, except override shared ones ...
-    requirements:
-      location: team-repo
-      subdir: requirements
-    proposals:
-      location: team-repo
-      subdir: proposals
-    product-knowledge:
-      location: team-repo
-      subdir: .
+${ARTIFACTS_YAML}          # shared artifacts now carry location: team-knowledge
+```
+
+**If `$ARTIFACTS_YAML` came back empty** — no readable template, or a template with no artifact section — the wizard still produces a usable config; Step 2 states the template is optional and that contract holds. Fall back to this built-in set, which must stay in step with `plugin/templates/configuration.yml`:
+
+```yaml
+  artifacts:
+    work:              { location: local, subdir: work }
+    brainstorms:       { location: local, subdir: brainstorm }
+    meetings:          { location: local, subdir: meetings }
+    proposals:         { location: local, subdir: proposals }
+    refactoring:       { location: local, subdir: work/refactoring-sessions }
+    requirements:      { location: local, subdir: requirements }
+    product-knowledge: { location: local, subdir: . }
 ```
 
 **Add requirements behavior flags:**
@@ -346,21 +389,53 @@ mkdir -p .claude
 
 Write the built YAML to `.claude/configuration.yml` using the Write tool.
 
-Then create all artifact directories using `LOCAL_PATH` so skills don't encounter missing paths:
+Then create a directory for every locally-stored artifact so skills don't encounter missing paths. Drive this from the config just written, not from the template: an artifact the user pointed at the team repo must not also get a stray local directory, and one the user relocated must get the directory they actually chose.
 
 ```bash
-mkdir -p ${LOCAL_PATH}/work
-mkdir -p ${LOCAL_PATH}/brainstorm
-mkdir -p ${LOCAL_PATH}/proposals
-mkdir -p ${LOCAL_PATH}/work/refactoring-sessions
-mkdir -p ${LOCAL_PATH}/requirements
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+source "$NEXUS_SHARED/resolve-config.sh"
+source "$NEXUS_SHARED/config/artifacts.sh"
+
+# Read LOCAL_PATH back out of the file just written rather than relying on the
+# wizard's variable: this is a new shell, so an unbound LOCAL_PATH would make
+# every mkdir absolute — `mkdir -p -- /work`, `/meetings` — creating
+# directories outside the project, or failing with EPERM and silently creating
+# none.
+LOCAL_PATH=$(yq -r 'select(document_index == 0) | .storage.locations.local.path // ".claude"' \
+             ".claude/configuration.yml")
+[[ -n "$LOCAL_PATH" && "$LOCAL_PATH" != "null" ]] || LOCAL_PATH=".claude"
+
+# LOCAL_PATH is the one value here the user typed freely, and it prefixes every
+# mkdir below. A config arriving with a cloned repo could carry an absolute or
+# traversing path; fall back rather than create directories outside the project.
+if [[ "$LOCAL_PATH" == /* || "$LOCAL_PATH" == *".."* ]]; then
+  echo "Refusing storage path '${LOCAL_PATH}' — must be relative and must not traverse. Using .claude." >&2
+  LOCAL_PATH=".claude"
+fi
+
+while IFS= read -r subdir; do
+  [[ -n "$subdir" ]] || continue
+  mkdir -p -- "${LOCAL_PATH}/${subdir}"
+done < <(artifact_local_dirs ".claude/configuration.yml")
+
+# The configuration file itself always lives here, even when LOCAL_PATH differs.
+mkdir -p .claude
 ```
 
-If `LOCAL_PATH` differs from `.claude`, also ensure `.claude/` exists (the configuration file itself always lives at `.claude/configuration.yml`).
-
-If team repo is configured, skip creating directories for artifacts that point to the team repo (those directories should already exist in the repo).
+`artifact_local_dirs` already skips artifacts pointing at any non-local location, and skips a `subdir` of `.` (the location root, which exists by definition).
 
 ### Step 8: Show Summary
+
+Build the artifact rows from the config just written, so the summary reports what was actually generated rather than what this document expects:
+
+```bash
+yq -r '
+  .storage.artifacts // {} | to_entries | .[]
+  | "  \(.key): \(.value.location) → \(.value.subdir)"
+' ".claude/configuration.yml"
+```
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -378,16 +453,11 @@ EXECUTION MODE
 STORAGE LOCATIONS
 ────────────────────────────────────────────────
   local:                ${LOCAL_PATH} (directory)
-  team-repo:            ${path} (${type})   # if configured
+  team-knowledge:       ${path} (${type})   # if configured
 
 ARTIFACTS
 ────────────────────────────────────────────────
-  work:                 local → ${LOCAL_PATH}/work
-  brainstorms:          local → ${LOCAL_PATH}/brainstorm
-  proposals:            ${location} → ${resolved_path}
-  refactoring:          local → ${LOCAL_PATH}/work/refactoring-sessions
-  requirements:         ${location} → ${resolved_path}
-  product-knowledge:    ${location} → ${resolved_path}
+  ${one row per artifact in the written config}
 
 REQUIREMENTS BEHAVIOR
 ────────────────────────────────────────────────
@@ -410,6 +480,31 @@ or re-run /configuration-init.
 ### Step 9: Validate Configuration
 
 **Triggered by:** "Validate" option in Step 1, or `$ARGUMENTS` containing "validate".
+
+Step 0 routes `validate` straight here, skipping Step 1 — so neither the shared
+libraries nor `$EXISTING_CONFIG` exist on that path, and check 4b below would
+have nothing to compare. Set both up first. This block asks nothing, so Step 0's
+"no interactive wizard" contract holds; routing through Step 1 instead would
+not, because Step 1 ends in an `AskUserQuestion` whenever an existing config is
+found, which is exactly the case `validate` runs in.
+
+```bash
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+source "$NEXUS_SHARED/resolve-config.sh"
+source "$NEXUS_SHARED/config/artifacts.sh"
+TEMPLATE=$(artifact_template_path) || TEMPLATE=""
+
+# resolve-config.sh sets CONFIG by walking up from CWD. Step 1 normally copies
+# it into EXISTING_CONFIG, and validate skips Step 1 — without this line every
+# check below would read an empty path and silently report nothing.
+EXISTING_CONFIG="$CONFIG"
+if [[ -z "$EXISTING_CONFIG" || ! -f "$EXISTING_CONFIG" ]]; then
+  echo "No configuration file found to validate. Run /configuration-init to create one." >&2
+  exit 1
+fi
+```
 
 Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/warn/fail format.
 
@@ -435,8 +530,24 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
 4. storage.artifacts
    → Each artifact must have "location" and "subdir"
    → "location" must reference a key defined in storage.locations → else FAIL ("artifact '{name}' references undefined location '{loc}'")
-   → Known artifact names: work, brainstorms, proposals, refactoring, requirements, product-knowledge
+   → Known artifact names: read at runtime with
+       artifact_template_keys "$TEMPLATE"
+     Never list them here — a list in this document is what drifted from the
+     template in the first place.
    → Unknown artifact name → WARN ("unknown artifact: {name}")
+   → If $TEMPLATE is empty, skip the known-name comparison and say so; every
+     other check in this section still runs.
+
+4b. storage.artifacts completeness
+   → For each name from:
+       artifact_missing_names "$EXISTING_CONFIG" "$TEMPLATE"
+     WARN ("missing artifact: {name} — defined in the current template but
+     absent from this config; run /configuration-init migrate to add it")
+   → A missing artifact is not a syntax error, which is why nothing caught it
+     before: resolution silently falls back to a guessed path, and that guess
+     is wrong whenever the local base is not the conventional one, or the
+     artifact belongs in a shared location.
+   → If $TEMPLATE is empty, skip this check with an explanatory line.
 
 5. requirements section (if present)
    → auto_archive: must be boolean → else WARN
@@ -456,12 +567,14 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
   [PASS] YAML syntax valid
   [PASS] execution_mode: "subagent"
   [PASS] storage.locations.local: type=directory, path=.claude (exists)
-  [WARN] storage.locations.team-repo: path /home/user/code/team-knowledge does not exist
-  [PASS] storage.artifacts: all 6 artifacts reference valid locations
+  [WARN] storage.locations.team-knowledge: path /home/user/code/team-knowledge does not exist
+  [PASS] storage.artifacts: all ${count} artifacts reference valid locations
   [FAIL] storage.artifacts.proposals: references undefined location "shared"
+  [WARN] storage.artifacts: missing artifact "meetings" — defined in the current
+         template but absent from this config; run /configuration-init migrate to add it
   [PASS] requirements: all values valid
 
-  Result: 5 passed, 1 warning, 1 failure
+  Result: 5 passed, 2 warnings, 1 failure
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -476,15 +589,32 @@ If any FAIL results exist, suggest fixes. If only WARN or PASS, report "Configur
 
 Scan the project for legacy configuration and state file formats left over from past breaking changes and rewrite them in place. All rewrites create a `.bak-YYYYMMDD-HHMMSS` copy beside the original so nothing is destroyed.
 
-**Three migrations are checked:**
+**Four migrations are checked:**
 
 1. `configuration.json` → `configuration.yml` (JSON to YAML)
 2. `*-state.json` (per-skill state files) → unified `state.json` with `type` field
 3. `domain_knowledge` configuration key → `product_knowledge`
+4. artifacts the current template defines but the config is missing
 
 #### 10.1 Plan phase (dry run — no writes)
 
+Step 0 routes `migrate` straight here, skipping Step 1, so nothing has sourced
+the shared libraries on this path. `resolve_artifact` below is called with
+stderr silenced and a hardcoded fallback, which means an undefined function
+looks like a successful default — every project with a customized work location
+has been migrating against the wrong directory. Load the libraries first. As in
+Step 9, this block asks nothing, so the "no interactive wizard" contract holds.
+
+The preamble and the plan build must be **one** block: `TIMESTAMP` and `PLAN` are shell state, and a separate block would start a fresh shell without them.
+
 ```bash
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+source "$NEXUS_SHARED/resolve-config.sh"
+source "$NEXUS_SHARED/config/artifacts.sh"
+TEMPLATE=$(artifact_template_path) || TEMPLATE=""
+
 TIMESTAMP=$(date -u +%Y%m%d-%H%M%S)
 PROJECT_ROOT=$(pwd)
 PLAN=()
@@ -503,7 +633,11 @@ LEGACY_STATE_NAMES=(
   "epic-state.json:epic"
 )
 
-WORK_DIR=$(resolve_artifact work work 2>/dev/null || echo ".claude/work")
+# Now that the preamble above defines resolve_artifact, call it the way every
+# other skill does. The old `2>/dev/null || echo ".claude/work"` form silenced
+# the undefined-function error and substituted a hardcoded default, so the
+# breakage was invisible; resolve_artifact already falls back on its own.
+WORK_DIR=$(resolve_artifact work work)
 for dir in "$WORK_DIR"/*/; do
   [[ -d "$dir" ]] || continue
   for pair in "${LEGACY_STATE_NAMES[@]}"; do
@@ -519,6 +653,18 @@ done
 if [[ -f ".claude/configuration.yml" ]] && grep -q '^[[:space:]]*domain_knowledge:' ".claude/configuration.yml"; then
   PLAN+=("rename-key:.claude/configuration.yml:domain_knowledge:product_knowledge")
 fi
+
+# 4. Artifacts the template defines but this config is missing.
+# artifact_plan_backfill skips anything already present (whatever it maps to)
+# and skips anything whose location is undefined here, warning on stderr rather
+# than writing a reference that would then fail validation.
+if [[ -f ".claude/configuration.yml" && -n "$TEMPLATE" ]]; then
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] && PLAN+=("$entry")
+  done < <(artifact_plan_backfill ".claude/configuration.yml" "$TEMPLATE")
+elif [[ -f ".claude/configuration.yml" ]]; then
+  echo "ℹ Template not readable — skipping the missing-artifact check. Other migrations still run."
+fi
 ```
 
 **Report the plan to the user:**
@@ -531,9 +677,19 @@ fi
   Legacy config file  .claude/configuration.json → .claude/configuration.yml
   Legacy state file   .claude/work/JIRA-123/requirements-state.json → state.json (type: requirements)
   Legacy config key   .claude/configuration.yml: domain_knowledge → product_knowledge
+  Missing artifact    .claude/configuration.yml: + meetings (local → meetings)
 
   Backups will be written as *.bak-${TIMESTAMP}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+Print any warnings `artifact_plan_backfill` wrote to stderr above this box — an artifact skipped because its location is undefined is something the user may want to act on.
+
+When the plan includes a `.yml` rewrite, add:
+
+```
+  Note: yq normalizes inline mappings and blank lines on untouched lines.
+  Comments are preserved; the reformatting is cosmetic.
 ```
 
 If `PLAN` is empty, report:
@@ -555,11 +711,37 @@ If "Cancel" → stop with: "Migration cancelled. No files were modified."
 
 #### 10.2 Apply phase
 
-For each planned action, create the backup, then rewrite:
+For each planned action, create the backup, then rewrite.
+
+This phase runs in a fresh shell, and the `AskUserQuestion` gate sits between it and Step 10.1 — so it cannot share a block with the plan, and nothing survives from it. Start every apply block with the **Library Preamble**, then re-establish the two pieces of state it needs:
+
+- **`TIMESTAMP`** — set it to the *literal string already printed in the plan*, e.g. `TIMESTAMP=20260423-160500`. Do **not** re-run `date`: a fresh value would put backups at a suffix other than the one the user was shown, and the confirmation lines would name files that do not exist.
+- **`PLAN`** — re-derive it by re-running the Step 10.1 detection, or carry the confirmed entries forward literally. It must match what the user approved; if re-derivation produces a different set, stop and re-plan rather than applying a plan nobody confirmed.
+
+**Always back up through `artifact_backup_once`, never a bare `cp`, and always check its return value.** The run computes one `TIMESTAMP` and every verb writes `<file>.bak-${TIMESTAMP}`. Until backfill existed, each verb targeted a distinct file so a plain `cp` was safe; now two verbs can target `configuration.yml` in the same run, and the second `cp` would overwrite the first verb's backup with the already-rewritten intermediate, leaving no copy of the original. `artifact_backup_once` keeps the earliest copy. This applies to every verb, not just the new one — a guard on backfill alone still loses the original when backfill runs first. It returns non-zero when it could not produce a real backup (the path is a symlink, a directory, or `cp` failed); proceeding past that would rewrite a file whose only "backup" does not exist.
+
+**Check the YAML tooling once, before any verb runs.** Both `rename-key` and `artifact-backfill` rewrite `configuration.yml` with `yq -i`. Gating only the new verb would still let `rename-key` strip every comment in the same run.
+
+Run this whenever the confirmed plan contains **any** verb that writes a `.yml` file — that is `config-json-to-yml`, `rename-key`, or `artifact-backfill`. Decide that from the plan you showed the user; do not branch on a `PLAN` array, which does not exist in this shell:
+
+```bash
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+source "$NEXUS_SHARED/resolve-config.sh"
+source "$NEXUS_SHARED/config/artifacts.sh"
+TEMPLATE=$(artifact_template_path) || TEMPLATE=""
+TIMESTAMP=<the literal timestamp printed in the plan>
+
+if ! artifact_yq_preserves_comments; then
+  artifact_yq_refusal_message ".claude/configuration.yml" >&2
+  exit 1
+fi
+```
 
 **config-json-to-yml** (uses `yq` to convert JSON to YAML):
 ```bash
-cp ".claude/configuration.json" ".claude/configuration.json.bak-${TIMESTAMP}"
+artifact_backup_once ".claude/configuration.json" "${TIMESTAMP}" || exit 1
 yq -P '.' ".claude/configuration.json" > ".claude/configuration.yml"
 # Only remove original after successful YAML write
 if [[ -s ".claude/configuration.yml" ]]; then
@@ -567,13 +749,18 @@ if [[ -s ".claude/configuration.yml" ]]; then
 fi
 ```
 
-**state-rename** (add `type` field, rename file):
+**state-rename** (add `type` field, rename file). Plan entries are `state-rename:<path-to-old-file>:<type>`, so bind all three variables first — with the backup now checked, leaving `old_path` unset aborts the migration rather than silently doing nothing:
 ```bash
+entry="${plan_entry}"                 # e.g. state-rename:.claude/work/X/requirements-state.json:requirements
+type_field="${entry##*:}"
+old_path="${entry#state-rename:}"; old_path="${old_path%:*}"
+dir="$(dirname "$old_path")/"
+
 if [[ -s "${dir}state.json" ]]; then
   echo "⚠ Skipping ${old_path} — ${dir}state.json already written by an earlier migration in this directory."
   continue
 fi
-cp "${old_path}" "${old_path}.bak-${TIMESTAMP}"
+artifact_backup_once "${old_path}" "${TIMESTAMP}" || exit 1
 jq --arg t "${type_field}" '. + {type: $t}' "${old_path}" > "${dir}state.json"
 if [[ -s "${dir}state.json" ]]; then
   rm "${old_path}"
@@ -582,8 +769,21 @@ fi
 
 **rename-key** (update a top-level YAML key, preserve structure):
 ```bash
-cp "${file}" "${file}.bak-${TIMESTAMP}"
+artifact_backup_once "${file}" "${TIMESTAMP}" || exit 1
 yq -i '.product_knowledge = .domain_knowledge | del(.domain_knowledge)' "${file}"
+```
+
+**artifact-backfill** (add one missing artifact using the template's mapping). Plan entries have the form `artifact-backfill:<config-path>:<artifact-name>`, so split on the last colon — an artifact name never contains one:
+```bash
+entry="${plan_entry}"                  # e.g. artifact-backfill:.claude/configuration.yml:meetings
+name="${entry##*:}"
+file="${entry#artifact-backfill:}"; file="${file%:*}"
+
+artifact_backup_once "${file}" "${TIMESTAMP}" || exit 1
+if ! artifact_apply_backfill "${file}" "${TEMPLATE}" "${name}"; then
+  echo "✗ Backfill of ${name} failed. The original is at ${file}.bak-${TIMESTAMP}" >&2
+  exit 1
+fi
 ```
 
 After each action, print a single line confirmation:
@@ -592,6 +792,7 @@ After each action, print a single line confirmation:
 ✓ .claude/configuration.json → .claude/configuration.yml  (backup: .bak-20260423-160500)
 ✓ .claude/work/JIRA-123/requirements-state.json → state.json  (backup: .bak-20260423-160500)
 ✓ .claude/configuration.yml: domain_knowledge → product_knowledge  (backup: .bak-20260423-160500)
+✓ .claude/configuration.yml: + storage.artifacts.meetings  (backup: .bak-20260423-160500)
 ```
 
 If any step fails, stop and report which action failed. The user can retry after resolving the issue.
@@ -604,7 +805,8 @@ If any step fails, stop and report which action failed. The user can retry after
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Actions applied: {count}
-  Backups created: {count}
+  Artifacts backfilled: {count}
+  Backups created: {count}   # at most one per file, holding its pre-run state
 
   Next step: run /configuration-init validate to confirm the
   rewritten configuration passes validation.
@@ -638,7 +840,7 @@ If any step fails, stop and report which action failed. The user can retry after
 # → Select repo path: /home/user/code/team-knowledge (default)
 # → Select local path: .claude (Recommended)
 # → Use default requirements behavior
-# → Writes configuration.yml with team-repo location and shared artifacts
+# → Writes configuration.yml with team-knowledge location and shared artifacts
 ```
 
 ### Example 3: Custom Local Path
@@ -668,7 +870,8 @@ If any step fails, stop and report which action failed. The user can retry after
 ```bash
 /configuration-init migrate
 
-# → Scans for legacy configuration.json, *-state.json, domain_knowledge key
+# → Scans for legacy configuration.json, *-state.json, domain_knowledge key,
+#   and artifacts the current template defines but this config is missing
 # → Prints plan; no writes yet
 # → Asks for confirmation (Apply / Cancel)
 # → On Apply: creates .bak-TIMESTAMP copies, rewrites in place
