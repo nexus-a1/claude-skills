@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.23.1] - 2026-08-02
+
+Patch release. **Repository tooling only — the distributed plugin payload is unchanged from v1.23.0.**
+
+## Fixed
+
+**CI healthcheck ran with no shell-quality coverage and a permanent false score deduction** (#267)
+
+SKILLS-071 (#260) made `scripts/validate.sh` the deterministic Tier D of the CI healthcheck but did not carry over that job's environment. `shell-quality.sh` degrades to `[WARN] … skipping shell-quality checks` when `shellcheck` is absent, and the healthcheck job never installed it — so every CI healthcheck ran with **zero D1 coverage** while taking a standing −2 on its headline Tier D score for an environment gap rather than a repository defect. A false deduction, in the job whose whole purpose is trustworthy signal. `validate.yml` had installed shellcheck for this exact reason since #253.
+
+**The healthcheck had no CI trigger on its own definition** (#267)
+
+Neither `.claude/skills/healthcheck/**` nor `.github/workflows/healthcheck.yml` appeared in the workflow's `paths` filter. A change to the skill body — which *is* the check definition — or to the tier rules and report format carried in the workflow prompt shipped with no CI signal at all. `tests.yml` has carried an explicit self-trigger against this precise silent-skip failure since SKILLS-072; the job that grades the repository lacked it. Both entries added.
+
+`scripts/**` was deliberately excluded from the trigger: Tier D is `scripts/validate.sh`, already gated deterministically by `validate.yml` on every validator edit, so triggering a paid LLM run there would buy duplication only.
+
+## Notes
+
+Closes the SKILLS-071 `TODO.md` entry, whose closeout task was never performed — it still read *In progress* after #260 merged, and closing it is what surfaced both gaps above.
+
+**Full changelog:** https://github.com/nexus-a1/claude/compare/v1.23.0...v1.23.1
+
 ## [1.23.0] - 2026-07-31
 
 ## What's Changed
