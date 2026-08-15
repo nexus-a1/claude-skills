@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.23.2] - 2026-08-15
+
+## What's Changed
+
+7 commits: 6 docs, 1 ci. No features, fixes, or breaking changes — this release consolidates documentation and CI housekeeping from the CL-1 framework-simplification audit and TODO bookkeeping.
+
+### Other Changes
+
+- **docs**: CL-1 framework-simplification audit decision list (#273)
+- **docs(todo)**: file pending items to Jira, fix stale Completed bookkeeping (#274)
+- **docs(todo)**: trace healthcheck Mode 2 to the tool denials (#272)
+- **docs(claude-md)**: add feedback, presentation and tests/storage to the tree (#271)
+- **ci(healthcheck)**: make a green run imply a report exists (#270)
+- **docs(skills)**: add meeting to the Opus tier table (#269)
+- **docs(todo)**: file healthcheck green-when-no-signal defect (#268)
+
+**Full Changelog**: https://github.com/nexus-a1/claude-skills/compare/v1.23.1...v1.23.2
+
 ## [1.23.1] - 2026-08-02
 
 Patch release. **Repository tooling only — the distributed plugin payload is unchanged from v1.23.0.**
