@@ -22,39 +22,36 @@
 #   - Every acli invocation is an argv array, never a concatenated string,
 #     and runs under `timeout` with stdin closed.
 #
-# No self-location variable: this library is a single file with nothing to
-# source, so one would be dead code. When it grows a second file, resolve the
-# directory with parameter expansion (`${BASH_SOURCE[0]%/*}`) rather than
-# `dirname` — dirname is an external binary, and calling it before the
-# dependency preflight makes a restricted PATH emit a "command not found"
-# line ahead of the real message, which reads like a crash.
+# Self-located via parameter expansion (`${BASH_SOURCE[0]%/*}`), not `dirname`
+# — dirname is an external binary, and calling it before the dependency
+# preflight makes a restricted PATH emit a "command not found" line ahead of
+# the real message, which reads like a crash. This is the second file the
+# original version of this comment anticipated: shared primitives (exit
+# codes, _die/_log, jira_validate_key, JQ_HELPERS) now live in lib.sh,
+# sourced below. Same-domain sourcing, not the cross-domain shared/*/
+# coupling forbidden above — see lib.sh's own header.
 #
 # Verified against acli 1.3.22-stable. See the work item's plan.md for the
 # full interface contract.
 set -euo pipefail
 
-# ---------------------------------------------------------------------------
-# Exit codes
-# ---------------------------------------------------------------------------
-# 10 is reserved (ambiguous input) — unused in read-only v1.
-# 40 is reserved for the v2 write path's "operation may or may not have
-#    completed" state. Do not repurpose either.
-readonly EX_OK=0
-readonly EX_USER=20
-readonly EX_SYSTEM=30
+JIRA_LIB_DIR="${BASH_SOURCE[0]%/*}"
+# shellcheck source=./lib.sh
+source "$JIRA_LIB_DIR/lib.sh"
 
-readonly ACLI_TIMEOUT=10
-readonly TIMEOUT_RC=124
+# ---------------------------------------------------------------------------
+# Read-path-only constants
+# ---------------------------------------------------------------------------
+# 10 is reserved (ambiguous input) — unused in read-only v1. Exit codes 0,
+# 20, 30 and 40 (write-path "may or may not have completed") live in lib.sh.
 readonly LIMIT_MIN=1
 readonly LIMIT_MAX=200
 readonly LIMIT_DEFAULT=20
-readonly ERR_EXCERPT=400
 
 # acli's own default omits priority and labels, both of which the spec
 # requires, so the list is always explicit.
 readonly VIEW_FIELDS="key,issuetype,summary,status,assignee,description,priority,labels"
 
-readonly SITE_UNKNOWN="(unknown — verify with: acli jira auth status)"
 readonly RICH_TEXT="(rich-text content — not rendered here)"
 
 # ---------------------------------------------------------------------------
@@ -76,28 +73,7 @@ _cleanup() {
 }
 trap _cleanup EXIT
 
-# ---------------------------------------------------------------------------
-# Diagnostics
-# ---------------------------------------------------------------------------
-_log() {
-  printf '%s\n' "$*" >&2
-}
-
-# Print message to stderr, exit with given code.
-# Usage: _die <exit_code> <message...>
-_die() {
-  local code="$1"
-  shift
-  printf '%s\n' "$*" >&2
-  exit "$code"
-}
-
-# acli's failure text is unverified. Bound every echo of it so a debug or
-# proxy error carrying a credential cannot dump unbounded into the session.
-_excerpt() {
-  [[ -s "$1" ]] || return 0
-  head -c "$ERR_EXCERPT" <"$1"
-}
+# _log, _die, _excerpt now live in lib.sh (sourced above).
 
 _usage() {
   cat >&2 <<'USAGE'
@@ -109,49 +85,15 @@ Read-only. Supported operations: view, comment-list.
 USAGE
 }
 
-# ---------------------------------------------------------------------------
-# Preflight
-# ---------------------------------------------------------------------------
-# All three binaries are hard requirements. yq is not optional: degrading
-# when it is absent would create a second path into the unknown-site state
-# and weaken the signal that exists to stop you acting against the wrong
-# tenant. yq is already a plugin-wide dependency.
-jira_preflight() {
-  command -v acli >/dev/null 2>&1 || _die "$EX_SYSTEM" \
-    "acli not found on PATH.
-Install it from https://developer.atlassian.com/cloud/acli/guides/introduction/
-then authenticate with: acli jira auth login"
-
-  command -v jq >/dev/null 2>&1 || _die "$EX_SYSTEM" "jq is required but was not found on PATH."
-  command -v yq >/dev/null 2>&1 || _die "$EX_SYSTEM" "yq is required but was not found on PATH."
-
-  # Verified: this returns rc=1 when unauthenticated, so it is a trustworthy
-  # gate — unlike the write verbs, which return 0 even on total failure.
-  local rc=0
-  timeout "$ACLI_TIMEOUT" acli jira auth status >/dev/null 2>&1 </dev/null || rc=$?
-  if (( rc == TIMEOUT_RC )); then
-    _die "$EX_SYSTEM" "Timed out after ${ACLI_TIMEOUT}s contacting Jira. Check your network or try again."
-  fi
-  if (( rc != 0 )); then
-    _die "$EX_USER" \
-      "Not authenticated with Jira.
-Run: acli jira auth login"
-  fi
-}
+# jira_preflight now lives in lib.sh (sourced above) — shared with
+# jira-write.sh, which needs byte-identical dependency/auth gating.
 
 # ---------------------------------------------------------------------------
 # Input validation
 # ---------------------------------------------------------------------------
-# The anchored regex is the SOLE leading-dash defence for the view operation:
-# acli's view verb rejects the end-of-options separator outright, so the
-# usual `cmd -- "$input"` idiom is unavailable. Full-match only.
-jira_validate_key() {
-  local key="${1:-}"
-  [[ -n "$key" ]] || _die "$EX_USER" "No work item key supplied. Expected form: PROJ-123"
-  [[ "$key" != -* ]] || _die "$EX_USER" "Invalid work item key '$key': must not start with '-'."
-  [[ "$key" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] || _die "$EX_USER" \
-    "Invalid work item key '$key' — expected form PROJ-123 (uppercase project, hyphen, digits)."
-}
+# jira_validate_key now lives in lib.sh (sourced above) — shared with
+# jira-write.sh. jira_validate_limit stays here: it's read-path only,
+# nothing in the write path paginates.
 
 # Echoes the normalized limit. Leading zeros are stripped before any
 # arithmetic: bash reads 010 as octal 8, and the raw string would also be
@@ -165,26 +107,8 @@ jira_validate_limit() {
   printf '%s' "$n"
 }
 
-# ---------------------------------------------------------------------------
-# Site resolution
-# ---------------------------------------------------------------------------
-# The active profile is read from acli's own config, scalar only — never the
-# profile list or the whole document, whose populated shape is unverified.
-#
-# The yq `//` alternative fires on null, NOT on an empty string, and this key
-# holds "" when unauthenticated. The bash-side test below is the actual
-# control; the `// ""` merely stops yq printing "null".
-jira_resolve_site() {
-  local config="${HOME}/.config/acli/jira_config.yaml"
-  local site=""
-  if [[ -r "$config" ]]; then
-    site="$(yq -r '.current_profile // ""' "$config" 2>/dev/null || true)"
-  fi
-  # Shape guard: if the key ever holds a map or multi-line value, yq would
-  # emit the subtree into a user-visible field. Only a plain scalar passes.
-  [[ "$site" =~ ^[A-Za-z0-9._:/-]{1,128}$ ]] || site="$SITE_UNKNOWN"
-  printf '%s' "$site"
-}
+# jira_resolve_site now lives in lib.sh (sourced above) — shared with
+# jira-write.sh, which must show the site on every confirmation and result.
 
 # ---------------------------------------------------------------------------
 # acli invocation
@@ -230,23 +154,7 @@ Received: $(_excerpt "$OUT_F")"
   fi
 }
 
-# ---------------------------------------------------------------------------
-# Shared jq helpers
-# ---------------------------------------------------------------------------
-# scalar/1 collapses the several shapes a Jira field can arrive in — a bare
-# string, an object carrying .name or .displayName, null, or an empty string
-# — to either a plain string or null. It never lets an object through, which
-# is what keeps self-links, ids and icon URLs out of the rendered output.
-# shellcheck disable=SC2016  # $v/$r are jq variables, not shell expansions
-readonly JQ_HELPERS='
-  def scalar($v):
-    if $v == null then null
-    elif ($v | type) == "object" then ($v.name // $v.displayName // null)
-    elif ($v | type) == "string" then (if $v == "" then null else $v end)
-    elif ($v | type) == "array" then null
-    else ($v | tostring) end;
-  def orNone($v): if $v == null then "none" else $v end;
-'
+# JQ_HELPERS (scalar/orNone) now lives in lib.sh (sourced above).
 
 # ---------------------------------------------------------------------------
 # Operations
@@ -313,6 +221,7 @@ op_comment_list() {
         site: \$site,
         shown: (\$page | length),
         comments: [ \$page[] | {
+          id:      (orNone(scalar(.id))),
           author:  (orNone(scalar(.author) // scalar(.updateAuthor))),
           created: (orNone(scalar(.created) // scalar(.createdAt))),
           body:    ((.body // .renderedBody) as \$b

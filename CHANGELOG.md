@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.24.0] - 2026-08-15
+
+## What's Changed
+
+2 commits: 1 feat, 1 docs. No breaking changes.
+
+### Features
+
+- **jira**: extend `/jira` to opt-in write operations (comment, transition, assign/unassign) — CL-18
+
+### Other Changes
+
+- **claude-md**: add Response Style guideline — CL-19
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.23.2...v1.24.0
+
 ## [1.23.2] - 2026-08-15
 
 ## What's Changed

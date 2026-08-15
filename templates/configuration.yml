@@ -202,6 +202,25 @@ requirements:
 
 
 # -----------------------------------------------------------------------------
+# Jira Write Operations (optional)
+# -----------------------------------------------------------------------------
+# /jira is read-only by default. Enabling this lets it also add a comment,
+# transition a status, or assign/unassign a work item — always with an
+# explicit per-write confirmation first, and always independently re-read
+# and verified afterward before a success is reported.
+#
+# Resolved and enforced by plugin/shared/jira/jira-write.sh itself, not by
+# skill prose — a direct invocation of that script cannot mutate when this
+# is absent, false, or unresolvable for any reason (fail-closed).
+#
+#   enabled  opt-in toggle (default: false)
+# -----------------------------------------------------------------------------
+# jira:
+#   write:
+#     enabled: false
+
+
+# -----------------------------------------------------------------------------
 # Worktree Isolation (optional)
 # -----------------------------------------------------------------------------
 # When enabled, code-modifying skills (/implement, /troubleshoot, /refactor) work in
