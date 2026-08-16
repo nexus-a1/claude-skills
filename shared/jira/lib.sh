@@ -158,3 +158,112 @@ readonly JQ_HELPERS='
     else ($v | tostring) end;
   def orNone($v): if $v == null then "none" else $v end;
 '
+
+# adfToText walks an Atlassian Document Format doc (Jira's rich-text
+# description/comment shape) and renders it to plain text. Descriptions and
+# comments arrive as either a plain string or an ADF doc depending on the
+# ticket's edit history — this covers the ADF case so op_view stops replacing
+# real content with a placeholder.
+#
+# Deliberately a SINGLE self-recursive def (adfBlock calling itself for list
+# items, table rows/cells, blockquotes, and any unrecognised-but-nested
+# type): jq resolves top-level `def`s in dependency order with no forward
+# references, so splitting listItem/tableCell handling into separate helper
+# defs that call adfBlock (which would need to call them back) does not
+# compile — verified directly (`def a: b; def b: a;` fails with
+# "b/0 is not defined"). Folding every block-level case into one function
+# sidesteps the ordering requirement entirely via ordinary self-recursion.
+#
+# Unrecognised or malformed shapes resolve to null rather than partial/wrong
+# text, so the caller can fall back to the existing RICH_TEXT marker instead
+# of rendering something confidently incomplete.
+# shellcheck disable=SC2016,SC2034  # jq syntax, not shell expansions; used by scripts that source this file
+readonly JQ_ADF_HELPERS='
+  def adfText:
+    reduce (.marks // [])[] as $m (.text // "";
+      if $m.type == "strong" then "**" + . + "**"
+      elif $m.type == "em" then "_" + . + "_"
+      elif $m.type == "code" then "`" + . + "`"
+      elif $m.type == "strike" then "~~" + . + "~~"
+      else .
+      end);
+
+  def adfInline:
+    if .type == "text" then adfText
+    elif .type == "hardBreak" then "\n"
+    elif .type == "mention" then ("@" + (.attrs.text // "mention"))
+    elif .type == "emoji" then (.attrs.text // .attrs.shortName // "")
+    elif .type == "inlineCard" or .type == "blockCard" then (.attrs.url // "")
+    elif .type == "date" then (.attrs.timestamp // "")
+    elif .type == "status" then (.attrs.text // "")
+    else ""
+    end;
+
+  def adfInlineJoin:
+    map(adfInline) | join("");
+
+  # depth is an explicit recursion-depth counter, not an ADF field — every
+  # self-call increments it and a doc nested past ADF_MAX_DEPTH truncates
+  # rather than recursing further. jq 1.7 itself already refuses to PARSE
+  # JSON nested past ~50-100 levels ("Exceeds depth limit for parsing"),
+  # which already stops this specific stack on an adversarially deep doc
+  # before adfBlock ever runs — verified directly. But this plugin ships to
+  # unknown environments with an unpinned jq version/implementation (some
+  # parse deeper, or without a limit at all), so the depth cap here is
+  # defense-in-depth for portability, not a fix for an exploitable crash on
+  # any one stack. Caught by the jira.sh:203 try/catch either way, but
+  # bailing at a known depth is cheaper and more predictable than trusting a
+  # C-stack overflow to surface as a catchable jq error.
+  def adfBlock(depth):
+    # depth is a non-$ function parameter, so jq treats it as a lazily
+    # re-evaluated closure — left unbound, checking it at nesting level n
+    # would replay a chain of n nested "+1" closures on every call, making
+    # the depth check itself O(n) and the whole render O(n^2) in nesting
+    # depth. Binding it once up front makes each check O(1) again.
+    (depth) as $depth |
+    if $depth > 50 then "…"
+    elif .type == "paragraph" then ((.content // []) | adfInlineJoin)
+    elif .type == "heading" then
+      ( ((.attrs.level // 1) as $raw
+         # Clamped to the ADF spec 1-6 heading range, not just floored at 1:
+         # an attacker-authored level like 1e9 would otherwise make
+         # "#" * $lvl build a near-unbounded string with no timeout to
+         # catch it (jq here runs unwrapped, unlike every acli call in
+         # this domain).
+         | (if ($raw|type) == "number" and $raw > 0 then ([$raw, 6] | min) else 1 end)) as $lvl
+        | ("#" * $lvl) + " " + ((.content // []) | adfInlineJoin)
+      )
+    elif .type == "codeBlock" then
+      ("```" + (.attrs.language // "") + "\n" + ((.content // []) | map(.text // "") | join("")) + "\n```")
+    elif .type == "blockquote" then
+      (((.content // []) | map(adfBlock(depth+1)) | join("\n")) | split("\n") | map("> " + .) | join("\n"))
+    elif .type == "rule" then "---"
+    elif .type == "listItem" then
+      ((.content // []) | map(adfBlock(depth+1)) | join("\n"))
+    elif .type == "bulletList" then
+      ((.content // []) | map("- " + adfBlock(depth+1)) | join("\n"))
+    elif .type == "orderedList" then
+      ( (.attrs.order // 1) as $start
+        | (.content // []) as $items
+        | [ range(0; ($items | length)) as $i | (($start + $i | tostring) + ". " + ($items[$i] | adfBlock(depth+1))) ]
+        | join("\n")
+      )
+    elif .type == "tableCell" or .type == "tableHeader" then
+      ((.content // []) | map(adfBlock(depth+1)) | join(" "))
+    elif .type == "tableRow" then
+      ((.content // []) | map(adfBlock(depth+1)) | join(" | "))
+    elif .type == "table" then
+      ((.content // []) | map(adfBlock(depth+1)) | join("\n"))
+    elif .type == "panel" then
+      ((.content // []) | map(adfBlock(depth+1)) | join("\n"))
+    elif (.type == "mediaSingle" or .type == "mediaGroup" or .type == "media") then "[attachment]"
+    else
+      (if (.content? // null) != null then ((.content) | map(adfBlock(depth+1)) | join("\n")) else "" end)
+    end;
+
+  def adfToText:
+    if (type) == "object" and .type == "doc" and ((.content? // null) != null) then
+      (([(.content)[] | adfBlock(0)] | join("\n\n")) as $out | (if $out == "" then null else $out end))
+    else null
+    end;
+'

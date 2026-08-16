@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.25.0] - 2026-08-16
+
+## What's Changed
+
+1 commit (squash-merged PR #279): a new feature in the `/jira` skill. No breaking changes.
+
+### Features
+
+- **jira**: `/jira KEY-123` now renders real Atlassian Document Format (ADF) ticket descriptions as plain text (paragraphs, bold/italic/code/strike marks, headings, bullet/ordered lists, code blocks, blockquotes, tables) instead of a fixed `"(rich-text content — not rendered here)"` placeholder — most Jira Cloud tickets store descriptions as ADF by default, so this was previously the common case. Malformed or unrecognised ADF shapes still fall back to the placeholder rather than failing the whole read. — CL-20
+
+### Hardening
+
+- Recursion depth in the new ADF renderer is capped (50 levels, truncates rather than recursing further) against pathologically nested ticket content, and the type-confused-input path is wrapped so a malformed field degrades safely instead of crashing `/jira`'s view operation.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.24.0...v1.25.0
+
 ## [1.24.0] - 2026-08-15
 
 ## What's Changed

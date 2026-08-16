@@ -52,6 +52,13 @@ readonly LIMIT_DEFAULT=20
 # requires, so the list is always explicit.
 readonly VIEW_FIELDS="key,issuetype,summary,status,assignee,description,priority,labels"
 
+# Fallback only (CL-20): op_view now renders ADF descriptions via
+# adfToText (JQ_ADF_HELPERS, lib.sh). This still fires for description/body
+# shapes adfToText can't make sense of — malformed docs, empty content,
+# or a future ADF node type — so an unparseable field degrades to a
+# marker instead of silently rendering blank or wrong text. Comment
+# bodies (op_comment_list) still use this unconditionally; rendering
+# ADF comments was out of this ticket's scope.
 readonly RICH_TEXT="(rich-text content — not rendered here)"
 
 # ---------------------------------------------------------------------------
@@ -174,6 +181,7 @@ op_view() {
   # item has a null assignee — so they render a marker instead.
   _project "$key" --arg site "$site" --arg key "$key" "
     $JQ_HELPERS
+    $JQ_ADF_HELPERS
     . as \$r
     | (if (\$r.fields | type) == \"object\" then \$r.fields else {} end) as \$f
     | (scalar(\$f.summary) // scalar(\$r.summary)) as \$summary
@@ -192,7 +200,7 @@ op_view() {
                     else [] end) | map(tostring)),
         description: (if \$desc == null then \"none\"
                       elif (\$desc | type) == \"string\" then (if \$desc == \"\" then \"none\" else \$desc end)
-                      else \"$RICH_TEXT\" end),
+                      else (try (\$desc | adfToText) catch null) // \"$RICH_TEXT\" end),
         site: \$site
       }
   "
