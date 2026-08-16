@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.26.1] - 2026-08-16
+
+## What's Changed
+
+14 commits since v1.26.0, all documentation (13 `docs` + 1 merge commit), no breaking changes, no new features. This release lands CL-26: a documentation alignment audit correcting drift between the plugin's shipped behavior and its published docs.
+
+### Documentation
+
+- **configuration**: document the Jira write-flag's ADR-012 link, add the full 7-phase team-mode table (replacing a stale single-skill claim), fix the worktree-isolation affected-skills list
+- **installation**: fix installed-component counts (hooks, templates, skills) and the team-mode claim to match configuration.md
+- **agents**: narrow `git-operator`'s documented scope to match ADR-007 (merge conflicts, complex rebases, large-range PR body authoring only — not routine commit/push/PR); correct the `git-mutation-guard.sh` enforcement description (it only actually gates `git push` and `git commit`); clarify `GIT_AUTHORIZED=1`'s two sanctioned narrow uses
+- **skills**: redraw the skills-to-agents diagram to cover all 34 shipped skills (previously showed 11); remove stale `git-operator`-delegation claims from 5 skill entries and an example sequence diagram; add the missing ADR-012 link on the `/jira` entry; fix a mermaid render error (unquoted node labels) that had silently broken the diagram
+- **implementation-plan**: mark the pre-marketplace install plan as a historical record, superseded by the native plugin marketplace install path
+- **readme**: refresh the "Last Updated" date, list all custom-addition directories (`hooks/`, `shared/`, `templates/`)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.26.0...v1.26.1
+
 ## [1.26.0] - 2026-08-16
 
 ## What's Changed
