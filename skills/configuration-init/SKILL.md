@@ -272,6 +272,70 @@ If "Customize", ask about each flag individually. If "Use defaults", use:
 - `max_suggestions`: 3
 - `archive_on_pr`: true
 
+### Step 5b: Ask About Jira Integration
+
+Runs regardless of whether a team repo was configured in Step 4/5.
+
+Use AskUserQuestion:
+- header: "Jira"
+- question: "Does this project use Jira (via the `acli` CLI) for ticket tracking? Enabling this lets /jira and jira-aware features (like /create-requirements auto-seeding from a loaded ticket) run without asking each time."
+- options:
+  - "No" / "Skip Jira config — /jira remains available but untracked by this wizard"
+  - "Yes" / "Enable Jira integration and run a quick acli check"
+- multiSelect: false
+
+**If "No"** — set `JIRA_ENABLED=""` (omit the `jira:` block entirely in Step 6; `jira.enabled` already defaults to `true` when absent, so this only means the wizard skips asking about write access — it does not disable `/jira`). Skip to Step 6.
+
+**If "Yes"** — run the check and report results before asking about write access:
+
+```bash
+ACLI_INSTALLED=false
+ACLI_AUTHENTICATED=false
+ACLI_AUTH_SITE=""
+
+if command -v acli >/dev/null 2>&1; then
+  ACLI_INSTALLED=true
+  if AUTH_OUT=$(timeout 10 acli jira auth status 2>&1); then
+    ACLI_AUTHENTICATED=true
+    # Surface the site only, never the account/email line — matches the
+    # precedent in plugin/shared/jira/lib.sh's jira_resolve_site (site
+    # only, no account identity), and bounded to one match so a single
+    # unexpectedly long line can't dump unbounded into the transcript.
+    ACLI_AUTH_SITE=$(printf '%s\n' "$AUTH_OUT" | grep -oE '[A-Za-z0-9.-]+\.atlassian\.net' | head -1)
+  fi
+fi
+
+echo "Jira integration check:"
+if [[ "$ACLI_INSTALLED" == "true" ]]; then echo "  ✓ acli installed"; else echo "  ✗ acli not found on PATH"; fi
+if [[ "$ACLI_AUTHENTICATED" == "true" ]]; then
+  if [[ -n "$ACLI_AUTH_SITE" ]]; then
+    echo "  ✓ authenticated (site: $ACLI_AUTH_SITE)"
+  else
+    echo "  ✓ authenticated"
+  fi
+elif [[ "$ACLI_INSTALLED" == "true" ]]; then
+  echo "  ✗ not authenticated"
+fi
+```
+
+If either check failed, show a one-line remediation hint but do **not** block on it — the flag records project *intent*, and acli may be installed/authenticated later by whoever runs this project next:
+- Not installed: "Install from https://developer.atlassian.com/cloud/acli/guides/introduction/"
+- Not authenticated: "Run: acli jira auth login"
+
+Set `JIRA_ENABLED="true"`.
+
+Then ask about write access:
+
+Use AskUserQuestion:
+- header: "Jira Writes"
+- question: "Also enable /jira write operations (comment, transition, assign/unassign)? Each write still requires an explicit per-write confirmation."
+- options:
+  - "No — read-only (Recommended)" / "jira.write.enabled stays false; /jira can view tickets and comments only"
+  - "Yes — enable writes" / "jira.write.enabled: true"
+- multiSelect: false
+
+Set `JIRA_WRITE_ENABLED` to `"true"` or `"false"` accordingly.
+
 ### Step 6: Build Configuration
 
 If `LOCAL_PATH` was not set (e.g., user selected "Create new" in Step 5 and execution stopped), default it:
@@ -381,6 +445,17 @@ requirements:
   archive_on_pr: true
 ```
 
+**If `$JIRA_ENABLED == "true"` (Step 5b answered "Yes"), add:**
+
+```yaml
+jira:
+  enabled: true
+  write:
+    enabled: ${JIRA_WRITE_ENABLED}   # true or false, from Step 5b
+```
+
+If Step 5b answered "No", omit the `jira:` block entirely — `jira.enabled` already defaults to `true` when absent, so omitting it changes nothing about whether `/jira` works, only that this wizard run didn't ask about write access.
+
 ### Step 7: Write Configuration and Create Directories
 
 ```bash
@@ -466,6 +541,12 @@ REQUIREMENTS BEHAVIOR
   auto_load_threshold:  ${value}
   max_suggestions:      ${value}
   archive_on_pr:        ${value}
+
+JIRA                                                          # only if jira: was written (Step 5b)
+────────────────────────────────────────────────
+  enabled:               ${value}
+  write.enabled:          ${value}
+  acli:                   ${installed/authenticated summary from Step 5b's check, or "not re-checked"}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -568,6 +649,13 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
    → auto_load_threshold: must be number between 0 and 1 → else WARN
    → max_suggestions: must be positive integer → else WARN
    → archive_on_pr: must be boolean → else WARN
+
+6. jira section (if present)
+   → enabled: must be boolean → else WARN
+   → write.enabled: must be boolean → else WARN
+   → If enabled == false AND write.enabled == true → WARN ("jira.enabled is
+     false, so jira.write.enabled: true has no effect — both jira.sh and
+     jira-write.sh refuse the master switch before checking write access")
 ```
 
 **Output format:**

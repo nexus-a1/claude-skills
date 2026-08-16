@@ -227,7 +227,15 @@ _write_enabled() {
       printf 'false\nno-yq'
     else
       _v="$(yq -r '.jira.write.enabled // "false"' "$CONFIG" 2>/dev/null)" || { printf 'false\nyq-failed'; exit 0; }
-      if [ "$_v" = "true" ]; then
+      # No `// "true"` here — same false-is-falsy `//` pitfall as lib.sh's
+      # jira_master_enabled: it would silently coerce an explicit
+      # `enabled: false` back to "true". Fetch the raw value and test it.
+      _master="$(yq -r '.jira.enabled' "$CONFIG" 2>/dev/null)" || { printf 'false\nyq-failed'; exit 0; }
+      if [ "$_master" = "false" ]; then
+        # Master switch off: writes are refused regardless of jira.write.enabled
+        # — a project that opted out of Jira entirely shouldn't still mutate it.
+        printf 'false\nresolved-false-master-disabled'
+      elif [ "$_v" = "true" ]; then
         printf 'true\nresolved-true'
       else
         printf 'false\nresolved-false'
@@ -583,6 +591,10 @@ main() {
 
   if [[ "$enabled" != "true" ]]; then
     case "$enable_reason" in
+      resolved-false-master-disabled)
+        _die "$EX_USER" \
+          "jira-write.sh: Jira integration is disabled for this project (jira.enabled: false in .claude/configuration.yml). Enable it first, then enable writes separately if needed."
+        ;;
       no-config-file|resolved-false)
         _die "$EX_USER" \
           "jira-write.sh: Jira write operations are not enabled for this project.

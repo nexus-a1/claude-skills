@@ -48,17 +48,26 @@ readonly LIMIT_MIN=1
 readonly LIMIT_MAX=200
 readonly LIMIT_DEFAULT=20
 
+# Local CPU-bound bound for _project's jq call, distinct from ACLI_TIMEOUT
+# (network). Generous relative to real ADF trees (which render in
+# milliseconds) but bounds the pathological case a wide-but-shallow (or
+# otherwise slow-to-evaluate) ADF tree walked by adfBlock (lib.sh) could
+# otherwise hit — complementary to adfBlock's own depth cap, which bounds
+# deep nesting specifically.
+readonly JQ_TIMEOUT=10
+
 # acli's own default omits priority and labels, both of which the spec
 # requires, so the list is always explicit.
 readonly VIEW_FIELDS="key,issuetype,summary,status,assignee,description,priority,labels"
 
-# Fallback only (CL-20): op_view now renders ADF descriptions via
-# adfToText (JQ_ADF_HELPERS, lib.sh). This still fires for description/body
-# shapes adfToText can't make sense of — malformed docs, empty content,
-# or a future ADF node type — so an unparseable field degrades to a
-# marker instead of silently rendering blank or wrong text. Comment
-# bodies (op_comment_list) still use this unconditionally; rendering
-# ADF comments was out of this ticket's scope.
+# Fallback only (CL-20, extended to comments by CL-21): both op_view's
+# description and op_comment_list's body render ADF via adfToText
+# (JQ_ADF_HELPERS, lib.sh). This fires for shapes adfToText can't make
+# sense of — malformed docs, empty content, a future ADF node type, or a
+# doc that mixes recognized and unrecognized node types (adfToText returns
+# null in that last case rather than a partial transcription) — so an
+# unparseable field degrades to a marker instead of silently rendering
+# blank or wrong text.
 readonly RICH_TEXT="(rich-text content — not rendered here)"
 
 # ---------------------------------------------------------------------------
@@ -150,9 +159,24 @@ This usually means acli's behaviour changed."
 # and surfaced: a parse failure, a type error, and a deliberate
 # error(\"missing-required\") are three different problems, and collapsing
 # them into one message makes the diagnostic actively misleading.
+#
+# Timeout-wrapped the same way _run_acli wraps its own acli call (see
+# above) — added alongside the ADF walker (adfBlock/adfToText in lib.sh's
+# JQ_ADF_HELPERS), which recurses into ticket-author-controlled content.
+# adfBlock has its own explicit depth cap (defense-in-depth for jq
+# implementations without one), but this wall-clock timeout is a
+# complementary, general guard against any pathologically slow jq
+# evaluation — wide-but-shallow trees the depth cap would not catch —
+# so a malicious or malformed response cannot hang this call indefinitely
+# where every other step in the read path is already bounded.
 _project() {
   local what="$1"; shift
-  if ! jq "$@" <"$OUT_F" 2>"$JQ_ERR_F"; then
+  local rc=0
+  timeout "$JQ_TIMEOUT" jq "$@" <"$OUT_F" 2>"$JQ_ERR_F" || rc=$?
+  if (( rc == TIMEOUT_RC )); then
+    _die "$EX_SYSTEM" "Timed out after ${JQ_TIMEOUT}s projecting $what. The response may contain pathologically nested content."
+  fi
+  if (( rc != 0 )); then
     _die "$EX_SYSTEM" \
       "Unexpected acli output for $what — the response could not be interpreted.
 acli's response format may have changed.
@@ -221,6 +245,7 @@ op_comment_list() {
   # shellcheck disable=SC2016  # $c/$page/$site are jq variables, not shell expansions
   _project "comments for $key" --arg site "$site" --arg key "$key" --argjson limit "$limit" "
     $JQ_HELPERS
+    $JQ_ADF_HELPERS
     (.comments // .values // .results // (if type == \"array\" then . else null end)) as \$c
     | if (\$c | type) != \"array\" then error(\"missing-required\") else . end
     | (\$c[:\$limit]) as \$page
@@ -235,7 +260,7 @@ op_comment_list() {
           body:    ((.body // .renderedBody) as \$b
                     | if \$b == null then \"\"
                       elif (\$b | type) == \"string\" then \$b
-                      else \"$RICH_TEXT\" end)
+                      else (try (\$b | adfToText) catch null) // \"$RICH_TEXT\" end)
         } ]
       }
   "
@@ -280,6 +305,15 @@ main() {
 
   jira_validate_key "$key"
   limit="$(jira_validate_limit "$limit")"
+
+  local _master_state
+  _master_state="$(jira_master_enabled)"
+  if [[ "${_master_state%%$'\n'*}" == "false" ]]; then
+    _die "$EX_USER" \
+      "Jira integration is disabled for this project (jira.enabled: false in .claude/configuration.yml).
+Run /configuration-init to re-enable it, or edit the config directly."
+  fi
+
   jira_preflight
 
   OUT_F="$(mktemp)"; ERR_F="$(mktemp)"; JQ_ERR_F="$(mktemp)"

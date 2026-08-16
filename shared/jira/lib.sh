@@ -82,6 +82,71 @@ jira_validate_key() {
 readonly SITE_UNKNOWN="(unknown — verify with: acli jira auth status)"
 
 # ---------------------------------------------------------------------------
+# Master enable/disable gate
+# ---------------------------------------------------------------------------
+# Governs whether /jira may call acli AT ALL for this project. Distinct from
+# jira_preflight below: preflight checks whether acli technically works
+# (installed, authenticated); this checks whether the project has opted in
+# in the first place. Default true (opt-out) — unlike jira.write.enabled
+# (opt-in), this must not change established behavior for configs written
+# before this flag existed. Its purpose is to let a project state "no acli
+# here" once, in .claude/configuration.yml, instead of Claude discovering
+# that by probing acli on every /jira invocation (CL-23).
+#
+# Mirrors jira-write.sh's _write_enabled(): same resolve-config.sh sourcing
+# chain, same two-line "true/false"+reason echo contract, so a caller can
+# tell "explicitly disabled" apart from "couldn't resolve config" if it
+# ever needs to. Duplicated rather than shared with _write_enabled because
+# the two default oppositely (true vs false) and lib.sh's header already
+# documents why read/write control flow is kept apart.
+jira_master_enabled() {
+  local root self="${BASH_SOURCE[0]}"
+  case "$self" in
+    */*) root="${self%/*}/.." ;;
+    *)   root=".." ;;
+  esac
+  root="$(cd "$root" 2>/dev/null && pwd)" || root=""
+
+  if ! command -v dirname >/dev/null 2>&1; then
+    printf 'true\nno-dirname'
+    return 0
+  fi
+
+  local result
+  result="$(
+    set +u
+    if [ -n "$root" ] && [ -f "$root/resolve-config.sh" ]; then
+      # shellcheck source=../resolve-config.sh
+      . "$root/resolve-config.sh" >/dev/null 2>&1
+    elif [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+      . "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" >/dev/null 2>&1
+    elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+      . "$HOME/.claude/shared/resolve-config.sh" >/dev/null 2>&1
+    fi
+    if [ -z "${CONFIG:-}" ] || [ ! -f "$CONFIG" ]; then
+      printf 'true\nno-config-file'
+    elif ! command -v yq >/dev/null 2>&1; then
+      printf 'true\nno-yq'
+    else
+      # No `// "true"` here: jq/yq's `//` treats a literal `false` value as
+      # falsy, same as `null` — `.jira.enabled // "true"` would silently
+      # coerce an explicit `enabled: false` back to "true" (the exact
+      # pitfall resolve_playwright_scoping_enabled's comment already warns
+      # about). Fetch the raw value and test it explicitly instead.
+      _v="$(yq -r '.jira.enabled' "$CONFIG" 2>/dev/null)" || { printf 'true\nyq-failed'; exit 0; }
+      if [ "$_v" = "false" ]; then
+        printf 'false\nresolved-false'
+      else
+        printf 'true\nresolved-true'
+      fi
+    fi
+  )" || result="true
+unresolvable"
+
+  printf '%s' "$result"
+}
+
+# ---------------------------------------------------------------------------
 # Preflight
 # ---------------------------------------------------------------------------
 # All three binaries are hard requirements for both the read and write paths.
@@ -162,8 +227,8 @@ readonly JQ_HELPERS='
 # adfToText walks an Atlassian Document Format doc (Jira's rich-text
 # description/comment shape) and renders it to plain text. Descriptions and
 # comments arrive as either a plain string or an ADF doc depending on the
-# ticket's edit history — this covers the ADF case so op_view stops replacing
-# real content with a placeholder.
+# ticket's edit history — this covers the ADF case so op_view and
+# op_comment_list both stop replacing real content with a placeholder.
 #
 # Deliberately a SINGLE self-recursive def (adfBlock calling itself for list
 # items, table rows/cells, blockquotes, and any unrecognised-but-nested
@@ -188,6 +253,13 @@ readonly JQ_ADF_HELPERS='
       else .
       end);
 
+  # " UNRECOGNIZED " (the sentinel below) marks an inline node type this
+  # walker does not know, so adfToText can return null (placeholder) rather
+  # than silently dropping that node out of an otherwise-successful
+  # transcription. Without this, a doc mixing recognized inline nodes with
+  # one unrecognized one would render as PARTIAL text with no signal that
+  # anything was dropped. Real ADF text content colliding with this exact
+  # padded, all-caps string is not a realistic concern.
   def adfInline:
     if .type == "text" then adfText
     elif .type == "hardBreak" then "\n"
@@ -196,7 +268,7 @@ readonly JQ_ADF_HELPERS='
     elif .type == "inlineCard" or .type == "blockCard" then (.attrs.url // "")
     elif .type == "date" then (.attrs.timestamp // "")
     elif .type == "status" then (.attrs.text // "")
-    else ""
+    else " UNRECOGNIZED "
     end;
 
   def adfInlineJoin:
@@ -213,7 +285,11 @@ readonly JQ_ADF_HELPERS='
   # defense-in-depth for portability, not a fix for an exploitable crash on
   # any one stack. Caught by the jira.sh:203 try/catch either way, but
   # bailing at a known depth is cheaper and more predictable than trusting a
-  # C-stack overflow to surface as a catchable jq error.
+  # C-stack overflow to surface as a catchable jq error. The "…" truncation
+  # marker is a deliberate, separate signal from the " UNRECOGNIZED "
+  # sentinel below — depth-capping is an intentional bound on legitimate
+  # nested content, not an unrecognized-shape drop, so it does not fall back
+  # to the RICH_TEXT placeholder the way an unrecognized node type does.
   def adfBlock(depth):
     # depth is a non-$ function parameter, so jq treats it as a lazily
     # re-evaluated closure — left unbound, checking it at nesting level n
@@ -258,12 +334,23 @@ readonly JQ_ADF_HELPERS='
       ((.content // []) | map(adfBlock(depth+1)) | join("\n"))
     elif (.type == "mediaSingle" or .type == "mediaGroup" or .type == "media") then "[attachment]"
     else
-      (if (.content? // null) != null then ((.content) | map(adfBlock(depth+1)) | join("\n")) else "" end)
+      # Unrecognized block type. A container (has .content) still recurses
+      # into its children so their text is not lost — but a leaf with no
+      # .content carries content this walker cannot see, so it sentinels
+      # rather than silently rendering "" (see the adfInline sentinel comment
+      # above; same AC-5.5 rationale applies to block-level leaves).
+      (if (.content? // null) != null then ((.content) | map(adfBlock(depth+1)) | join("\n")) else " UNRECOGNIZED " end)
     end;
 
+  # Only recognized doc-shaped input is walked, and the result is checked
+  # for the " UNRECOGNIZED " sentinel before it is trusted: a doc mixing
+  # recognized and unrecognized node types must fall back to the RICH_TEXT
+  # placeholder as a whole, not render a partial transcription with the
+  # unrecognized parts silently missing.
   def adfToText:
     if (type) == "object" and .type == "doc" and ((.content? // null) != null) then
-      (([(.content)[] | adfBlock(0)] | join("\n\n")) as $out | (if $out == "" then null else $out end))
+      (([(.content)[] | adfBlock(0)] | join("\n\n")) as $out
+       | if ($out == "" or ($out | contains(" UNRECOGNIZED "))) then null else $out end)
     else null
     end;
 '

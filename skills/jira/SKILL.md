@@ -20,6 +20,13 @@ Arguments provided: $ARGUMENTS
 Verified against **acli 1.3.22-stable**. If acli's behaviour differs on a newer
 release, that version is the reference point for the difference.
 
+**Configuration:** `jira.enabled` in `.claude/configuration.yml` (default `true`)
+is a master opt-out — set `false` to skip Jira entirely for a project that
+doesn't use it; `jira.sh` refuses before ever calling `acli`. `jira.write.enabled`
+(default `false`) gates write ops as described above, and is itself refused
+whenever `jira.enabled` is `false`. `/configuration-init` offers to set both,
+including a one-time acli installed/authenticated check.
+
 ## Your Task
 
 Thin dispatcher over `${CLAUDE_PLUGIN_ROOT}/shared/jira/jira.sh` (read) and

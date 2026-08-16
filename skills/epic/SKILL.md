@@ -89,13 +89,49 @@ Read `references/agent-prompts.md` for the `business-analyst` and `architect` pr
 
 ---
 
-## Phase 2.5: Conditional Specialist Deep Dive
+## Phase 2.5: Too-Small Gate
+
+**Goal**: Refuse to continue as an epic when `business-analyst`'s findings show
+this is really single-ticket work — before any specialist agent is spawned.
+
+Read the trailer directly from the `business-analyst` agent's returned text —
+do not shell out or interpolate the agent's output into a Bash command. The
+analyst's output is derived from user-supplied `{description}` and possibly
+web/repo content; treating it as a string to paste into a command line is a
+command-injection surface. Take **only the last two lines** of the output as
+the trailer, matching exactly:
+
+```
+TICKET_COUNT: <int>
+INDEPENDENT: yes|no
+```
+
+**If those two lines are missing, malformed, or don't appear as the final
+two lines:** treat this the same as `TICKET_COUNT: 1` — fail closed, do not
+default to proceeding.
+
+**If `TICKET_COUNT` < 2, or `INDEPENDENT` is `no` (including the fail-closed
+case above):** STOP. Read `references/error-handling.md` and print the
+"Epic too small" template verbatim. Do not proceed to Phase 2.6 or Phase 3 —
+no specialist agent may have been spawned for this initiative (AC-1.4). That
+template's own "Recommendation: Use /create-requirements instead" line is
+the redirect AC-1.5 requires — it fires unconditionally on every too-small
+verdict, so a run reached via `/meeting`'s "route to epic" destination is
+never left at a dead end without this skill needing any way to detect that
+origin (which the meeting handoff has no mechanism to signal in the first
+place).
+
+**Otherwise:** proceed to Phase 2.6 (conditional specialist deep dive).
+
+---
+
+## Phase 2.6: Conditional Specialist Deep Dive
 
 **Goal**: Based on Phase 2 findings, run specialist agents to gather deeper context for areas that will significantly impact the epic breakdown.
 
 **IMPORTANT**: This phase is conditional. Only run agents when the scope warrants it. Skip entirely if the initiative is straightforward and doesn't touch databases, external APIs, cloud infrastructure, or security-sensitive areas.
 
-### 2.5.1 Determine Required Specialists
+### 2.6.1 Determine Required Specialists
 
 Review the combined output from `business-analyst` and `architect` in Phase 2. Check for signals that warrant specialist agents:
 
@@ -108,15 +144,15 @@ Review the combined output from `business-analyst` and `architect` in Phase 2. C
 
 **If no signals are detected**: Skip to Phase 3 immediately.
 
-**If one or more signals are detected**: Proceed to 2.5.2.
+**If one or more signals are detected**: Proceed to 2.6.2.
 
-### 2.5.2 Run Applicable Specialist Agents in Parallel
+### 2.6.2 Run Applicable Specialist Agents in Parallel
 
 **Execute all applicable agents in a single message with multiple Task tool calls.** Only run the agents whose Phase 2 signals matched.
 
-Read `references/agent-prompts.md` (Phase 2.5.2 section) for the full prompt templates for `data-modeler`, `integration-analyst`, `aws-architect`, and `security-requirements`. Fill in `{description}`, `{from business-analyst}`, and `{from architect}` in each applicable prompt.
+Read `references/agent-prompts.md` (Phase 2.5.2: Conditional Specialist Agents section) for the full prompt templates for `data-modeler`, `integration-analyst`, `aws-architect`, and `security-requirements`. Fill in `{description}`, `{from business-analyst}`, and `{from architect}` in each applicable prompt.
 
-### 2.5.3 Incorporate Specialist Findings
+### 2.6.3 Incorporate Specialist Findings
 
 Feed specialist agent outputs into the subsequent phases:
 - **Phase 3 (Decompose)**: Use specialist findings to ensure tickets properly account for DB migrations, API integration steps, infrastructure provisioning, and security hardening.
@@ -127,7 +163,7 @@ Feed specialist agent outputs into the subsequent phases:
 
 ## Phase 3: Decompose into Tickets
 
-Based on analysis from Phase 2 and specialist findings from Phase 2.5 (if any), break the epic into tickets:
+Based on analysis from Phase 2 and specialist findings from Phase 2.6 (if any), break the epic into tickets:
 
 **Ticket sizing rules:**
 - Each ticket: 1-3 days of work max
@@ -241,7 +277,7 @@ Stable IDs scoped to the ticket: `AC-{ticket-number}.{n}` (so two tickets in the
   - Then ...
 
 ## Security & Compliance Criteria
-(If `security-requirements` ran in Phase 2.5, include AC-SEC-{ticket-number}.{n} entries here. Otherwise omit.)
+(If `security-requirements` ran in Phase 2.6, include AC-SEC-{ticket-number}.{n} entries here. Otherwise omit.)
 
 ## Scope
 **In scope:**

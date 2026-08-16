@@ -5,7 +5,7 @@ model: claude-opus-5
 userInvocable: true
 description: Live meeting companion — capture notes as the meeting happens while background probes ground each topic against the Product Knowledge Base and the live codebase, surfacing relevant findings inline without stalling capture. On wrap it emits two distinct professional documents (a shareable summary and a technical changes/risks doc) as Markdown + printable HTML, stored under $MEETINGS_DIR/{YYYY-MM-DD-HHMM}-{slug}/ so records sort chronologically (pre-existing meetings under the legacy $MEETINGS_DIR/{slug}/ layout stay readable in place). Use at the START of a meeting; also has a one-shot mode for after-the-fact notes.
 argument-hint: "[--file <path>] [--dir <path>] [--resume [slug]] [--wrap [slug]] [--lite] [topic]"
-allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(pwd:*), Bash(mkdir:*), Bash(bash:*), Bash(date:*), Bash(jq:*), Bash(cat:*), Bash(mv:*), Bash(mktemp:*), Bash(git branch:*), Bash(git rev-parse:*), Task, AskUserQuestion"
+allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(pwd:*), Bash(mkdir:*), Bash(bash:*), Bash(date:*), Bash(jq:*), Bash(cat:*), Bash(mv:*), Bash(rm:*), Bash(git branch:*), Bash(git rev-parse:*), Task, AskUserQuestion"
 ---
 
 # Meeting
@@ -189,15 +189,46 @@ NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)   # created_at stays UTC
 # Seed state.json (idempotent — do not clobber an existing in-progress meeting)
 if [ ! -f "$MDIR/state.json" ]; then
   jq -n --arg slug "{slug}" --arg d "$TODAY" --arg t "$NOW" \
-    '{slug:$slug, status:"in-progress", date:$d, created_at:$t, updated_at:$t, parties:[], probed:[], findings:[]}' \
+    '{slug:$slug, topic:null, status:"in-progress", date:$d, created_at:$t, updated_at:$t, parties:[], probed:[], findings:[]}' \
     > "$MDIR/state.json"
 fi
 echo "MDIR=$MDIR  DATE=$TODAY"
 ```
 
 Ask (via AskUserQuestion, only if not already supplied) for **subject** and
-**parties**; write them into `state.json` (`parties`) and start `meeting-record.md`
-from the Meeting-Record schema with `Status: in-progress`. Then tell the user:
+**parties**; write them into `state.json` — `topic` (the confirmed subject —
+this is the only place it is persisted; previously it lived only in prose
+inside `meeting-record.md`/`summary.md` headers, which the meetings manifest's
+required `title` field cannot read from, per `manifest-schema.md`'s Meetings
+section) and `parties`. Bind both through **quoted heredocs** rather than
+templating them into the command line — inside a double-quoted string
+(`"{subject}"`) or a hand-composed JSON literal (`'{parties_json_array}'`),
+`$(...)` and backticks still expand, and a stray quote breaks the JSON, when
+bash/jq PARSE the line, before `jq --arg`'s own safety applies. A quoted
+heredoc delimiter disables all of that — the content reaches jq as inert
+bytes no matter what it contains:
+
+```bash
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+SUBJECT=$(cat <<'SUBJECT_EOF'
+{subject}
+SUBJECT_EOF
+)
+# One party name per line; blank lines dropped. jq -R/-s JSON-encodes each
+# line safely, so no party name can break out of the array regardless of
+# what characters it contains.
+PARTIES_JSON=$(cat <<'PARTIES_EOF' | jq -R 'select(length > 0)' | jq -s .
+{parties_one_per_line}
+PARTIES_EOF
+)
+tmp="$MDIR/.state.json.tmp.$$"
+jq --arg topic "$SUBJECT" --argjson parties "$PARTIES_JSON" --arg t "$NOW" \
+  '.topic=$topic | .parties=$parties | .updated_at=$t' \
+  "$MDIR/state.json" > "$tmp" && mv "$tmp" "$MDIR/state.json" || rm -f "$tmp"
+```
+
+Then start `meeting-record.md` from the Meeting-Record schema with
+`Status: in-progress`. Then tell the user:
 
 > 📝 Capturing meeting **{topic}** → `{slug}`. Keep talking — paste or type notes
 > as they come. I'll ground topics against the KB/code in the background and
@@ -320,11 +351,84 @@ Set `Status: Draft`.
 
 ```bash
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-tmp=$(mktemp)
+tmp="$MDIR/.state.json.tmp.$$"
 jq --arg t "$NOW" '.status="wrapped" | .wrapped_at=$t | .updated_at=$t' \
-  "$MDIR/state.json" > "$tmp" && mv "$tmp" "$MDIR/state.json"
+  "$MDIR/state.json" > "$tmp" && mv "$tmp" "$MDIR/state.json" || rm -f "$tmp"
 # Set the record header Status to "wrapped" via the Edit tool as well.
 echo "WRAPPED=$MDIR"
+```
+
+**Step W4.5 — Catalog in the meetings manifest** (see `manifest-schema.md`'s
+Meetings section — this is what `--from-meeting`'s picker reads from; written
+once, here, at wrap, never at Step L1, since `summary.md`/`changes.md` don't
+exist before this point). Upsert keyed by `path`, not `slug` — a recurring
+meeting's second occurrence gets its own catalog entry, it never overwrites
+the first (see the schema doc for why):
+
+**Root guard (security review finding)**: `MPATH` is only `basename "$MDIR"`
+— safe when `$MDIR` is under `$MEETINGS_DIR`, but a resolved *legacy* meeting
+(`$LEGACY_MEETINGS_DIR`, see *Configuration & output location*) would then
+catalog a bare directory name under the wrong root. If a same-named directory
+happens to exist under `$MEETINGS_DIR`, `--from-meeting`'s picker would seed
+from the wrong meeting's documents. Skip cataloging entirely for a legacy
+meeting rather than risk a wrong-root reference — legacy meetings predate this
+manifest and were never meant to be migrated into it (per `CLAUDE.md`'s
+Work Directory Naming Convention, meetings recorded before the timestamped
+format shipped "are never renamed or migrated"):
+
+**Self-contained fence** — `$MDIR`, `$MEETINGS_DIR`, and `$NOW` from Step W4
+or earlier are not guaranteed to survive into this one, so re-derive
+everything from `{slug}` (bound through a quoted heredoc, not templated
+directly) rather than trusting them to still be set:
+
+```bash
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+else
+  source "$HOME/.claude/shared/resolve-config.sh"
+fi
+MEETINGS_DIR=$(resolve_artifact meetings meetings)
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/meeting/resolve-meeting-dir.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/meeting/resolve-meeting-dir.sh"
+else
+  source "$HOME/.claude/shared/meeting/resolve-meeting-dir.sh"
+fi
+SLUG_ARG=$(cat <<'SLUG_EOF'
+{slug}
+SLUG_EOF
+)
+MDIR=$(resolve_meeting_dir "$SLUG_ARG") || {
+  echo "ERROR: could not re-resolve meeting '$SLUG_ARG' for cataloging"
+  exit 1
+}
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+case "$MDIR" in
+  "$MEETINGS_DIR"/*)
+    MANIFEST="$MEETINGS_DIR/manifest.json"
+    [ -s "$MANIFEST" ] || jq -n '{version:"1.0", last_updated:"", artifact_type:"meetings", total_items:0, items:[]}' > "$MANIFEST"
+    MPATH="$(basename "$MDIR")/"
+    TOPIC=$(jq -r '.topic // "Untitled meeting"' "$MDIR/state.json")
+    SLUG=$(jq -r '.slug' "$MDIR/state.json")
+    MDATE=$(jq -r '.date' "$MDIR/state.json")
+    CREATED=$(jq -r '.created_at' "$MDIR/state.json")
+    tmp="$MEETINGS_DIR/.manifest.json.tmp.$$"
+    jq --arg path "$MPATH" --arg slug "$SLUG" --arg title "$TOPIC" --arg date "$MDATE" \
+       --arg created "$CREATED" --arg updated "$NOW" \
+       '(.items | map(.path) | index($path)) as $i
+        | .items = (if $i == null
+                    then .items + [{path:$path, slug:$slug, title:$title, status:"wrapped", date:$date, created_at:$created, updated_at:$updated, promoted_to:null, tags:[]}]
+                    else .items[$i] = {path:$path, slug:$slug, title:$title, status:"wrapped", date:$date, created_at:$created, updated_at:$updated, promoted_to:(.items[$i].promoted_to // null), tags:(.items[$i].tags // [])}
+                    end)
+        | .last_updated = $updated
+        | .total_items = (.items | length)' \
+       "$MANIFEST" > "$tmp" && mv "$tmp" "$MANIFEST" || rm -f "$tmp"
+    echo "CATALOGED=$MPATH"
+    ;;
+  *)
+    echo "SKIP: legacy meeting ($MDIR) is not under \$MEETINGS_DIR — not catalogued in the meetings manifest"
+    ;;
+esac
 ```
 
 Then export HTML (Section 5).
@@ -426,11 +530,62 @@ The changes doc often implies edits to real docs, or is big enough to become
 work. Offer — do **not** auto-run:
 
 > Meeting wrapped. Want me to:
-> • apply the changes to the workflow/architecture docs → `/update-documentation`, or
-> • turn the changes into implementable tickets → `/create-requirements`?
+> • apply the changes to the workflow/architecture docs → `/update-documentation`,
+> • turn the changes into implementable tickets → `/create-requirements`, or
+> • break this into a multi-ticket initiative → `/epic`?
 > Otherwise the summary + changes doc stand as the record.
 
-Only invoke another skill on explicit confirmation.
+**Whichever destination the user picks, do NOT invoke it directly** — print
+a handoff banner naming the exact next command and **stop** (same shape as
+`.claude/skills/work-issue`'s planning-pipeline handoff). This applies to
+all three destinations equally (AC-1.2), not only `/epic`.
+
+**`/update-documentation`:**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Handing off to /update-documentation
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Meeting:  {slug}
+Summary:  $MDIR/summary.md
+Changes:  $MDIR/changes.md
+
+Next: run /update-documentation — the changes.md above lists what to apply.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**`/create-requirements`:**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Handing off to /create-requirements
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Meeting:  {slug}
+Summary:  $MDIR/summary.md
+Changes:  $MDIR/changes.md
+
+Next: run /create-requirements --from-meeting {slug} — this loads the
+summary and changes above as seed context before any question is asked.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**`/epic`:**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Handing off to /epic
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Meeting:  {slug}
+Summary:  $MDIR/summary.md
+Changes:  $MDIR/changes.md
+
+Next: run /epic "{topic}" — /epic does not auto-load meeting context yet,
+so paste the relevant points from summary.md/changes.md into the epic
+description if they matter to the breakdown.
+
+Note: /epic gates on scope. If it decides this is really single-ticket
+work, it will redirect you to /create-requirements instead (AC-1.5).
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+Then **stop** — the named skill takes over when the user runs it themselves.
 
 ---
 
@@ -447,7 +602,7 @@ Action items:       {n}  ({m} without an owner — flagged)
 Grounding findings: {n}  ({k} conflicts → open questions)
 Open questions:     {n}
 
-Next: /update-documentation (apply)  ·  /create-requirements (implement)
+Next: /update-documentation (apply)  ·  /create-requirements (implement)  ·  /epic (multi-ticket)
 ```
 
 Surface the `[Assumption]` list and every grounding conflict explicitly — those

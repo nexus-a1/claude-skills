@@ -22,7 +22,7 @@ Every `manifest.json` shares this outer structure:
 |-------|------|-------------|
 | `version` | string | Schema version. Currently `"1.0"`. |
 | `last_updated` | ISO-8601 | Timestamp of the last write to this manifest. |
-| `artifact_type` | string | One of: `work`, `brainstorms`, `proposals`, `refactoring`, `product-knowledge`. |
+| `artifact_type` | string | One of: `work`, `brainstorms`, `proposals`, `refactoring`, `product-knowledge`, `meetings`. |
 | `total_items` | integer | Count of items in the `items` array. |
 | `items` | array | Artifact-specific item objects (see below). |
 
@@ -137,6 +137,54 @@ Scan-built (no write hooks) — the `product-expert` agent builds/refreshes this
 ```
 
 Unique key: `path`. Extra top-level fields: `categories` (name→count), `tags` (name→frequency).
+
+### Meetings (`{MEETINGS_DIR}/manifest.json`)
+
+```json
+{
+  "path": "2026-08-16-1400-planning-sync/",
+  "slug": "planning-sync",
+  "title": "Planning Sync",
+  "status": "wrapped",
+  "date": "2026-08-16",
+  "created_at": "2026-08-16T14:00:00Z",
+  "updated_at": "2026-08-16T14:45:00Z",
+  "promoted_to": null,
+  "tags": []
+}
+```
+
+**Unique key: `path`, not `slug`.** This is the one artifact type where that
+distinction matters: recurring meetings deliberately reuse the same `slug`
+across multiple timestamped directories (see the Work Directory Naming
+Convention's meeting exception in `CLAUDE.md`) — a `slug`-keyed upsert would
+silently overwrite an earlier occurrence's entry every time the same
+recurring meeting wraps again. `path` is unique by construction (the
+directory-collision-avoidance loop that creates it), so it is the only safe
+key here.
+
+Required: `path`, `slug`, `title`, `status`, `created_at`, `updated_at`.
+`title` comes from the meeting's `topic` field (captured at creation, not
+scraped from a document header — see `/meeting`'s Step L1). `status` keeps
+`/meeting`'s own native kebab-case value (`wrapped`) deliberately, rather
+than translating to this schema's snake_case convention elsewhere —
+translating would desync the manifest from the meeting's own `state.json`,
+which is the source of truth.
+
+**Written once, at wrap only** — not at creation, unlike every other
+artifact type in this file. Because of that, `wrapped` is the only value
+that ever actually appears here: an in-progress meeting has no `summary.md`/
+`changes.md` yet (what `/create-requirements --from-meeting` seeds from), so
+it isn't cataloged — and isn't a valid candidate for that flow — until wrap
+produces them. (The meeting's own `state.json` does pass through an
+`in-progress` status before that, but this manifest entry doesn't exist
+yet at that point to carry it.)
+
+**Deliberately excluded**: `probed`/`findings` arrays and other
+session-internal detail. This manifest is a catalog for picking a meeting
+to seed from, not a mirror of the meeting's full state — mirrors how the
+Brainstorms schema above carries `alternatives_count` (a summary int)
+rather than the full alternatives array.
 
 ## Update Operations
 

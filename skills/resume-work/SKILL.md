@@ -3,8 +3,8 @@ name: resume-work
 category: implementation
 model: claude-sonnet-5
 userInvocable: true
-description: Resume any interrupted work session — brainstorm, requirements, proposal, epic, or implementation. Scans for incomplete sessions and continues from the last saved checkpoint. Re-enters the original session's worktree if one was used; otherwise runs in the current working tree.
-argument-hint: "[identifier]"
+description: Resume any interrupted work session — brainstorm, requirements, proposal, epic, or implementation. Scans for incomplete sessions and continues from the last saved checkpoint. Accepts a ticketed identifier (JIRA-123-slug), a provisional draft (DRAFT-slug, offers to reconcile with a real ticket), or a bare brainstorm slug. Re-enters the original session's worktree if one was used; otherwise runs in the current working tree.
+argument-hint: "[JIRA-123-slug | DRAFT-slug | brainstorm-slug]"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, AskUserQuestion, EnterWorktree, ExitWorktree
 ---
 
@@ -54,9 +54,18 @@ Use `$WORK_DIR` instead of hardcoded `.claude/work` throughout this workflow.
 ## Usage
 
 ```bash
-/resume-work                    # Scan and show incomplete work
-/resume-work JIRA-123          # Resume specific work by identifier
+/resume-work                         # Scan and show incomplete work
+/resume-work JIRA-123-user-export    # Resume a ticketed session by identifier
+/resume-work DRAFT-user-export       # Resume a provisional draft — offers to
+                                      # reconcile with a real ticket first
+/resume-work user-export             # Resume a brainstorm by its bare slug
 ```
+
+All three identifier shapes above resolve through the same detection chain
+(§ Workflow → "When identifier is provided"): a full `{TICKET}-{slug}`
+identifier and a `DRAFT-{slug}` identifier both match a directory under
+`$WORK_DIR/`; a bare brainstorm slug matches under `$BRAINSTORM_DIR/` (or
+`$WORK_DIR/` for a legacy brainstorm — see "When no identifier provided").
 
 ## Workflow
 
@@ -179,6 +188,77 @@ fi
 ```
 
 The corresponding clear block lives inside the target skill that takes over (e.g. `/implement`'s Completion Cleanup section). `/resume-work` itself does not clear the sentinel because control hands off to the resumed skill.
+
+### Offer Reconciliation for a Draft Session (conditional)
+
+**Runs once `{identifier}` is resolved, before per-type dispatch below.**
+Only applies when `{identifier}` matches `^DRAFT-` (AC-3.6). Skip entirely
+for an already-ticketed session.
+
+```
+AskUserQuestion:
+{identifier} is a draft session (no ticket assigned yet).
+Do you have a ticket number for it now?
+  Enter a ticket number to reconcile, or leave blank to resume the draft as-is.
+```
+
+- **Blank (decline):** continue resuming the draft under its current
+  `DRAFT-{slug}` identifier — no change to normal resumption (AC-3.6's
+  second half).
+- **Ticket provided:** ask for a base branch (same picker as
+  `/create-requirements`'s §1.5), then, all in one fence — re-source
+  config and the library (a value set in one `Bash` call does not survive
+  into the next tool call), validate, and call:
+  ```bash
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+    source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+  else
+    source "$HOME/.claude/shared/resolve-config.sh"
+  fi
+  WORK_DIR=$(resolve_artifact work work)
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/draft-reconcile/draft-reconcile.sh" ]; then
+    source "${CLAUDE_PLUGIN_ROOT}/shared/draft-reconcile/draft-reconcile.sh"
+  else
+    source "$HOME/.claude/shared/draft-reconcile/draft-reconcile.sh"
+  fi
+
+  # {identifier}/{ticket}/{base_branch} are conversational values (resolved
+  # session id, a typed answer, a picker choice) — bind them through quoted
+  # heredocs rather than templating them into the command line. Inside a
+  # double-quoted string, $(...) and backticks still expand when bash PARSES
+  # the line, before any validator runs; a quoted heredoc delimiter disables
+  # all expansion, so this holds even if one of these values is adversarial.
+  ID=$(cat <<'ID_EOF'
+{identifier}
+ID_EOF
+  )
+  TICKET=$(cat <<'TICKET_EOF'
+{ticket}
+TICKET_EOF
+  )
+  BASE_BRANCH=$(cat <<'BRANCH_EOF'
+{base_branch}
+BRANCH_EOF
+  )
+
+  if draft_reconcile_validate_ids "$ID" "$TICKET"; then
+    new_id=$(draft_reconcile "$WORK_DIR" "$ID" "$TICKET" "$BASE_BRANCH")
+    rc=$?
+  else
+    rc=1
+    new_id=""
+  fi
+  echo "RECONCILE_RC=$rc NEW_ID=$new_id"
+  ```
+  `{ticket}` is exactly what the user typed in answer to the question above
+  — never text drawn from a note, ticket body, or other externally-authored
+  content — and `draft_reconcile_validate_ids` still rejects anything that
+  doesn't match the project's ticket pattern before any filesystem operation.
+  On success: set `{identifier} = "$new_id"` and continue resumption under
+  the reconciled identifier — its `state.json` now has `type: "requirements"`
+  with real branches, so dispatch below proceeds normally from there.
+  On failure: surface the error verbatim, then resume the original draft
+  unchanged (same fallback as declining).
 
 ### Surface Session Updates
 

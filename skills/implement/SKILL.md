@@ -32,6 +32,9 @@ Read `.claude/configuration.yml` for project-specific paths. If the file doesn't
 |-----------|---------|---------|
 | `storage.artifacts.work` | `location: local, subdir: work` | Work state and context |
 | `execution_mode` | `"team"` | QA phase execution mode (reads `qa_review` phase override) |
+| `implement.deviation_checkpoint.enabled` | `true` | Phase 3.2b plan-vs-diff sanity check after each chunk commit; set `false` to opt out |
+| `implement.playwright_scoping.enabled` | `true` | Phase 4.0 yes/no/scope question before writing Playwright E2E tests for a project with no existing Playwright config; set `false` to opt out (reverts to `implement.playwright_scoping.default`) |
+| `implement.playwright_scoping.default` | `"heuristic"` | Only consulted when `enabled: false`. `"heuristic"` keeps the prior silent file-extension detection; `"skip"` never runs `playwright-engineer` for this project regardless of files touched |
 
 ```bash
 # Source resolve-config: marketplace installs get ${CLAUDE_PLUGIN_ROOT} substituted
@@ -912,6 +915,44 @@ EOF
 
 6. **Save state after each chunk** (enables resume)
 
+#### 3.2b Deviation Checkpoint
+
+**Goal**: Catch silent scope drift at the chunk it happened in, not at Phase 4.8's end-of-run gap analysis. Codifies the "stop and re-plan if deviating" principle from `plugin/rules/workflow.md` as a pipeline gate instead of leaving it a high-level rule only Phase 4.8 enforces.
+
+```bash
+DEVIATION_CHECKPOINT_ENABLED=$(resolve_deviation_checkpoint_enabled)
+```
+
+Skip this step if `DEVIATION_CHECKPOINT_ENABLED == "false"` (opt-out via `implement.deviation_checkpoint.enabled: false` in `.claude/configuration.yml` — see Configuration table above). Default is enabled.
+
+**If enabled**, after the chunk commits (3.2 step 3) and before updating state (3.2 step 4), run a fast plan-vs-diff sanity check — this is a mechanical comparison, not a delegated agent call, and it must stay lightweight:
+
+1. Compare the chunk's declared file scope (`chunk.files` from the plan) against `git diff --name-only HEAD~1 HEAD` (the files the commit actually touched).
+2. Skim the commit diff against the chunk's `description` for plausibility — does the diff look like it implements what the chunk said it would, or does it read as a different change entirely?
+
+Flag a deviation when either is true:
+- The diff touches files outside `chunk.files` (scope creep).
+- The diff doesn't plausibly implement the chunk's stated intent.
+
+**No deviation detected**: proceed silently to 3.2 step 4.
+
+**Deviation detected**: use AskUserQuestion with exactly these 3 options:
+
+```
+⚠ Chunk {N}/{total} deviated from plan: {one-line description of what changed}
+
+Options:
+[1] Re-plan with architect — reassess the remaining chunks given this deviation
+[2] Document deviation and continue — record it, keep going as planned
+[3] Abort — stop implementation, save state, exit
+```
+
+- **1 (Re-plan)**: Use Task tool with `subagent_type: "architect"` — prompt it with the original plan, the deviating chunk's diff, and remaining chunks; apply its revised plan for chunks not yet started.
+- **2 (Document and continue)**: Append a `deviation_note` field to the chunk's entry in `state.json` (plan-vs-actual, one line) and proceed to 3.2 step 4.
+- **3 (Abort)**: Same abort handling as the 3.2 commit-failure path — save state, exit.
+
+This checkpoint is intentionally shallow — it is not a re-run of Phase 4.8's full requirements-implementation gap analysis (which cross-references every requirement/AC against the whole branch diff via the `architect` agent). It only asks "did *this* chunk stay in its own lane," once per chunk, so it stays fast enough to run unconditionally.
+
 #### 3.3 Chunk Checkpoint
 
 After each chunk, offer to pause:
@@ -938,22 +979,86 @@ Continue to next chunk? [y/n/review]
 
 #### 4.0 Detect Frontend Changes
 
-Before running QA agents, determine whether the implementation includes frontend changes that warrant Playwright E2E testing:
+Before running QA agents, determine whether the implementation includes frontend changes that warrant Playwright E2E testing.
+
+**Check spec.md for an explicit decision first (AC-6.2), falling back to
+the file-change heuristic only when it's absent (AC-6.3 — pre-existing work
+from before this AC shipped). Both checks run in one fence** — a value set
+in one `Bash` call does not survive into the next tool call, so splitting
+this into separate fenced blocks would silently make the fallback always
+win:
 
 ```bash
-FRONTEND_CHANGED=false
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+else
+  source "$HOME/.claude/shared/resolve-config.sh"
+fi
+WORK_DIR=$(resolve_artifact work work)
 
-# Check implemented files for frontend extensions or directories
-if echo "{implemented_files}" | grep -qE '\.(tsx|jsx|vue|svelte)$'; then
-  FRONTEND_CHANGED=true
-elif echo "{implemented_files}" | grep -qE '/(pages|components|views)/'; then
-  FRONTEND_CHANGED=true
-elif [[ -f "playwright.config.ts" ]] || [[ -f "playwright.config.js" ]]; then
-  FRONTEND_CHANGED=true
+FRONTEND_CHANGED=""
+PLAYWRIGHT_CONFIG_EXISTS=false
+
+[[ -f "playwright.config.ts" ]] || [[ -f "playwright.config.js" ]] && PLAYWRIGHT_CONFIG_EXISTS=true
+
+SPEC_FILE="$WORK_DIR/{identifier}/spec.md"
+
+if [[ -f "$SPEC_FILE" ]] && grep -qE '^AC-E2E-SCOPE:\s*(required|not-required)\s*$' "$SPEC_FILE"; then
+  # Anchored, exact-token match only — a free-prose scope description
+  # legitimately contains the word "required" either way, so sniffing for
+  # it anywhere in the paragraph would make the gate ignore the actual verdict.
+  if grep -qE '^AC-E2E-SCOPE:\s*required\s*$' "$SPEC_FILE"; then
+    FRONTEND_CHANGED=true
+  else
+    FRONTEND_CHANGED=false
+  fi
+  echo "✓ AC-E2E-SCOPE found — using its decision (FRONTEND_CHANGED=$FRONTEND_CHANGED), skipping file-change heuristic"
+fi
+
+if [[ -z "$FRONTEND_CHANGED" ]]; then
+  FRONTEND_CHANGED=false
+
+  # Check implemented files for frontend extensions or directories
+  if echo "{implemented_files}" | grep -qE '\.(tsx|jsx|vue|svelte)$'; then
+    FRONTEND_CHANGED=true
+  elif echo "{implemented_files}" | grep -qE '/(pages|components|views)/'; then
+    FRONTEND_CHANGED=true
+  elif [[ "$PLAYWRIGHT_CONFIG_EXISTS" == "true" ]]; then
+    FRONTEND_CHANGED=true
+  fi
+  echo "✓ No AC-E2E-SCOPE — file-change heuristic used (FRONTEND_CHANGED=$FRONTEND_CHANGED)"
 fi
 ```
 
-If `FRONTEND_CHANGED=true`, a `playwright-engineer` Task is added to the parallel QA block in Step 4.1.
+**If `$PLAYWRIGHT_CONFIG_EXISTS == "true"`**: the project already opted into Playwright — behavior is unchanged from before. If `FRONTEND_CHANGED=true`, a `playwright-engineer` Task is added to the parallel QA block in Step 4.1 with no further question.
+
+**If `$PLAYWRIGHT_CONFIG_EXISTS == "false"` and `FRONTEND_CHANGED=true`** (frontend files were touched, but the project has no existing Playwright setup): this is a project that has never adopted Playwright — don't silently start generating E2E tests. Resolve the gate:
+
+```bash
+PLAYWRIGHT_SCOPING_ENABLED=$(resolve_playwright_scoping_enabled)
+```
+
+If `PLAYWRIGHT_SCOPING_ENABLED == "false"` (opt-out via `implement.playwright_scoping.enabled: false` — see Configuration table above), skip the question and resolve the fixed decision instead of asking every run:
+
+```bash
+PLAYWRIGHT_SCOPING_DEFAULT=$(resolve_playwright_scoping_default)
+```
+
+- `PLAYWRIGHT_SCOPING_DEFAULT == "skip"` (`implement.playwright_scoping.default: skip`) — set `FRONTEND_CHANGED=false` unconditionally; `playwright-engineer` never runs for this project regardless of which files were touched.
+- Otherwise (`"heuristic"`, the default when `default` is absent or unrecognized) — fall back to the prior silent-detection behavior: keep `FRONTEND_CHANGED` as the file-extension heuristic already computed it, and `playwright-engineer` runs.
+
+If `PLAYWRIGHT_SCOPING_ENABLED == "true"` (the default), ask via `AskUserQuestion`:
+
+```
+Question: "This change touches frontend code and the project has no existing Playwright setup. Write Playwright E2E tests for it?"
+Header: "Playwright"
+Options:
+  - "This change only" — Cover the components/pages touched by this implementation.
+  - "Broader coverage" — Also scaffold coverage for related existing frontend flows, not just this diff.
+  - "No, skip for now" — Don't write E2E tests; this implementation gets unit/integration coverage only.
+```
+
+Set `FRONTEND_CHANGED=false` if "No, skip for now" is chosen (drops `playwright-engineer` from Step 4.1 entirely). Otherwise keep `FRONTEND_CHANGED=true` and record the chosen scope as `PLAYWRIGHT_SCOPE` (`"this change only"` or `"broader coverage"`) — Task 4 in Step 4.1 passes it to `playwright-engineer`.
 
 ---
 
@@ -1047,9 +1152,11 @@ Implemented files:
 Implementation context:
 {what_was_implemented}
 
+Scope: {PLAYWRIGHT_SCOPE if set, e.g. "this change only" or "broader coverage"; omit this line entirely when $PLAYWRIGHT_CONFIG_EXISTS was already true — no scoping question ran, so no scope was chosen}
+
 Requirements:
 - Detect existing Playwright setup (playwright.config.ts, test files, page objects) before writing
-- Write tests covering user-visible behavior for the changed components/pages
+- Write tests covering user-visible behavior for the changed components/pages; honor the Scope above when writing to a project that just adopted Playwright for this change
 - Follow existing test patterns; use Page Object Model if already in use
 - Prefer getByRole/getByLabel locators; avoid CSS selectors and XPath
 - Return: test files created and a brief coverage summary

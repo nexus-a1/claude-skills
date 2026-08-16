@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.26.0] - 2026-08-16
+
+## What's Changed
+
+12 commits: 4 feat, 2 fix, 3 test, 1 docs, 2 unscoped. No breaking changes.
+
+### Features
+
+- **configuration**: explicit `jira.enabled` master opt-out (gates acli calls in both read and write paths) + `implement.playwright_scoping.default` to pre-set the Playwright auto-include decision — CL-23
+- **create-requirements**: auto-seed feature description from a loaded Jira ticket — CL-15
+- **implement**: add Playwright scoping question before E2E test generation — CL-14
+- **implement**: add Phase 3.2b deviation checkpoint (plan-vs-diff sanity check after each chunk commit) — CL-11
+
+### Bug Fixes
+
+- **update-context**: propagate lock-subshell failure in Step 5's state.json write instead of silently reporting success — CL-24
+- **work-status**: serialize state.json/manifest writes with flock to prevent races with concurrent hook writes — CL-12
+
+### Other Changes
+
+- CL-21: handle multi-ticket meetings, draft requirements, ADF text
+- Remove `install.sh` / `uninstall.sh` and purge all references (native plugin install is now the only path) — CL-8
+- Add Layer 1 and Layer 2 test coverage for `context-builder`, `refactorer`, and `database-analyst` agents — CL-9
+- docs(full-cycle): remove ticket references from mermaid diagram nodes, keeping them in the surrounding prose — CL-25
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.25.0...v1.26.0
+
 ## [1.25.0] - 2026-08-16
 
 ## What's Changed

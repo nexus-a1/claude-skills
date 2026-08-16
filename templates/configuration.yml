@@ -202,20 +202,39 @@ requirements:
 
 
 # -----------------------------------------------------------------------------
-# Jira Write Operations (optional)
+# Jira Integration (optional)
 # -----------------------------------------------------------------------------
-# /jira is read-only by default. Enabling this lets it also add a comment,
-# transition a status, or assign/unassign a work item — always with an
-# explicit per-write confirmation first, and always independently re-read
-# and verified afterward before a success is reported.
+# Governs whether /jira (and jira-aware features, like /create-requirements
+# auto-seeding from a loaded ticket) may call `acli` at all for this project.
+# Set explicitly via /configuration-init — which also runs a quick acli
+# installed/authenticated check at setup time — rather than discovered by
+# Claude probing acli on every invocation.
 #
-# Resolved and enforced by plugin/shared/jira/jira-write.sh itself, not by
-# skill prose — a direct invocation of that script cannot mutate when this
-# is absent, false, or unresolvable for any reason (fail-closed).
+#   enabled        Master toggle. Default true when absent — preserves
+#                   existing behavior for configs written before this flag
+#                   existed. Set false to skip Jira entirely; no acli
+#                   invocation is attempted (plugin/shared/jira/lib.sh's
+#                   jira_master_enabled, checked before jira_preflight).
+#   write.enabled   /jira is read-only by default. Enabling this lets it also
+#                   add a comment, transition a status, or assign/unassign a
+#                   work item — always with an explicit per-write confirmation
+#                   first, and always independently re-read and verified
+#                   afterward before a success is reported. Refused whenever
+#                   `enabled` above is false, regardless of this value.
 #
-#   enabled  opt-in toggle (default: false)
+# Both flags are resolved and enforced by plugin/shared/jira/lib.sh and
+# jira-write.sh themselves, not by skill prose. Their defaults point opposite
+# ways on purpose: `enabled` is opt-out (reads proceed unless explicitly
+# false, including when the config is absent or unresolvable — this must not
+# change established behavior), while `write.enabled` is opt-in and
+# fail-closed (a direct script invocation cannot mutate when it is absent,
+# false, or unresolvable for any reason).
+#
+#   enabled        opt-out toggle (default: true)
+#   write.enabled  opt-in toggle (default: false)
 # -----------------------------------------------------------------------------
 # jira:
+#   enabled: true
 #   write:
 #     enabled: false
 
@@ -247,6 +266,47 @@ requirements:
 # worktree:
 #   enabled: false
 #   root: .worktrees
+
+
+# -----------------------------------------------------------------------------
+# Implement Deviation Checkpoint (optional)
+# -----------------------------------------------------------------------------
+# /implement's Phase 3.2b runs a lightweight plan-vs-diff sanity check after
+# each chunk commits: did the chunk touch only its declared files, and does
+# the diff plausibly match what the chunk said it would do? On a detected
+# deviation it asks re-plan with architect / document and continue / abort.
+#
+# Unlike worktree/jira write below, this defaults ON — it's a safety check,
+# not an integration you opt into. Turn it off only if it proves too noisy
+# in practice.
+#
+#   enabled  opt-out toggle (default: true)
+# -----------------------------------------------------------------------------
+# implement:
+#   deviation_checkpoint:
+#     enabled: true
+
+
+# -----------------------------------------------------------------------------
+# Implement Playwright Scoping (optional)
+# -----------------------------------------------------------------------------
+# /implement's Phase 4.0 asks a yes/no/scope question before writing
+# Playwright E2E tests, the first time frontend code is touched in a project
+# with no existing Playwright config — instead of silently starting to
+# generate them. Also defaults ON, like deviation_checkpoint above.
+#
+#   enabled  opt-out toggle (default: true) — false reverts to `default` below
+#            instead of asking
+#   default  only consulted when enabled: false.
+#              "heuristic" (default) — detect from touched files, same as
+#                the prior silent behavior; playwright-engineer may still run
+#              "skip"                — never run playwright-engineer for this
+#                project, regardless of which files were touched
+# -----------------------------------------------------------------------------
+# implement:
+#   playwright_scoping:
+#     enabled: true
+#     default: heuristic
 
 
 # -----------------------------------------------------------------------------

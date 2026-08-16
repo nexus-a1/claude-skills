@@ -142,6 +142,73 @@ resolve_worktree_enabled() {
   fi
 }
 
+# --- Deviation checkpoint helper ---
+# /implement Phase 3.2b gate. Default true (opt-out, not opt-in) — unlike
+# worktree/jira write, this check is meant to run unless a project finds it
+# too noisy and turns it off.
+# Returns "true" or "false". Note: `//` can't supply this default — jq/yq
+# treat a literal `false` value as falsy, so `enabled // "true"` would
+# silently discard an explicit `enabled: false`. Test the raw value instead.
+resolve_deviation_checkpoint_enabled() {
+  if [[ -f "$CONFIG" ]]; then
+    local _raw
+    _raw=$(yq -r '.implement.deviation_checkpoint.enabled' "$CONFIG" 2>/dev/null)
+    if [[ "$_raw" == "false" ]]; then
+      echo "false"
+    else
+      echo "true"
+    fi
+  else
+    echo "true"
+  fi
+}
+
+# --- Playwright scoping question helper ---
+# /implement Phase 4.0 gate. Default true (opt-out, not opt-in) — like the
+# deviation checkpoint, this question is meant to run unless a project finds
+# it too noisy and turns it off (reverting to silent mechanical detection).
+# Returns "true" or "false". Same `//`-with-literal-false pitfall as
+# resolve_deviation_checkpoint_enabled applies here — test the raw value.
+resolve_playwright_scoping_enabled() {
+  if [[ -f "$CONFIG" ]]; then
+    local _raw
+    _raw=$(yq -r '.implement.playwright_scoping.enabled' "$CONFIG" 2>/dev/null)
+    if [[ "$_raw" == "false" ]]; then
+      echo "false"
+    else
+      echo "true"
+    fi
+  else
+    echo "true"
+  fi
+}
+
+# --- Playwright scoping decision override (CL-23) ---
+# Only consulted when resolve_playwright_scoping_enabled returns "false" —
+# i.e. the project opted out of being asked every run. Lets it also state
+# the fixed decision instead of falling back to mechanical file-extension
+# detection:
+#   "heuristic" (default) — unchanged prior behavior: detect from touched
+#                            files, may still run playwright-engineer.
+#   "skip"                — never run playwright-engineer for this project,
+#                            regardless of what files were touched.
+# Any other value falls back to "heuristic" rather than erroring, since a
+# typo here should degrade to the safe prior behavior, not silently disable
+# or silently enable E2E generation.
+resolve_playwright_scoping_default() {
+  if [[ -f "$CONFIG" ]]; then
+    local _raw
+    _raw=$(yq -r '.implement.playwright_scoping.default' "$CONFIG" 2>/dev/null)
+    if [[ "$_raw" == "skip" ]]; then
+      echo "skip"
+    else
+      echo "heuristic"
+    fi
+  else
+    echo "heuristic"
+  fi
+}
+
 # Returns absolute path to worktree root directory
 resolve_worktree_root() {
   local default=".worktrees"

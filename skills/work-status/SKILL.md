@@ -5,7 +5,7 @@ model: claude-sonnet-5
 userInvocable: true
 description: Show all active work sessions across brainstorms, requirements, proposals, and epics. Supports --brief for a narrative digest with latest updates and suggested next actions, --update to advance lifecycle on one session, and --sync to sweep them all.
 argument-hint: "[--brief | --update | --sync] [identifier]"
-allowed-tools: "Read, Glob, Bash(source:*), Bash(echo:*), Bash(jq:*), Bash(git:*), Bash(ls:*), Bash(yq:*), Bash(gh:*), Bash(date:*), Bash(mktemp:*), Bash(mv:*), AskUserQuestion"
+allowed-tools: "Read, Glob, Bash(source:*), Bash(echo:*), Bash(jq:*), Bash(git:*), Bash(ls:*), Bash(yq:*), Bash(gh:*), Bash(date:*), Bash(mv:*), Bash(rm:*), Bash(flock:*), Bash(touch:*), AskUserQuestion"
 ---
 
 # Work Status
@@ -358,25 +358,41 @@ Use `AskUserQuestion` with the six options. If user picks "skip", exit without w
 
 ### Step 2.4: Write update
 
+Serialize the `state.json` write against the `auto-context.sh` hook with the same exclusive lock
+`/update-context` Step 5 uses, so a concurrent hook write cannot be dropped by last-writer-wins.
+
 ```bash
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 NEW_STATE="{chosen_state}"
 
-TMP_STATE=$(mktemp)
-jq --arg s "$NEW_STATE" --arg ts "$TIMESTAMP" \
-  '.lifecycle = $s
-   | .lifecycle_updated_at = $ts
-   | .updated_at = $ts
-   | if $s == "done" then .status = "completed" else . end
-   | .updates = ((.updates // []) + [{"timestamp": $ts, "note": ("lifecycle → " + $s)}])' \
-  "$STATE_FILE" > "$TMP_STATE" && mv "$TMP_STATE" "$STATE_FILE"
+STATE_LOCK="${STATE_FILE}.lock"
+touch "$STATE_LOCK"
+(
+  flock -x -w 2 200 || { echo "Could not acquire lock on $STATE_FILE"; exit 1; }
+  jq --arg s "$NEW_STATE" --arg ts "$TIMESTAMP" \
+    '.lifecycle = $s
+     | .lifecycle_updated_at = $ts
+     | .updated_at = $ts
+     | if $s == "done" then .status = "completed" else . end
+     | .updates = ((.updates // []) + [{"timestamp": $ts, "note": ("lifecycle → " + $s)}])' \
+    "$STATE_FILE" > "${STATE_FILE}.tmp.$$" \
+    && mv "${STATE_FILE}.tmp.$$" "$STATE_FILE" \
+    || { rm -f "${STATE_FILE}.tmp.$$"; exit 1; }
+) 200>"$STATE_LOCK" || { echo "state.json write failed — aborting before the manifest write"; exit 1; }
 
-# Write to whichever manifest owns this session, matching on its key.
+# Write to whichever manifest owns this session, matching on its key. Same lock pattern —
+# a --sync sweep runs this loop across every non-completed session and can otherwise race itself.
 if [[ -f "$TARGET_MANIFEST" ]]; then
-  TMP_MF=$(mktemp)
-  jq --arg id "{identifier}" --arg k "$MF_KEY" --arg s "$NEW_STATE" --arg ts "$TIMESTAMP" \
-    '(.items[] | select(.[$k] == $id)) |= (.lifecycle = $s | .updated_at = $ts | if $s == "done" then .status = "completed" else . end)' \
-    "$TARGET_MANIFEST" > "$TMP_MF" && mv "$TMP_MF" "$TARGET_MANIFEST"
+  MF_LOCK="${TARGET_MANIFEST}.lock"
+  touch "$MF_LOCK"
+  (
+    flock -x -w 2 200 || { echo "Could not acquire lock on $TARGET_MANIFEST"; exit 1; }
+    jq --arg id "{identifier}" --arg k "$MF_KEY" --arg s "$NEW_STATE" --arg ts "$TIMESTAMP" \
+      '(.items[] | select(.[$k] == $id)) |= (.lifecycle = $s | .updated_at = $ts | if $s == "done" then .status = "completed" else . end)' \
+      "$TARGET_MANIFEST" > "${TARGET_MANIFEST}.tmp.$$" \
+      && mv "${TARGET_MANIFEST}.tmp.$$" "$TARGET_MANIFEST" \
+      || { rm -f "${TARGET_MANIFEST}.tmp.$$"; exit 1; }
+  ) 200>"$MF_LOCK" || { echo "manifest write failed — state.json and manifest now diverge, check $TARGET_MANIFEST manually"; exit 1; }
 fi
 ```
 
