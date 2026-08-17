@@ -36,6 +36,8 @@ Prompt: Map the architectural constraints that any implementation of this featur
 Feature: {feature_description}
 Context inventory from discovery: {discovery_output}
 
+**Scope note:** Do NOT re-inventory the file/service/endpoint list already in `{discovery_output}` — that's `context-builder`'s job. Focus exclusively on constraints, not inventory. If discovery omits a constraint you need, name the gap rather than silently skipping it.
+
 Do NOT design an implementation. Focus exclusively on constraints:
 1. Architecture style in use (layered, hexagonal, modular, MVC) and its layer rules
 2. Established patterns any implementation MUST follow (with file path examples)
@@ -80,6 +82,8 @@ Prompt: Analyze external API integrations for this feature.
 Feature: {feature_description}
 External APIs identified: {apis_from_discovery}
 
+**Scope note:** Do NOT re-derive the general endpoint/service/file inventory — that's `context-builder`'s job. Focus on integration-specific analysis only. If discovery omits an integration surface you need, name the gap rather than silently skipping it.
+
 Analyze:
 1. Existing integration patterns
 2. API contracts and versioning
@@ -96,6 +100,8 @@ Prompt: Review AWS/cloud architecture for this feature.
 
 Feature: {feature_description}
 AWS resources detected: {aws_from_discovery}
+
+**Scope note:** Do NOT re-derive the general endpoint/service/file inventory — that's `context-builder`'s job. Focus on infrastructure-specific analysis only. If discovery omits an infrastructure/IAM surface you need, name the gap rather than silently skipping it.
 
 Analyze:
 1. Required AWS services (new or existing)
@@ -114,6 +120,8 @@ Prompt: Identify security and compliance requirements for this feature.
 Feature: {feature_description}
 Sensitive areas: {sensitive_from_discovery}
 
+**Scope note:** Do NOT re-derive the general endpoint/service/file inventory — that's `context-builder`'s job. Focus on security-specific analysis only. If discovery omits an auth/data-handling surface you need, name the gap rather than silently skipping it.
+
 Analyze:
 1. Authentication/authorization requirements
 2. Data sensitivity classification
@@ -130,6 +138,8 @@ Prompt: Search historical requirements for work similar to this feature.
 
 Feature: {feature_description}
 Components involved: {components_from_discovery}
+
+**Scope note:** Do NOT re-derive the general endpoint/service/file inventory — that's `context-builder`'s job. Focus on historical/precedent search only. If discovery omits a precedent you need, name the gap rather than silently skipping it.
 
 Search for:
 1. Similar past implementations

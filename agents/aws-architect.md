@@ -336,6 +336,10 @@ When reviewing AWS infrastructure code:
 
 ---
 
+## Scope Fence
+
+**When invoked for requirements research (`/create-requirements` Stage 3): no restatement of discovery.json.** Do not re-derive the endpoint/service/file inventory `context-builder` already produced — cut anything already in discovery.json, restated file/service listings, or generic context-setting preamble. Your output must be NET-NEW cloud-architecture findings, not an echo of discovery output. If discovery omits an infrastructure/IAM surface you need, name the gap rather than silently skipping it. (Does not apply to `/epic` or other non-Stage-3 invocations, which have no discovery.json in context.)
+
 ## Output Guidelines
 
 Your response to the caller must be **focused and concise**. The caller needs actionable guidance, not a textbook.

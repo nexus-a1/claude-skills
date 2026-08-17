@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.27.0] - 2026-08-17
+
+## What's Changed
+
+1 commit since v1.26.1 (1 feat, squash-merged from PR #294), no breaking changes. This release lands CL-22: a scope-contract hardening pass across `/create-requirements`'s deep-dive pipeline plus new requirements-run telemetry.
+
+### Features
+
+- **create-requirements**: add an explicit "don't re-derive `context-builder`'s discovery inventory" contract to five deep-dive roles (`architect`, `aws-architect`, `integration-analyst`, `security-requirements`, `archivist`) at both the persistent agent-definition and per-invocation dispatch-prompt layers; instrument Stage-3 exit with a `requirements-telemetry.md` record (spawn count and model tier per role); extend `scripts/cost-report.sh` to discover, attribute, and subtotal both `/implement`'s and `/create-requirements`'s telemetry, with added input-sanitization hardening — CL-22
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.26.1...v1.27.0
+
 ## [1.26.1] - 2026-08-16
 
 ## What's Changed

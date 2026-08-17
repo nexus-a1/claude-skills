@@ -96,3 +96,4 @@ Return a markdown document with integration map and requirements.
 - Triage findings by severity; include only actionable items. If the integration surface is larger than the cap allows, split scope at the request layer rather than emitting a wrapper summary.
 - Only include integrations **directly relevant to the feature**.
 - Reference specific file paths and line numbers.
+- **When invoked for requirements research (`/create-requirements` Stage 3): no restatement of discovery.json.** Do not re-derive the endpoint/service/file inventory `context-builder` already produced — cut anything already in discovery.json, restated file/service listings, or generic context-setting preamble. Your output must be NET-NEW integration analysis, not an echo of discovery output. If discovery omits an integration surface you need, name the gap rather than silently skipping it. (Does not apply to `/epic` or other non-Stage-3 invocations, which have no discovery.json in context.)

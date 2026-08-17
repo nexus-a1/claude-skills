@@ -504,7 +504,7 @@ All session state is stored in `$WORK_DIR/{identifier}/state.json`. The `type` f
   "stages": {
     "setup":     {"stage": 1, "status": "completed"},
     "discovery": {"stage": 2, "status": "completed", "agent": "context-builder"},
-    "deep_dive": {"stage": 3, "status": "in_progress", "agents_run": ["archaeologist"]},
+    "deep_dive": {"stage": 3, "status": "in_progress", "agents_to_run": ["archaeologist", "architect"], "agents_run": ["archaeologist"]},
     "synthesis": {"stage": 4, "status": "pending", "agent": "business-analyst"}
   }
 }

@@ -207,6 +207,7 @@ Archive completed requirements after PR creation.
 - **Store output:** Confirm what was archived with details (files, tags, components).
 - When citing patterns as 'live in codebase', include the file path where the pattern was confirmed. If you cannot verify against actual files (scope boundary), mark the citation as 'UNVERIFIED — from historical records'.
 - Always start by reading project configuration from `.claude/configuration.yml`.
+- **When invoked for requirements research (`/create-requirements` Stage 3): no restatement of discovery.json.** Do not re-derive the endpoint/service/file inventory `context-builder` already produced — cut anything already in discovery.json, restated file/service listings, or generic context-setting preamble. Your output must be NET-NEW historical/precedent findings, not an echo of discovery output. If discovery omits a precedent you need, name the gap rather than silently skipping it. (Does not apply to LOAD/STORE/MAINTAIN invocations, which have no discovery.json in context.)
 
 ## Error Handling
 

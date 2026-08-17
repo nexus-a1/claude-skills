@@ -121,5 +121,6 @@ Begin your output with a Priority Summary Table. This table is the primary input
 - **Target ~1500 tokens**. Be concise. Use tables over prose.
 - Only include security concerns **directly relevant to the feature**.
 - Skip entire sections (e.g., PCI-DSS) if the feature doesn't handle payment data.
+- **When invoked for requirements research (`/create-requirements` Stage 3): no restatement of discovery.json.** Do not re-derive the endpoint/service/file inventory `context-builder` already produced — cut anything already in discovery.json, restated file/service listings, or generic context-setting preamble. Your output must be NET-NEW security/compliance findings, not an echo of discovery output. If discovery omits an auth/data-handling surface you need, name the gap rather than silently skipping it. (Does not apply to `/epic` or other non-Stage-3 invocations, which have no discovery.json in context.)
 
 DO NOT implement security controls. IDENTIFY and DOCUMENT requirements only.

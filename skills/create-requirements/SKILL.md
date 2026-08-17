@@ -1198,11 +1198,13 @@ Update `state.json`:
 {
   "updated_at": "{ISO_TIMESTAMP}",
   "stages": {
-    "deep_dive": {"stage": 3, "status": "completed", "agents_run": ["archaeologist", ...]},
+    "deep_dive": {"stage": 3, "status": "completed", "agents_to_run": ["archaeologist", ...], "agents_run": ["archaeologist", ...]},
     "synthesis": {"stage": 4, "status": "in_progress", "agent": "business-analyst"}
   }
 }
 ```
+
+**Population rule for `agents_run`:** include a role only if `context/{agent}.md` exists and is non-empty — the same `[[ -f ]] && [[ -s ]]` test Stage 3.4 already runs (`:1185-1189`). A role that was dispatched (recorded in `agents_to_run`) but produced no usable output is excluded from `agents_run`, not included with an empty or placeholder entry. **Preserve `agents_to_run` in this update** — it was set at Stage 2.4 and the Stage-3-exit telemetry step below reads both fields from `deep_dive` to compute the dispatched-but-empty count; do not overwrite `deep_dive` with an object that drops it.
 
 ---
 
@@ -1231,6 +1233,43 @@ For each Stage 3 file that exists under `$WORK_DIR/{identifier}/context/` (`arch
 3. `Write()` to `$WORK_DIR/{identifier}/context/{agent}-summary.md`
 
 The full `.md` files remain the authoritative source. Stage 4.1 (business-analyst) still reads the full files via its prompt because synthesis needs the complete reasoning. Summaries are strictly for **cheaper downstream resume** — consumers (`/resume-work`, `/load-context`) fall back to the full file when the summary is absent.
+
+#### Stage-3-Exit Telemetry Record
+
+Immediately after the per-agent disk summaries above, write a small telemetry record for this run. This is purely observational — a spawn-count and model-tier proxy, never gated on it succeeding, and never presented as a measurement of tokens, dollars, or research efficiency.
+
+Read the model tier for each role in `agents_run` from that role's static frontmatter. `agents_run` is state persisted across sessions and re-read by `/resume-work` — treat each entry as data, not as a shell-safe token: validate it matches `^[a-z][a-z0-9-]*$` (the closed Stage 3 role-name shape) before using it in any command, and skip/omit the role rather than run an unvalidated value. With that guard, read via `grep -m1 '^model:' "${CLAUDE_PLUGIN_ROOT}/agents/{agent}.md"` (quoted; or `"$HOME/.claude/agents/{agent}.md"` for local/dev copies) — or equivalently via the `Read` tool, which has no shell-interpolation surface at all. Map the pinned model ID to its bare tier word (`claude-sonnet-5` → `sonnet`, `claude-opus-5` → `opus`) and keep the row pipe-delimited on both sides, exactly as shown in the template below (`| {role} | {tier} |`) — the table cell must contain the bare tier word only, never the full pinned ID or an unbounded row, or `cost-report.sh`'s `sonnet`/`opus` cell-match parser will silently fail to count it.
+
+`Write` to `$WORK_DIR/{identifier}/requirements-telemetry.md`:
+
+```markdown
+# Requirements-Run Telemetry: {identifier}
+Generated: {ISO_TIMESTAMP}
+Skill: /create-requirements
+Execution mode: {EXEC_MODE}
+
+## Roles Run
+
+| Role | Model Tier |
+|------|------------|
+| {role} | {tier} |
+...
+
+## Summary
+- Roles run: {count of agents_run}
+- Roles dispatched but produced no usable output: {count of agents_to_run minus agents_run}
+- Lightweight mode: {yes/no} (downgrades Stage 4's `business-analyst` to sonnet — not reflected in the Stage-3 role list above, which this record does not cover)
+
+This record counts spawned research roles and their model tiers only. It captures no
+tokens, wall-clock time, or dollar cost, and cannot be used to measure research
+efficiency or validate any claim about reduced duplicate work.
+```
+
+The file MUST end with that closing paragraph plus a trailing newline — never end on a table row or bullet. Standard text-file hygiene; ending on prose (never a table row) is also what keeps this record robust against any future aggregator whose line-based parser mishandles a missing trailing newline.
+
+This record carries **no manifest entry** — matching the precedent set by `/implement`'s equivalent `cost-summary.md` record, which is also unregistered. Its filename and location (`$WORK_DIR/{identifier}/requirements-telemetry.md`) are deliberately distinct from `/implement`'s `$WORK_DIR/{identifier}/cost-summary.md`, so a later implementation run on the same identifier cannot overwrite or collide with it.
+
+If the write fails, emit a warning and proceed to Stage 4 — this record is observational and must never block or abort the pipeline.
 
 ---
 
@@ -1683,7 +1722,7 @@ Update `state.json`:
   "stages": {
     "setup":     {"stage": 1, "status": "completed"},
     "discovery": {"stage": 2, "status": "completed"},
-    "deep_dive":     {"stage": 3, "status": "completed", "agents_run": [...]},
+    "deep_dive":     {"stage": 3, "status": "completed", "agents_to_run": [...], "agents_run": [...]},
     "synthesis":     {"stage": 4, "status": "completed"},
     "resolve_flags": {"stage": 4.5, "status": "completed|skipped"},
     "re_synthesis":  {"stage": 4.6, "status": "completed|skipped"},
