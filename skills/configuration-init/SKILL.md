@@ -133,18 +133,33 @@ Use AskUserQuestion:
   - "Team" / "Default to teammate mode with cross-pollination"
 - multiSelect: false
 
-Then use AskUserQuestion:
+There are seven overridable phases but `AskUserQuestion` caps `options` at **4**
+(see [Question Sizing](../../shared/principles.md#question-sizing)), so ask in two
+passes and take the **union** of both answers. Do not drop any phase.
 
-- header: "Phase Overrides"
-- question: "Which phases should use team mode? (team mode enables agents to read each other's findings)"
+Then use AskUserQuestion (pass 1 of 2):
+
+- header: "Phase Overrides 1/2"
+- question: "Which phases should use team mode? (1 of 2 — team mode enables agents to read each other's findings)"
 - options:
   - "Requirements Deep Dive" / "requirements_deep_dive — parallel research agents in /create-requirements"
   - "QA Review" / "qa_review — test-writer, code-reviewer, security-auditor in /implement"
   - "Documentation Update" / "documentation_update — context-builder, business-analyst, doc-writer in /update-documentation"
   - "Refactor" / "refactor — code-reviewer, test-writer, quality-guard in /refactor"
+- multiSelect: true
+
+Then use AskUserQuestion (pass 2 of 2):
+
+- header: "Phase Overrides 2/2"
+- question: "And which of these remaining phases should use team mode? (2 of 2 — select none if you are done)"
+- options:
   - "Troubleshoot" / "troubleshoot — security-auditor, quality-guard in /troubleshoot"
   - "PR Review" / "pr_review — code-reviewer, security-auditor, quality-guard in /pr-review (covers remote and `--local` modes)"
+  - "Review Plan" / "review_plan — architect, quality-guard, optionally security-auditor in /review-plan"
 - multiSelect: true
+
+The set of phases to override is every phase selected in **either** pass. An empty
+selection in pass 2 is a valid answer, not a reason to re-ask.
 
 Store the result as an object:
 ```yaml
@@ -599,7 +614,7 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
    → If string: must be "subagent" or "team" → else FAIL
    → If object: must have "default" key with value "subagent" or "team"
    → If object with "overrides": each key must be a known phase name
-     Known phases: requirements_deep_dive, qa_review, documentation_update, refactor, troubleshoot, pr_review
+     Known phases: requirements_deep_dive, qa_review, documentation_update, refactor, troubleshoot, pr_review, review_plan
      Unknown phase name → WARN ("unknown phase: {name}, will be ignored by skills")
 
 3. storage.locations

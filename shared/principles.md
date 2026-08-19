@@ -58,3 +58,24 @@ When one skill's workflow naturally needs another skill's behavior, prefer **age
 18. **Don't chain a skill just to reuse its internal logic.** If the logic is reusable, extract it into a shared utility (`plugin/shared/`), a `references/*.md` file, or an agent. Chaining a user-facing skill to get at its internals imports its prompts, state writes, and user interactions too — all of which usually don't belong in the caller's flow.
 
 19. **Document chain points.** When a skill does chain another skill, the calling SKILL.md must name the exact skill called, the trigger condition, and why an agent wasn't used. This keeps the composition graph legible as skills evolve.
+
+## Question Sizing
+
+20. **`AskUserQuestion` accepts at most 4 options.** The tool schema declares `maxItems: 4` on
+    `options`. A block written with more does not error and does not warn — the extra entries are
+    simply never shown, so on a single-select question the user cannot choose them at all. Any
+    `options:` list in a `SKILL.md` must therefore stay at 4 or fewer. Validator A7
+    (`scripts/validators/skill-structure.sh`) enforces this.
+
+21. **Don't spend a slot on an escape hatch.** `AskUserQuestion` always appends its own free-text
+    **Other** choice, so an explicit `"Other"` option wastes one of the 4 slots. Add an explicit
+    trailing option only when it means something the free-text field doesn't — `Cancel` (abort the
+    flow) is the usual case; see `plugin/skills/todo-work/SKILL.md`.
+
+22. **Over 4 candidates: narrow, or split — never truncate.** If the flow already knows enough to
+    rank them (a detected ecosystem, a priority order), offer the top choice plus its nearest
+    alternatives and let **Other** absorb the rest — `/create-proposal`'s stack question and
+    `/todo-work`'s pick list both do this. If every candidate must stay reachable, as in a
+    `multiSelect: true` list, ask in consecutive passes of ≤4 and take the union of the answers —
+    `/configuration-init`'s phase overrides does this. Silently dropping the tail is never correct;
+    the option most likely to be lost is the last one, which is usually the newest.

@@ -171,19 +171,36 @@ fi
 
 **Confirm with user** (skip if `ECOSYSTEM` was found in `configuration.yml`):
 
-Use AskUserQuestion:
+Use AskUserQuestion. The tool caps `options` at **4** — see [Question Sizing](../../shared/principles.md#question-sizing).
+`ECOSYSTEM` is already detected above, so lead with it and offer only its nearest neighbours;
+`AskUserQuestion` always appends its own free-text **Other**, so no slot is spent on an escape hatch.
+
+Build the list as: the detected stack first, labelled `(Recommended)`, then up to 3 neighbours from its row:
+
+| Detected `ECOSYSTEM` | Neighbours to offer |
+|---|---|
+| `php-symfony` | PHP, React/TypeScript, Node.js |
+| `php` | PHP/Symfony, React/TypeScript, Node.js |
+| `react` | Node.js, TypeScript (non-React), PHP/Symfony |
+| `node` | React/TypeScript, TypeScript (non-React), Go |
+| `go` | Python, Node.js, Java |
+| `java` | Go, Python, Node.js |
+| `python` | Go, Node.js, Java |
+| `unknown` | offer PHP/Symfony, React/TypeScript, Go, Python (no detected entry to lead with) |
+
 ```
 header: "Technology Stack"
 question: "Detected: {ECOSYSTEM}. Confirm or change."
 options:
-  - "PHP/Symfony" / "Symfony framework, PHP 8+, Doctrine ORM"
-  - "PHP" / "PHP without a specific framework"
-  - "React/TypeScript" / "React frontend with TypeScript"
-  - "Node.js" / "Node.js backend"
-  - "Go" / "Go backend service"
-  - "Python" / "Python service or application"
-  - "Other" / "Specify in the text field"
+  - "{detected} (Recommended)" / "Detected from project files"
+  - "{neighbour 1}" / "<one-line description>"
+  - "{neighbour 2}" / "<one-line description>"
+  - "{neighbour 3}" / "<one-line description>"
+multiSelect: false
 ```
+
+If the project's stack is none of these, the user selects the tool's built-in **Other** and types it;
+take that free-text value verbatim as `{ecosystem}`.
 
 Store confirmed value as `{ecosystem}`.
 

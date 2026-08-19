@@ -42,8 +42,11 @@
 #   refactor                — /refactor Step 5.1 (quality gate loop)
 #   troubleshoot            — /troubleshoot Phase 6 (verification review)
 #   pr_review               — /pr-review Step 4 (review agents; covers remote and --local modes)
+#   review_plan             — /review-plan Step 3 (review agents; architect, quality-guard, optionally security-auditor)
 #
-# All skills that use multiple agents support both modes.
+# Only the phases listed above read execution_mode. Other multi-agent skills
+# (/brainstorm, /create-proposal, /epic, /meeting, /resume-work, and others)
+# use fixed execution strategies optimized for their workflow.
 # Both formats are fully supported — simple string is a shorthand for
 # { default: <value>, overrides: {} }.
 # -----------------------------------------------------------------------------

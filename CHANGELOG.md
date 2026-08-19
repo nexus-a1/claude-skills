@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.27.1] - 2026-08-19
+
+## What's Changed
+
+8 commits since v1.27.0: 3 fixes, 1 test, 1 docs, 1 chore (plus 2 merge commits). No new features and no breaking changes. This is a correctness patch covering two tickets — CL-29 (`review_plan` phase config drift) and CL-31 (AskUserQuestion option-cap compliance).
+
+### Bug Fixes
+
+- **skills**: recognise the `review_plan` phase in `/configuration-init` — CL-29
+- **templates**: complete the phase list and drop a false claim — CL-29
+- **skills**: keep AskUserQuestion option lists within the 4-option cap — CL-31
+
+### Tests
+
+- **validators**: add A7 guard against over-cap AskUserQuestion blocks — CL-31
+
+### Other Changes
+
+- **work**: requirements triad, QA records and follow-up ledger — CL-29
+- **work**: final state, manifest and cost summary — CL-29
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.27.0...v1.27.1
+
 ## [1.27.0] - 2026-08-17
 
 ## What's Changed
