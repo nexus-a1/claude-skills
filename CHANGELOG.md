@@ -1,5 +1,55 @@
 # Changelog
 
+## [1.29.0] - 2026-08-26
+
+## What's Changed
+
+14 commits: 2 feat, 4 fix, 2 test, 2 docs, 2 chore. No breaking changes.
+
+One security control and one CI cost fix. `business-analyst` was the only agent in the requirements pipeline with an ingestion surface and no prompt-injection framing — nine peers already carried it — so knowledge-base content reached requirements synthesis with no instruction to treat it as untrusted. This release closes that, and gives the check enforcing it its first automated coverage.
+
+### Features
+
+- **agents**: `business-analyst` now carries the canonical prompt-defense treatment — CL-33
+
+  The blockquote names all three ingestion surfaces, not just the upstream agent's output: archivist SEARCH results, other agents' context-directory findings, and files read directly from a matched ticket's archived directory. The instruction at the third of those previously said to cite matched-ticket content "as confirmed", an elevated-trust framing applied to the least-trustworthy input; it is now a four-branch decision (verifies / contradicts / cannot be checked / carries a directive) with an explicit precedence rule.
+
+- **validators**: `business-analyst` registered in the C5b ingestion list, and the eligibility rule written down at the enforcement point — CL-33
+
+  No document previously defined what makes an agent an "ingestion agent", which is why second-order consumers were never considered. The rule now states both branches and cites the correct basis for each: the provenance-persistence rule governs pass-through only, while a direct knowledge-base read is first-order. The check logic itself is unchanged.
+
+### Bug Fixes
+
+- **validators**: C5b emits the roster its loop actually iterates, so a runtime change to the agent list can no longer disarm the check silently — CL-33
+- **agents**: the failing-verification branch no longer instructs reproducing untrusted assertions into work-state, which the provenance rules forbid — CL-33
+- **agents**: the knowledge-base read is now constrained beneath the requirements-repository root; the path arrives via another agent's output and was previously unbounded — CL-33
+- **validators**: corrected a rule citation that named a rule which does not exist, and a header severity that described a blocking check as advisory — CL-33
+
+### Tests
+
+- **validators**: new C5b coverage — 10 tests where there were none, verified by mutation rather than by passing: reference stripped, agent dropped from the list, agent name removed from the failure message, loop short-circuited, failure downgraded to a warning, and failure line indented (which defeats the aggregator's column-anchored count while the test still catches it) — CL-33
+
+### Other Changes
+
+- **ci**: Claude review and healthcheck no longer run on every push to an open pull request — SKILLS-000
+
+  Both triggered on `synchronize`, so an eight-commit branch bought eight full Claude reviews. That exhausted the Actions budget and CI went dark for five days, taking the v1.28.0 plugin publish with it. They now run on `[opened, ready_for_review]`, with a `paths-ignore` for work-directory artifacts. The deterministic gates (`validate`, `tests`) still run on every push, so per-push safety is unchanged — only the advisory LLM signal moved to once per pull request.
+
+- **plugin**: the untrusted-data guideline now covers agents that only synthesize another agent's already-ingested output — CL-33
+- **docs**: requirements triad and design-review record for CL-33
+
+### Known Gaps
+
+Tracked, not fixed here:
+
+- The ingestion check is an unanchored substring match, so a reference inside a code fence satisfies it. A test locks this in as documented behaviour rather than leaving it implicit — CL-39
+- A renamed or deleted agent file degrades to a warning rather than a failure, leaving the build green — CL-39
+- Wording assertions cover `business-analyst` only; the other nine ingestion agents remain substring-only — CL-39
+- Four further agents meet the newly written eligibility rule and are not yet listed — CL-39
+- Two higher-privilege knowledge-base readers render archived content into the main orchestrating context with no untrusted-input notice — CL-38
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.28.0...v1.29.0
+
 ## [1.28.0] - 2026-08-26
 
 ## What's Changed
