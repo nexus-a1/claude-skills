@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.28.0] - 2026-08-26
+
+## What's Changed
+
+38 commits since v1.27.1: 2 feat, 12 fix, 6 chore, 7 docs, 4 test, 1 refactor, 1 ci. No breaking changes.
+
+### Features
+
+- **implement**: two archive trigger points with fail-closed consent — CL-27
+- **scripts**: generate model-tier doc regions from frontmatter — CL-5
+
+### Bug Fixes
+
+- **implement**: branch on the archivist's actual outcome, not on having dispatched it — CL-27
+- **implement**: address QA findings — broken opt-out, missing state write, misplaced publish — CL-27
+- **skills**: close the same bypass defect in rebuild-requirements-index — CL-27, SEC-1, SEC-2, SEC-6, SEC-7
+- **agents**: write index entries with the full template schema — CL-27
+- **agents**: replace the index entry by identifier on re-archive — CL-27
+- **agents**: anchor relative requirements-KB paths to the project root — CL-27
+- **agents**: branch archivist STORE on storage type, no bypass push for directory KBs — CL-27, SEC-1, SEC-2, SEC-4
+- CL-27: close the terminal skeptic's 8 gates — AC-1, SEC-3
+- **scripts**: harden temp files, name gate and fence tracking — CL-5, CWE-377
+- **scripts**: close truncation path and generate per-skill Model lines — CL-5, CL-26
+- **presentation**: add quality-guard to the Opus agent listings — CL-5
+- **scripts**: address security review findings in the generator — CL-5
+
+### Other Changes
+
+- **config**: enable Jira write operations for this repo — CL-5
+- **skills**: delegate archive commit/push mechanics to archivist STORE (refactor) — CL-27
+- **validate**: trigger on docs/** and the tier generator (ci) — CL-5, ADR-011
+- Test coverage: config artifact backfill comparison, implement archive-offer delegation/consent, archivist storage-type STORE branch, tier-region freshness gate (F1) — CL-27, CL-5, CL-26
+- Docs: requirements-KB directory-type store semantics (ADR-013), archive trigger points, work-session records for CL-27 and CL-5 — CL-27, CL-5, ADR-012, ADR-013
+- **skills**: drop model-coupled capability claims from plugin prose — CL-5, SKILLS-060, SONNET-5
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.27.1...v1.28.0
+
 ## [1.27.1] - 2026-08-19
 
 ## What's Changed

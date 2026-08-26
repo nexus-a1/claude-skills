@@ -141,7 +141,12 @@ Process:
 6. Generate new index.json
 7. Validate JSON structure
 8. Write to repository
-9. If the repository is a git-backed KB location: commit and push using the
+9. Commit the rebuilt index. **If the repository is a directory-type location**
+   (the default), commit locally and STOP — no push, and never
+   `NEXUS_KB_WRITE=1` / `SECURITY_AUDITOR_BYPASS=1`, since that KB is inside the
+   host project's own repo. Leaving this case unstated previously meant a
+   directory-type rebuild wrote index.json and left it uncommitted.
+   **If the repository is a git-backed KB location**: commit and push using the
    sanctioned KB-write pattern (see
    ${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md) — `cd` into ${repo_path}
    (never `git -C`). `git commit -m "Rebuild requirements index"` must LEAD its
@@ -342,21 +347,33 @@ ls -lt index.json.backup.*
 cp index.json.backup.20260203_143022 index.json
 ```
 
-Then commit and push using the sanctioned KB-write pattern
-(`${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md`) — both `git commit` and
-`git push` lead their own Bash calls so the guard engages; the push resolves the
-branch inline (shell variables do not persist across Bash tool calls):
+Then commit — **and push only if the KB is git-backed**. Branch on the resolved
+storage type exactly as archivist STORE step 7 does; the restore path is not
+exempt from that rule.
 
 ```bash
 # Call 1 (cwd is already ${repo_path} from the cd above)
 git add index.json
 ```
 ```bash
-# Call 2 — commit leads the call (credential scan).
+# Call 2 — commit leads the call (credential scan). Both branches commit.
 git commit -m "Restore index from backup"
 ```
+
+**If `_TYPE == "directory"`: stop here.** Do not push, and do not use
+`NEXUS_KB_WRITE=1` or `SECURITY_AUDITOR_BYPASS=1`. Under directory storage the KB
+lives inside the host project's own repository, so those variables would disable
+that project's branch protection and audit gate against its own trunk — and this
+is the DEFAULT storage type, so it is the common case. The restored index travels
+with the operator's normal review-and-merge flow.
+
+**If `_TYPE == "git"`**, push with the sanctioned KB-write pattern
+(`${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md`): the push leads its own Bash
+call and resolves the branch inline (shell variables do not persist across Bash
+tool calls).
+
 ```bash
-# Call 3 — push must lead, on ONE line, so the guard engages and logs the bypass WARNs.
+# Call 3 — git-backed KB only. Push must lead, on ONE line, so the guard engages and logs the bypass WARNs.
 NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1 git push origin -- "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' | grep . || timeout 10 git ls-remote --symref origin HEAD 2>/dev/null | awk '/^ref:/{sub("refs/heads/","",$2);print $2;exit}' | grep . || echo master)"
 ```
 

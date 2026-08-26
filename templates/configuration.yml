@@ -152,8 +152,9 @@ storage:
 #                        Stage 3. Shows matches to help reuse patterns and
 #                        avoid re-inventing solutions.
 #
-#   auto_archive         After /implement creates a PR, offer to archive the
-#                        completed requirements to the team knowledge base.
+#   auto_archive         When /implement finishes the ticket (Phase 6.3), offer
+#                        to archive the completed requirements to the team
+#                        knowledge base. Fires whether or not a PR was created.
 #
 #   auto_load_threshold  Confidence score (0.0–1.0) above which matched
 #                        requirements are automatically loaded into context
@@ -162,8 +163,17 @@ storage:
 #   max_suggestions      Maximum number of similar past requirements to show
 #                        during the planning phase.
 #
-#   archive_on_pr        Specifically trigger archival offer after PR creation
-#                        (vs. after implementation completion).
+#   archive_on_pr        Offer to archive immediately after /implement opens a
+#                        PR (Phase 5.3b), rather than waiting for completion.
+#                        Independent of auto_archive: these are two distinct
+#                        trigger points, not one flag checked twice. With both
+#                        enabled (the shipped default) accepting at either
+#                        point suppresses the other, so you archive once.
+#                        Declining at PR creation lets the completion offer ask
+#                        again — a different occasion — so the ceiling is two
+#                        offers and at most one archive.
+#                        Neither flag is standing consent: an unattended run
+#                        that cannot obtain an explicit answer archives nothing.
 # -----------------------------------------------------------------------------
 requirements:
   auto_search: true

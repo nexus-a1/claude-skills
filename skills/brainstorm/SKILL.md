@@ -183,10 +183,10 @@ If `$ARGUMENTS` begins with `promote`, handle the promote flow instead of normal
 If `$ARGUMENTS` begins with `--light`, strip the flag and enable lightweight mode:
 
 - Output to user: "Lightweight mode enabled: all agents use Sonnet."
-- **Explore agent**: unchanged (already Sonnet)
-- **business-analyst**: spawn with model **sonnet** instead of opus (only meaningful downgrade)
-- **Plan agent**: unchanged (already Sonnet)
-- **architect**: unchanged (already Sonnet)
+- **Explore agent**: unchanged
+- **business-analyst**: spawn with model **sonnet** (ALWAYS Opus in standard mode — the only meaningful downgrade here)
+- **Plan agent**: unchanged
+- **architect**: unchanged
 - All orchestration flow and output formats remain identical
 
 This reduces cost for exploratory brainstorming where deep reasoning is less critical than in requirements or implementation.

@@ -236,17 +236,17 @@ echo "RECONCILE_RC=$rc NEW_ID=$new_id"
 If `$ARGUMENTS` begins with `--light`, strip the flag and enable lightweight mode:
 
 - Output to user: "Lightweight mode enabled: research agents use Sonnet. Quality gates unchanged."
-- **context-builder**: unchanged (already sonnet)
-- **archaeologist**: unchanged (already sonnet)
-- **data-modeler**: unchanged (already sonnet)
-- **integration-analyst**: unchanged (already sonnet)
-- **archivist**: unchanged (already sonnet)
-- **product-expert**: unchanged (already sonnet)
-- **business-analyst**: spawn with model **sonnet** instead of opus (ALWAYS Opus in standard mode — reasoning-heavy synthesis)
-- **security-requirements**: unchanged (already sonnet)
+- **context-builder**: unchanged
+- **archaeologist**: unchanged
+- **data-modeler**: unchanged
+- **integration-analyst**: unchanged
+- **archivist**: unchanged
+- **product-expert**: unchanged
+- **business-analyst**: spawn with model **sonnet** (ALWAYS Opus in standard mode — reasoning-heavy synthesis)
+- **security-requirements**: unchanged
 - All orchestration flow, quality standards, and output formats remain identical
 
-This reduces cost for the analysis/synthesis phase. In most cases the deep-dive agents are already Sonnet, so the savings come from the business-analyst downgrade.
+This reduces cost for the analysis/synthesis phase. The deep-dive agents are left untouched, so the savings come from the business-analyst downgrade.
 
 ---
 
@@ -1238,7 +1238,7 @@ The full `.md` files remain the authoritative source. Stage 4.1 (business-analys
 
 Immediately after the per-agent disk summaries above, write a small telemetry record for this run. This is purely observational — a spawn-count and model-tier proxy, never gated on it succeeding, and never presented as a measurement of tokens, dollars, or research efficiency.
 
-Read the model tier for each role in `agents_run` from that role's static frontmatter. `agents_run` is state persisted across sessions and re-read by `/resume-work` — treat each entry as data, not as a shell-safe token: validate it matches `^[a-z][a-z0-9-]*$` (the closed Stage 3 role-name shape) before using it in any command, and skip/omit the role rather than run an unvalidated value. With that guard, read via `grep -m1 '^model:' "${CLAUDE_PLUGIN_ROOT}/agents/{agent}.md"` (quoted; or `"$HOME/.claude/agents/{agent}.md"` for local/dev copies) — or equivalently via the `Read` tool, which has no shell-interpolation surface at all. Map the pinned model ID to its bare tier word (`claude-sonnet-5` → `sonnet`, `claude-opus-5` → `opus`) and keep the row pipe-delimited on both sides, exactly as shown in the template below (`| {role} | {tier} |`) — the table cell must contain the bare tier word only, never the full pinned ID or an unbounded row, or `cost-report.sh`'s `sonnet`/`opus` cell-match parser will silently fail to count it.
+Read the model tier for each role in `agents_run` from that role's static frontmatter. `agents_run` is state persisted across sessions and re-read by `/resume-work` — treat each entry as data, not as a shell-safe token: validate it matches `^[a-z][a-z0-9-]*$` (the closed Stage 3 role-name shape) before using it in any command, and skip/omit the role rather than run an unvalidated value. With that guard, read via `grep -m1 '^model:' "${CLAUDE_PLUGIN_ROOT}/agents/{agent}.md"` (quoted; or `"$HOME/.claude/agents/{agent}.md"` for local/dev copies) — or equivalently via the `Read` tool, which has no shell-interpolation surface at all. Map the pinned model ID to its bare tier word by reading the tier segment of the ID itself (`claude-<tier>-<version>` → `<tier>`), never by matching a hardcoded list of IDs — a list goes stale on the next model bump, while the segment does not. Keep the row pipe-delimited on both sides, exactly as shown in the template below (`| {role} | {tier} |`) — the table cell must contain the bare tier word only, never the full pinned ID or an unbounded row, or `cost-report.sh`'s `sonnet`/`opus` cell-match parser will silently fail to count it.
 
 `Write` to `$WORK_DIR/{identifier}/requirements-telemetry.md`:
 

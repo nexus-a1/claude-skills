@@ -78,15 +78,15 @@ See `${CLAUDE_PLUGIN_ROOT}/shared/write-safety.md` (or `~/.claude/shared/write-s
 If `$ARGUMENTS` begins with `--light`, strip the flag and enable lightweight mode:
 
 - Output to user: "Lightweight mode enabled: execution agents use Sonnet. Quality gates unchanged."
-- **Explore agent**: unchanged (already sonnet)
-- **Plan agent**: spawn with model **sonnet** instead of opus
-- **architect**: spawn with model **sonnet** instead of opus
+- **Explore agent**: unchanged
+- **Plan agent**: spawn with model **sonnet**
+- **architect**: unchanged — its frontmatter already pins Sonnet, so there is nothing to downgrade
 - **code-reviewer**: unchanged (ALWAYS Opus — quality gate)
 - **security-auditor**: unchanged (ALWAYS Opus — quality gate)
 - **quality-guard**: unchanged (ALWAYS Opus — quality gate)
-- **test-writer**: unchanged (already sonnet)
-- **test-fixer**: unchanged (already sonnet)
-- **git-operator**: unchanged (already sonnet)
+- **test-writer**: unchanged
+- **test-fixer**: unchanged
+- **git-operator**: unchanged
 - All orchestration flow, quality gates, and deadlock protocols remain identical
 
 This reduces cost for the planning/architecture phases while maintaining full-strength quality assurance.
@@ -1818,6 +1818,141 @@ Prompt: Author a PR body for feature/{identifier} covering commits {base}..HEAD.
 
 Then run `gh pr create` with the returned title/body inline.
 
+#### 5.3b Offer Archival (PR-creation trigger)
+
+**Goal**: Honor `requirements.archive_on_pr` — the "a pull request was just opened" trigger. This is one of **two distinct** archive trigger points; the other is Phase 6.3 (ticket completion). They are deliberately not collapsed into a single OR-checked call site: PR creation happens here in Phase 5, structurally before Phase 6, so a single post-Phase-6 site could not tell the two occasions apart.
+
+**Skip this step entirely if no PR was created** (the user chose to skip at 5.2). The trigger is "a PR was just opened"; with no PR there is nothing to trigger on, and no config check is needed to establish that — it falls out of control flow.
+
+Read the flag. **Read nothing else** — in particular do NOT `source resolve-config.sh` and do NOT call `resolve_artifact_typed`. That resolver fabricates a default `.claude/requirements` path for an install that never configured a KB, where the archivist's own resolution correctly refuses. Deciding *whether to offer* needs one boolean; deciding *whether the KB is usable* is the archivist's job:
+
+```bash
+# Walk up for the config: a hardcoded relative path fails when /implement runs
+# from a subdirectory, and a failed read must not silently become "offer anyway".
+CFG=""; _d="$PWD"
+while [[ "$_d" != "/" ]]; do
+  [[ -f "$_d/.claude/configuration.yml" ]] && { CFG="$_d/.claude/configuration.yml"; break; }
+  _d="$(dirname "$_d")"
+done
+
+# Do NOT write `// true` here. yq and jq treat a literal `false` as empty, so
+# `archive_on_pr // true` returns true for `archive_on_pr: false` and the
+# documented opt-out silently stops working. Test the raw value instead — the
+# same reasoning resolve-config.sh states at its deviation-checkpoint helper.
+ARCHIVE_ON_PR=true
+if [[ -n "$CFG" ]]; then
+  _raw=$(yq -r '.requirements.archive_on_pr' "$CFG" 2>/dev/null)
+  [[ "$_raw" == "false" ]] && ARCHIVE_ON_PR=false
+fi
+ARCHIVED_STATUS=$(jq -r '.phases.archived.status // "pending"' "$WORK_DIR/{identifier}/state.json" 2>/dev/null || echo pending)
+echo "ARCHIVE_ON_PR=$ARCHIVE_ON_PR ARCHIVED_STATUS=$ARCHIVED_STATUS"
+```
+
+**If `ARCHIVE_ON_PR` is not `true`**: skip silently. No offer, no archivist dispatch (AC-4.2).
+
+**If `ARCHIVED_STATUS` is `completed`**: skip silently — already archived this run.
+
+**Otherwise**, present a genuine offer via AskUserQuestion:
+
+```
+This ticket's requirements can be archived to the team knowledge base, so future
+requirements work can find them.
+
+  [1] Yes — archive now (the archive is carried into the PR you just opened)
+  [2] No  — skip archival
+```
+
+Then apply the **negative-consent rule** in §5.3c below before acting on any answer.
+
+**On an affirmative selection**: dispatch `Task(archivist, "STORE ...")` for `{identifier}`. The archivist resolves the KB path and storage type itself and refuses cleanly if none is configured. Then branch on **what it actually reported** — do not assume it stored:
+
+- **Stored successfully** → record `status: completed` per §5.3e, then follow §5.3d for the publish. **Say so**: name what was archived and where. Its two sibling branches below both report; a silent success is the one outcome the user cannot distinguish from nothing having happened.
+- **Refused because no KB is configured** → record `status: unavailable` per §5.3e. Skip §5.3d entirely (there is nothing to publish), and say plainly that archival was skipped because no requirements knowledge base is configured. This is a configuration state, not a transient failure — do not offer again at Phase 6.3.
+- **Failed for any other reason** → record `status: failed` per §5.3e, skip §5.3d, and follow §6.3b's fail-soft reporting including the manual retry command.
+
+Recording `completed` for an archive that did not happen is the failure mode this branch exists to prevent: Phase 6.3 would then skip silently and the user would be told nothing was wrong.
+
+**On a decline**: write nothing. Leave `phases.archived.status` at `pending` so Phase 6.3 can offer once more at completion — a materially different occasion, not a repeat of this one. The knowledge base must be byte-identical to its pre-offer state (AC-3.5, AC-SEC-5).
+
+#### 5.3c Negative consent — the offer must fail closed
+
+This rule applies at **both** trigger points (5.3b and 6.3) and exists because an unattended run must never archive on presumed consent.
+
+**Archive only when an option the run actually offered is selected and echoed back verbatim in the run's own output.** Treat every other outcome as a decline:
+
+| Outcome | Action |
+|---|---|
+| `AskUserQuestion` is unavailable in this session | **Skip** — do not archive, do not improvise a prose question and proceed |
+| The tool errors | **Skip** |
+| The tool returns no selection | **Skip** |
+| The run cannot obtain an answer (non-interactive, timeout) | **Skip** |
+| An echo that matches no option this run offered | **Skip** |
+| A verbatim match to an offered affirmative option, evidenced by the tool's own result | Archive |
+
+**A prose echo of the option text is not evidence.** The affirmative option's wording appears verbatim in this file, so an improvising agent can reproduce it without any user having chosen anything. Consent requires the `AskUserQuestion` tool result itself; absent that result object, treat it as a decline no matter what the transcript says.
+
+The unavailable-tool row is not hypothetical. Measured on Claude Code 2.1.235: under `claude -p`, `AskUserQuestion` is **absent from the toolset entirely** — a `ToolSearch` for it returns "No matching deferred tools found" — and an agent that finds no tool will otherwise improvise a prose question that nobody answers, then carry on with the run reporting success. Tool absence does not by itself produce a safe default; this table is what produces one.
+
+**A user who wants archival in unattended runs opts in through configuration, never through a defaulted-yes prompt.** Note that `auto_archive` and `archive_on_pr` govern *whether to offer*, not whether consent may be presumed — neither is standing consent (AC-4.1, AC-SEC-6).
+
+#### 5.3d Publish the archive into the open PR
+
+**Applies only when 5.3b actually archived AND the archivist reported it took the directory branch.** If it reported the git-backed branch, it has already pushed the archive to the separate KB remote and the host branch gained no commit — there is nothing here to publish, so skip this step entirely. Running it anyway would spend a security-auditor pass, stamp an audit, push the host branch, and report the archive was carried into the PR when it was not.
+
+This keys on the archivist's **reported outcome** (its STORE step 8), not on resolving `_TYPE` here — the call sites resolve nothing themselves.
+
+The archivist commits but never pushes (its STORE step 7 branch B is publish-free by design, so the archive operation itself cannot disable this repo's protections). Carrying the archive into the already-open PR is therefore **this skill's** ordinary guarded publish, performed here.
+
+> **The audit gate makes this conditional on a fresh review — this is not optional.** `git-mutation-guard.sh` blocks any push whose recorded audit sha differs from current HEAD. Phase 5.1 stamped the audit record immediately before its push; the archive commit moves HEAD past that stamp, so this publish is **stale by construction**. Re-stamping with `record-audit.sh` without an actual review would assert a security review that never happened, which AC-SEC-7 exists to forbid.
+
+1. Run a genuine `security-auditor` pass over **everything this push will publish**, not just the archive commit:
+
+```bash
+git diff @{u}..HEAD
+```
+
+   The scope matters. `record-audit.sh` stamps HEAD and `git push` publishes *every* unpushed commit on the branch — so auditing only `HEAD~1..HEAD` would stamp as reviewed any commit made between Phase 5.1's push and this one. Review what actually ships. The archive commit itself carries content copied wholesale from the work directory, including `context/` agent outputs that may hold externally-authored text, so this is a real review rather than a formality.
+2. Only if it comes back clean, record it and publish:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
+```
+```bash
+git push
+```
+
+3. **If the auditor is not clean, or the push is blocked**: do not retry with any bypass. Fall back to Phase 6.3's local-only semantics — report that the archive is committed locally and did not reach the PR, and name the manual retry. Never promise review coverage that did not occur.
+
+#### 5.3e Record the archive outcome (shared by both trigger points)
+
+**Both** Phase 5.3b and Phase 6.3 write this; it is stated once here and referenced from both so the two cannot drift. Only the skill lead writes `state.json` — the archivist never does.
+
+Write it **immediately after the archivist returns**, before attempting any publish. If the write is skipped, `phases.archived.status` stays `pending`, Phase 6.3 reads `pending`, and the user is offered archival a second time and a second archivist STORE runs for the same ticket in the same run — precisely the double-ask the two-site design exists to prevent (AC-3.3).
+
+```json
+{
+  "phases": {
+    "archived": {
+      "status": "completed",
+      "trigger": "archive_on_pr | auto_archive",
+      "published": false,
+      "declined_at": []
+    }
+  }
+}
+```
+
+- `status`: one of —
+  - `completed` — the archivist reported a successful store. Set this **independent of whether the publish in §5.3d then succeeds**: the archive exists either way, and publishing only determines whether it rides along in the PR.
+  - `pending` — not yet attempted, or offered and declined. The other trigger may still offer.
+  - `unavailable` — the archivist refused because no knowledge base is configured. Both triggers treat this as skip-silently: re-offering cannot succeed, because the cause is configuration and will not change mid-run.
+  - `failed` — the archivist errored for any other reason. Both triggers treat this as skip-silently too, and the run reports the failure with the manual retry per §6.3b. Distinguished from `unavailable` so the report can say which happened.
+- `trigger`: which flag produced the accepted offer.
+- `published`: set `true` only after §5.3d's push actually succeeds; leave `false` on the local-only fallback path, and on every non-`completed` status.
+- `declined_at`: append the trigger name on a decline (`"archive_on_pr"` or `"auto_archive"`) and leave `status` at `pending`. This is what lets a report distinguish "never offered" from "offered and turned down".
+
+**Never record `completed` on a path where the archivist did not report a successful store.** A false `completed` makes Phase 6.3 skip silently, so the user is never told the archive did not happen.
+
 #### 5.4 Offer PR Review
 
 ```
@@ -1874,8 +2009,8 @@ Skill: /implement
 
 | Agent | Model | Phase | Purpose |
 |-------|-------|-------|---------|
-| Explore | sonnet | Phase 2 | Codebase exploration |
-| Plan | opus | Phase 2 | Implementation planning |
+| Explore | built-in | Phase 2 | Codebase exploration |
+| Plan | built-in | Phase 2 | Implementation planning |
 | architect | sonnet | Phase 2, 4 | Plan validation (Phase 2); design-drift review of built code when the gate fires (Phase 4) |
 | test-writer | sonnet | Phase 4 | Test creation |
 | code-reviewer | opus | Phase 4 | Code review |
@@ -1891,6 +2026,13 @@ Skill: /implement
 - Sonnet agents: {count}
 - Lightweight mode: {yes/no}
 ```
+
+`Explore` and `Plan` are built-in Claude Code subagent types, not files in this
+plugin, so their tier is set by the runtime rather than by frontmatter we can read.
+Record them as `built-in` and leave them out of the Opus/Sonnet counts — this repo has
+no way to verify which tier they resolve to, and three skills previously asserted two
+different answers for `Plan`. Counting a guess would make the cost summary confidently
+wrong rather than honestly incomplete.
 
 Adjust the table based on which agents were actually spawned (some are conditional).
 
@@ -1931,8 +2073,71 @@ Quality Gate:
 Cost: {opus_count} Opus + {sonnet_count} Sonnet agents
 PR: {pr_url}
 
+Requirements archive: {one of —
+  "archived to {kb_path}, carried into the PR"        (status completed, published true)
+  "archived to {kb_path}, committed locally only"     (status completed, published false)
+  "declined"                                          (status pending, declined_at non-empty)
+  "not offered"                                       (both triggers disabled)
+  "skipped — no knowledge base configured"            (status unavailable)
+  "FAILED — retry with /archive-requirements {identifier}"  (status failed)}
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+---
+
+> **Ordering note.** §6.2 prints the final report, and this section can still change
+> `phases.archived`. Read `phases.archived` when composing §6.2's archive line, and if the
+> completion offer below then archives, state that outcome too rather than leaving the printed
+> report as the last word. The two must not disagree.
+
+#### 6.3 Offer Archival (ticket-completion trigger)
+
+**Goal**: Honor `requirements.auto_archive` — the "the ticket is finished" trigger. The second of the two distinct trigger points (see Phase 5.3b for why they are separate call sites).
+
+Unlike 5.3b this fires regardless of whether a PR exists.
+
+```bash
+# Same walk-up and same explicit-false handling as §5.3b — see the comment there
+# for why `// true` cannot be used for a boolean that ships defaulting to true.
+CFG=""; _d="$PWD"
+while [[ "$_d" != "/" ]]; do
+  [[ -f "$_d/.claude/configuration.yml" ]] && { CFG="$_d/.claude/configuration.yml"; break; }
+  _d="$(dirname "$_d")"
+done
+
+AUTO_ARCHIVE=true
+if [[ -n "$CFG" ]]; then
+  _raw=$(yq -r '.requirements.auto_archive' "$CFG" 2>/dev/null)
+  [[ "$_raw" == "false" ]] && AUTO_ARCHIVE=false
+fi
+ARCHIVED_STATUS=$(jq -r '.phases.archived.status // "pending"' "$WORK_DIR/{identifier}/state.json" 2>/dev/null || echo pending)
+echo "AUTO_ARCHIVE=$AUTO_ARCHIVE ARCHIVED_STATUS=$ARCHIVED_STATUS"
+```
+
+**If `AUTO_ARCHIVE` is not `true`**: skip silently (AC-4.2).
+
+**If `ARCHIVED_STATUS` is `completed`**: skip **silently** — 5.3b already archived this run.
+
+**If `ARCHIVED_STATUS` is `unavailable` or `failed`**: skip, and do not re-offer. 5.3b already tried and reported why. `unavailable` means no knowledge base is configured, which a second prompt cannot fix; `failed` is surfaced with its retry command by §6.3b. Re-asking here would be nagging about something the user has already been told. Present no second offer and dispatch no second archivist. This is what keeps "both flags enabled" — the shipped default — from becoming a guaranteed double-ask. To be precise about the ceiling: accepting anywhere means one offer; declining at the PR trigger means two offers at two genuinely different moments, and zero archives unless one is accepted.
+
+**If `ARCHIVED_STATUS` is `pending` and 5.3b offered and was declined**: offer once more. The decline at PR creation was a decline of *that* occasion; ticket completion is a materially different one.
+
+Read nothing but the flag — the same no-path-resolution rule as 5.3b applies here.
+
+Present the same offer, then apply §5.3c's negative-consent rule.
+
+**On an affirmative selection**: dispatch `Task(archivist, "STORE ...")`. No publish step follows here — Phase 5's push is long past — so the archive is **local-only**. Say so plainly in the report (AC-1.5): name what was preserved, state that it is committed locally and reaches the team through the operator's normal review-and-merge flow, and warn that an unmerged archive commit is discarded if its branch is later abandoned. Do not describe it as "shared" or "durable" without that qualification.
+
+**On a decline**: write nothing; the knowledge base stays byte-identical (AC-3.5, AC-SEC-5).
+
+**Record the outcome** exactly as specified in §5.3e — same fields, same rules. `published` is always `false` here: no publish step follows Phase 6.
+
+#### 6.3b Archive failure is never fatal
+
+An archive failure at either trigger MUST NOT block completion. Report it plainly and continue to a normal finish.
+
+**Name the manual retry explicitly: `/archive-requirements {identifier}`.** This matters more than it looks. Phase 5.6 already wrote `status: "completed"` to `state.json` **before** Phase 6 runs, and `/resume-work` filters out completed items — so an interrupted or failed 6.3 is **not reachable through resume**. The single-ticket skill is the only path back, and it is explicitly designed for this case. A user who is not told the command has no way to discover it (AC-3.6, AC-5.1).
 
 ---
 

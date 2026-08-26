@@ -80,10 +80,10 @@ Final output: `$PROPOSALS_DIR/{proposal_name}/` (copied on completion)
 If `$ARGUMENTS` begins with `--light`, strip the flag and enable lightweight mode:
 
 - Output to user: "Lightweight mode enabled: reasoning agents use Sonnet. Quality gate unchanged."
-- **Explore**: unchanged (already Sonnet)
-- **Plan**: spawn with model **sonnet** instead of opus
-- **business-analyst**: spawn with model **sonnet** instead of opus (ALWAYS Opus in standard mode — reasoning-heavy synthesis)
-- **architect**: unchanged (already Sonnet)
+- **Explore**: unchanged
+- **Plan**: spawn with model **sonnet**
+- **business-analyst**: spawn with model **sonnet** (ALWAYS Opus in standard mode — reasoning-heavy synthesis)
+- **architect**: unchanged
 - **quality-guard**: unchanged (ALWAYS Opus — quality gate)
 - All orchestration flow, approval gates, and output formats remain identical
 

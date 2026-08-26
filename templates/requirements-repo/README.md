@@ -124,18 +124,26 @@ When you run `/create-requirements`:
 - Gotchas to avoid
 - Related decisions
 
-### After Implementation (Stage 9)
+### After Implementation (`/implement` Phase 5.3b / Phase 6.3)
 
-When you run `/implement` and create a PR:
+`/implement` offers archival at two distinct points: right after a PR is created
+(Phase 5.3b, when `archive_on_pr` is enabled) and at ticket completion (Phase 6.3,
+when `auto_archive` is enabled). A PR is not required — the completion offer fires
+either way.
 
-1. Implementation completes successfully
-2. Archivist offers: "Archive requirements to team repo? [y/n]"
-3. If yes:
+1. Implementation reaches one of the two trigger points
+2. **`/implement` offers** (the skill lead presents the question, not the archivist):
+   "Archive requirements to the knowledge base?"
+3. If accepted, the archivist:
    - Extracts metadata from commits and code
-   - Generates requirements.md summary
+   - Generates a requirements.md summary
    - Copies context from `.claude/work/{id}/`
-   - Updates index.json
-   - Commits and pushes to requirements-repo
+   - Updates index.json, replacing any existing entry for the same ticket
+   - Commits — and **pushes only if the knowledge base is a separate git-backed
+     repository**. For a `type: directory` knowledge base (the default) it commits
+     locally and never pushes, because that KB lives inside your own project and
+     pushing it would bypass your own branch protection. See
+     [ADR-013](../../../docs/decisions/013-directory-type-kb-store-semantics.md).
 
 ## Metadata Schema
 

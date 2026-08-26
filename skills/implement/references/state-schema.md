@@ -35,7 +35,13 @@
       "gate_result": null,
       "report_path": null
     },
-    "pr": {"status": "pending"}
+    "pr": {"status": "pending"},
+    "archived": {
+      "status": "pending | completed | unavailable | failed",
+      "trigger": null,
+      "published": false,
+      "declined_at": []
+    }
   },
 
   "plan": {

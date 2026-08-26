@@ -188,7 +188,7 @@ Tasks:
 5. Generate a concatenated human-readable requirements.md in the archive by joining spec.md + plan.md + tasks.md under clearly marked section headers (## Spec / ## Plan / ## Tasks). This preserves KB search compatibility without duplicating authoring.
 6. Copy all files to requirements repository (including context/ agent outputs)
 7. Update searchable index.json — extract tags from spec.md user stories and plan.md sections
-8. Commit and push using the sanctioned KB-write pattern (see `${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md`): `cd` into `{repository_path}` (never `git -C`). `git commit` must LEAD its own Bash tool call so the credential scan runs (a compound `cd && git commit` starts with `cd` and the guard's anchored regex silently skips the scan). The `git push` must ALSO lead its own separate call so the guard's push block engages and logs the bypass WARNs — if anything precedes `git push` (e.g. a `default_branch=...` assignment) the anchored regex misses and the whole push block is silently skipped. Since shell variables don't survive across Bash calls, resolve the branch INLINE in the push argument on one line: `NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1 git push origin -- "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' | grep . || timeout 10 git ls-remote --symref origin HEAD 2>/dev/null | awk '/^ref:/{sub("refs/heads/","",$2);print $2;exit}' | grep . || echo master)"`. Both bypasses are logged; do NOT call `record-audit.sh` (it would rubber-stamp an audit that never ran)
+8. Commit — and push only if the KB is git-backed — by following **archivist's own Responsibility 3 STORE step 7**, which branches on the resolved storage type `_TYPE`. Do not reproduce the commit/push mechanics here: for a `directory`-type KB the archive must commit locally with NO push and NO `NEXUS_KB_WRITE=1` / `SECURITY_AUDITOR_BYPASS=1`, because that KB lives inside the host project's own repository and those variables would disable its branch protection and audit gate against its own trunk. The agent resolves `_TYPE` itself and owns both branches; duplicating the command here is what previously caused the unconditional-bypass defect to exist in two places at once.
 
 Provide detailed success report with archive location.
 ")
@@ -220,7 +220,14 @@ Index updated:
 - Tags: ${extracted_tags}
 - Components: ${extracted_components}
 
+{If the archivist reported the git-backed branch:}
 Changes committed and pushed to the requirements repository's default branch
+
+{If it reported the directory branch — the default:}
+Changes committed **locally** to this repository. Nothing was pushed: a
+directory-type knowledge base lives inside this project, so the archive reaches
+the team through your normal review-and-merge flow. An unmerged archive commit is
+discarded if this branch is later abandoned.
 
 This work is now discoverable by the archivist agent
 when searching for similar past implementations.
@@ -330,10 +337,10 @@ To resolve:
 
 ## Notes
 
-- **Idempotent**: Re-archiving updates existing archive
+- **Idempotent**: Re-archiving replaces the existing archive directory and its `index.json` entry (matched by ticket id), rather than adding a second one — see archivist Responsibility 3 STORE step 6
 - **Non-destructive**: Original work in `$WORK_DIR/` is preserved
-- **Atomic**: Index updated in single commit with archive
-- **Concurrent-safe**: Uses git for synchronization
+- **Atomic**: the ticket directory and `index.json` are staged and committed together, so a single archive either fully lands or does not
+- **Concurrent-safe (git-backed KBs only)**: a `type: git` KB uses its remote for synchronization — pull-rebase before push. A `type: directory` KB has **no remote and no cross-machine synchronization**: it is a directory in this repository, so two people archiving the same ticket on different branches resolve it the way they resolve any other merge conflict, not through the KB
 
 ## See Also
 
