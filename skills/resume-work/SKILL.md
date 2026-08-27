@@ -43,9 +43,10 @@ else
 fi
 WORK_DIR=$(resolve_artifact work work)
 BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
+echo "WORK_DIR=$WORK_DIR"
 ```
 
-Use `$WORK_DIR` instead of hardcoded `.claude/work` throughout this workflow.
+Use `$WORK_DIR` instead of a hardcoded `.claude/work` — but only inside this block. Each later block is its own Bash tool call and does not inherit the variable, so those substitute the value printed above instead.
 
 **Important:** All path references in this skill MUST use `$WORK_DIR`. Never use hardcoded `.claude/work/` paths.
 
@@ -84,7 +85,7 @@ identifier and a `DRAFT-{slug}` identifier both match a directory under
 4. Dispatch by `type` field (in priority order if type is ambiguous):
 
 ```bash
-type=$(jq -r '.type' "$WORK_DIR/JIRA-123/state.json")
+type=$(jq -r '.type' "<WORK_DIR printed above>/JIRA-123/state.json")
 case "$type" in
   "implementation") # Resume implementation phase ;;
   "proposal")       # Resume proposal phase ;;
@@ -111,12 +112,23 @@ are keyed by `slug` rather than `identifier` and carry no `progress` field, so
 normalize them onto the same shape before presenting.
 
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls, so a
+# value resolved in an earlier block is empty in this one.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
 # 1. Work sessions
-MANIFEST="${WORK_DIR}/manifest.json"
+MANIFEST="<WORK_DIR printed above>/manifest.json"
 if [[ -f "$MANIFEST" ]]; then
   jq -r '.items[] | select(.status != "completed") | "\(.identifier)\t\(.title)\t\(.type)\t\(.current_phase)\t\(.progress)\t\(.updated_at)"' "$MANIFEST"
 else
-  ls -1 "${WORK_DIR}/" 2>/dev/null
+  ls -1 "<WORK_DIR printed above>/" 2>/dev/null
 fi
 
 # 2. Brainstorm sessions (own artifact; slug-keyed, no progress field).
@@ -125,7 +137,7 @@ fi
 BS_MANIFEST="${BRAINSTORM_DIR}/manifest.json"
 if [[ -f "$BS_MANIFEST" ]]; then
   jq -r '.items[] | select(.status != "completed" and .status != "promoted") | "\(.slug)\t\(.title)\tbrainstorm\t\(.current_phase)\t-\t\(.updated_at)"' "$BS_MANIFEST"
-elif [[ "$BRAINSTORM_DIR" != "$WORK_DIR" ]]; then
+elif [[ "$BRAINSTORM_DIR" != "<WORK_DIR printed above>" ]]; then
   ls -1 "${BRAINSTORM_DIR}/" 2>/dev/null
 fi
 ```
@@ -171,19 +183,21 @@ Use AskUserQuestion to get selection.
 Once the target `{identifier}` is resolved (either from the argument or the user's manifest selection), re-register the current session → work-id mapping so the optional `auto-context.sh` PostToolUse hook can resolve it. This is a no-op when neither `CLAUDE_SESSION_ID` nor `CLAUDE_CODE_SESSION_ID` is set, or `jq` is missing:
 
 ```bash
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
 SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
 if [ -n "$SID" ] && command -v jq >/dev/null 2>&1; then
-  mkdir -p "$WORK_DIR"
-  touch "$WORK_DIR/.active-sessions.lock"
+  mkdir -p "<WORK_DIR printed above>"
+  touch "<WORK_DIR printed above>/.active-sessions.lock"
   (
     flock -x -w 2 200 || exit 0
-    [ -s "$WORK_DIR/.active-sessions" ] || echo '{}' > "$WORK_DIR/.active-sessions"
+    [ -s "<WORK_DIR printed above>/.active-sessions" ] || echo '{}' > "<WORK_DIR printed above>/.active-sessions"
     jq --arg s "$SID" --arg w "{identifier}" \
-       '. + {($s): $w}' "$WORK_DIR/.active-sessions" \
-       > "$WORK_DIR/.active-sessions.tmp.$$" \
-       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
-       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
-  ) 200>"$WORK_DIR/.active-sessions.lock"
+       '. + {($s): $w}' "<WORK_DIR printed above>/.active-sessions" \
+       > "<WORK_DIR printed above>/.active-sessions.tmp.$$" \
+       && mv "<WORK_DIR printed above>/.active-sessions.tmp.$$" "<WORK_DIR printed above>/.active-sessions" \
+       || rm -f "<WORK_DIR printed above>/.active-sessions.tmp.$$"
+  ) 200>"<WORK_DIR printed above>/.active-sessions.lock"
 fi
 ```
 
@@ -467,6 +481,11 @@ If `state.json` contains a `worktree` object with `enabled: true`:
 ```bash
 for svc in {missing_services}; do
   svc_path=$(resolve_service_path "$svc")
+  # A rejected service NAME returns 1 with EMPTY stdout (a rejected PATH is
+  # different: it falls back to the name-is-the-directory convention). `git -C ""`
+  # is a documented no-op that runs in the CURRENT repo, so an unguarded empty
+  # value here creates the worktree in whatever repository the session is in.
+  [ -n "$svc_path" ] || { echo "skipping $svc: no usable path" >&2; continue; }
   wt_path="{worktree.workspace}/${svc}"
   git -C "$svc_path" worktree add "$wt_path" "feature/{identifier}" 2>/dev/null \
     || git -C "$svc_path" worktree add "$wt_path" -b "feature/{identifier}"

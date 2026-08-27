@@ -398,34 +398,48 @@ _infer_active_sessions() {
       elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
         . "$HOME/.claude/shared/resolve-config.sh" >/dev/null 2>&1
       fi
-      command -v resolve_artifact >/dev/null 2>&1 && resolve_artifact work work 2>/dev/null
+      # Report whether a configuration.yml was actually found, so the caller
+      # can tell "the configured path could not be read" from "there was
+      # nothing to read". $CONFIG is set by resolve-config.sh's own discovery.
+      command -v resolve_artifact >/dev/null 2>&1 && {
+        [ -n "${CONFIG:-}" ] && [ -f "${CONFIG:-}" ] && printf 'cfg:'
+        resolve_artifact work work 2>/dev/null
+      }
     )" || work_dir=""
 
     # resolve_artifact is yq-dependent ONLY when a configuration.yml exists:
-    # every yq call in it sits behind `[[ -f "$CONFIG" ]]` (resolve-config.sh:68).
-    # With a config present and yq absent, the base and subdir both resolve
-    # empty and it returns "/" — absolute, so returned as-is, and this function
-    # would go on to stat //.active-sessions at the filesystem root.
+    # every yq call in it sits behind `[[ -f "$CONFIG" ]]`. With a config
+    # present and yq absent, the configured work directory cannot be read, so
+    # the session registry may not be where this function would look — say so
+    # rather than reporting a confident "no registry".
     #
-    # So the check belongs on the RESULT, not ahead of it. Gating on `command -v
-    # yq` up front looked equivalent and was not: the plugin ships no
-    # configuration.yml by default and /jira does not otherwise need yq, so that
-    # version silently killed the strongest signal — the actual in-flight work
-    # session — for every plain install without one.
-    # "/" and empty mean different things and must not share a branch. "/" is
-    # specifically the yq-absent-with-a-config signature. Empty means
-    # resolve_artifact never ran at all — resolve-config.sh unreachable, or the
-    # subshell died — where yq is not the cause and saying so would misattribute
-    # it; the ordinary default applies instead.
-    if [ "${work_dir:-}" = "/" ]; then
-      if command -v yq >/dev/null 2>&1; then
-        work_dir=".claude/work"
-      else
-        CONSULTED_SESSION="empty:no-yq"; return 0
-      fi
-    elif [ -z "${work_dir:-}" ]; then
-      work_dir=".claude/work"
+    # This used to be detected by sniffing for a resolved path of exactly "/":
+    # an absent yq left the base and subdir empty, and resolve_artifact returned
+    # "/" — absolute, so returned unanchored — and this function would otherwise
+    # have stat'd //.active-sessions at the filesystem root. CL-52 fixed that at
+    # the source (an empty base now falls back to the default and stays anchored
+    # to the workspace), which is strictly better but also means the "/"
+    # signature never appears again. The condition is now checked directly
+    # instead of inferred from a sentinel path that no longer occurs.
+    #
+    # The check must stay conditional on a config existing. An unconditional
+    # `command -v yq` gate ahead of resolution looked equivalent and was not:
+    # the plugin ships no configuration.yml by default and /jira does not
+    # otherwise need yq, so that version silently killed the strongest signal —
+    # the actual in-flight work session — for every plain install without one.
+    local _had_config=false
+    case "${work_dir:-}" in
+      cfg:*) _had_config=true; work_dir="${work_dir#cfg:}" ;;
+    esac
+
+    if $_had_config && ! command -v yq >/dev/null 2>&1; then
+      CONSULTED_SESSION="empty:no-yq"; return 0
     fi
+
+    # Empty means resolve_artifact never ran at all — resolve-config.sh
+    # unreachable, or the subshell died — where yq is not the cause and saying
+    # so would misattribute it; the ordinary default applies instead.
+    [ -n "${work_dir:-}" ] || work_dir=".claude/work"
     sessions_file="${work_dir}/.active-sessions"
   fi
 

@@ -1,5 +1,58 @@
 # Changelog
 
+## [1.30.0] - 2026-08-27
+
+## What's Changed
+
+161 commits across 44 pull requests since v1.29.0: 6 feat, 75 fix, 12 test, 18 docs, 3 chore, 2 ci, 1 refactor. No breaking changes.
+
+### ⚠️ Read first: the git safety hooks now actually run
+
+Since 2026-04-08 the PreToolUse hooks read a `CLAUDE_TOOL_INPUT` environment variable that Claude Code never sets, so `git-mutation-guard`, `validate-commit` and `audit` saw an empty command in every installation — branch protection, the credential scan, the push audit gate and the commit-message ticket check gated nothing. This release fixes the input contract (hooks read the tool call from stdin) and the guards are live from the first session started after upgrading. Expect: pushes to `main`/`master`/`release/*` blocked, a credential scan on every commit, a push refused without a `record-audit.sh` record, and commits without a ticket key refused. Hook configuration is snapshotted at session start, so restart running sessions to pick it up. — CL-62, CL-64
+
+### Features
+
+- **pr-review**: orchestrated review path — a Workflow-tool script runs three blind per-dimension reviewers (code-reviewer, security-auditor, architect) over the raw diff, then three adversarial challengers with distinct identities verify every finding; falls back to the sequential path when the Workflow tool is unavailable; gate runner and report-path exclusion check shipped in `shared/pr-review/` — CL-40
+- **jira**: `/jira create` write verb with the ADR-012 JSON envelope; every write verb names the site by hostname — CL-44, CL-49
+- **prompt-defense**: content boundary markers (`ARCHIVED-CONTENT`, `UNTRUSTED-CONTENT`) defined in `shared/prompt-defense.md`; emitted by archivist and `/create-requirements` (Stages 4.1 and 4.6, with a forged-marker scan that fails closed and re-runs on resume); consumed by business-analyst — CL-39
+- **validate**: G-series prompt shell-safety validator for the bash fences inside skill and agent prompts — CL-53, CL-61
+- **release**: release skills advertise their arguments where they are read — CL-28
+
+### Bug Fixes
+
+Hooks (all plugin installs):
+- **hooks**: read the tool call from stdin; fail closed on empty or unparseable input, a missing `command`, a truncated contract file, an absent `jq`, or a credential scanner that cannot run (previously fail-open); macOS bash 3.2 `mapfile` and empty-array fail-opens — CL-62
+- **hooks**: gate `git commit`/`git push` anywhere in a compound command — `cd x && git push`, `nice git push`, `/usr/bin/git`, `git -c`/`-C`/`--no-pager`, `bash -c "git push"`, `eval`, subshells, `$( )`, backticks, spliced quotes, a `#` inside a commit message; bypass flags apply only to the segment that carries them; `--dry-run` exempt; `GIT_SSH_COMMAND` with a space refused; PATH-independent — CL-64
+- **validate-commit**: parse quoted, heredoc, `-am` and `--message` commit messages (the previous regexes had never read a real subject); refusal text on stderr — CL-62
+
+Prompt-injection defense:
+- **agents**: prompt-defense reference for the second-order fleet, git-operator, test-writer, playwright-engineer — CL-39, CL-50
+- **skills**: prompt-defense for `/load-context`, `/load-requirements`, `/search-requirements`, monitor-pr's two ingestion points — CL-38, CL-42, CL-48
+- **archivist**: mark KB-sourced blocks and scan stored content for injected markers before archiving — CL-39
+- **monitor-pr**: dedup CI-log injection flags per run/job; prescribed reason string — CL-45, CL-46
+
+Shipped prompts that could not have run as written:
+- **skills**: shell variables and sourced functions do not survive between Bash tool calls — 291 cross-block reads across 18 skills fixed by in-block re-derivation or a printed placeholder (`<WORK_DIR printed above>`); monitor-pr no longer keys its runs file on a PID that is new in every call; work-status resolves brainstorm sessions correctly — CL-60
+- **report-issue**: the secret-scan gate now scans and publishes the same bytes in the same call; draft kept under `.claude/report-issue/` with `umask 077`, symlink refusal, `set -C`, removed after publish — CL-60
+- **prompts**: every `cd "$VAR"` guarded against an empty value; every `git commit`/`push` leads its block — CL-53
+- **skills**: user free text (titles, categories, summaries, PR bodies) travels through files, never command lines; pr-review builds its payload with `jq --rawfile` so PR content cannot inject an `event` — CL-57
+- **storage**: one strict rule gates knowledge-base writes; configured path fragments are contained (`..`, shell metacharacters refused); `/add-product-knowledge` reports a skipped write instead of silently proceeding; `/rebuild-index` states both storage types and bounds backups — CL-32, CL-35, CL-51, CL-52 (ADR-014)
+
+Validators and tests:
+- **validators**: a failed read is an I/O error, never a verdict about content or a silent pass (`lib/io.sh`, stdout-only reporting, a sweep test that makes one file of each kind unreadable per validator) — CL-54
+- **validators**: C3 no longer reads every backticked word as an agent name; C5b/C5d control gaps closed; presentation and plugin tier-claim drift checked — CL-36, CL-37, CL-39, CL-58
+- **tests**: assertions observe the exit code; SIGPIPE no longer inverts contains-assertions — CL-34
+
+CI:
+- **ci**: Tests matrix collapsed to one job (~24 → 3 billable minutes per run), superseded runs cancelled, healthcheck weekly instead of per-PR, every job bounded by a timeout, silent review skips made visible; Node 20 actions retired — CL-41, CL-47, CL-55, CL-56, CL-59
+
+### Other Changes
+
+- ADR-012 (Jira create envelope, success and failure), ADR-014 (artifact resolution strictness), diagram-design skill assessment — CL-44
+- Stale work session state reconciled — CL-21
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.29.0...v1.30.0
+
 ## [1.29.0] - 2026-08-26
 
 ## What's Changed

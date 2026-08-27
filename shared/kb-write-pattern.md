@@ -93,18 +93,80 @@ is inline in the push argument because shell variables do not cross call
 boundaries.
 
 ```bash
-# Call 1 — enter the KB repo and stage. (Neither cd nor git add is guarded.)
-cd "$KB_PATH"
+# Call 1 — enter the KB repo and stage. (Neither cd nor git add is a guarded
+# mutation verb, so they share this call; the commit and push must not.)
+[ -n "$KB_PATH" ] || exit 1
+cd "$KB_PATH" || exit 1
 git add <the KB files you wrote>          # e.g. "$identifier/" index.json
 ```
 
+> **The emptiness test is the guard, not `cd … || exit 1`.** `cd ""` returns 0
+> and stays put, so an empty `$KB_PATH` sails straight through a `||` guard and
+> every command after it runs against whatever repository the session happens
+> to be in — which, on the path this pattern exists for, is then pushed to with
+> branch protection and the audit gate disabled. Test for emptiness first;
+> `cd … || exit 1` only catches a path that exists nowhere.
+
+> Call 2 — commit. Must LEAD the call so the guard's credential scan runs.
+
 ```bash
-# Call 2 — commit. Must LEAD the call so the guard's credential scan runs.
 git commit -m "<message>"
 git pull --rebase                          # optional: sync before push (uses upstream tracking)
 ```
 
+> Call 3 — push must LEAD, on ONE line, so the guard engages and logs the bypass WARNs.
+
 ```bash
-# Call 3 — push must LEAD, on ONE line, so the guard engages and logs the bypass WARNs.
 NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1 git push origin -- "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' | grep . || timeout 10 git ls-remote --symref origin HEAD 2>/dev/null | awk '/^ref:/{sub("refs/heads/","",$2);print $2;exit}' | grep . || echo master)"
 ```
+
+---
+
+## Substituting values into a command (placeholders)
+
+Several skills carry a value across Bash tool calls by printing it and having
+the caller substitute it into the next command — `<KB_PATH printed above>`,
+`{identifier}`, `{title}`. Shell state does not survive between calls, so this
+is the mechanism that works; the rule below is what makes it safe.
+
+**Free text a person typed never goes on a command line.** A title, a summary,
+a description, a commit message body — substituted into `--title "{title}"` or
+`git commit -m "…{title}…"`, a value of `a";id;"` closes the quote and runs
+`id`, and one containing `$( )` or backticks is executed outright. Write it to
+a file through a heredoc with a QUOTED delimiter, then reference the file:
+
+```bash
+mkdir -p -m 700 "$HOME/.claude/tmp"
+cat > "$HOME/.claude/tmp/thing-title.txt" <<'TITLE_EOF'
+{title}
+TITLE_EOF
+```
+
+...and then, in its own call, because rule 2 above applies to this commit like
+any other — writing the file and committing in one call would put `cat` at the
+head of the input and skip the credential scan:
+
+```bash
+git commit -F "$HOME/.claude/tmp/thing-title.txt" && rm -f "$HOME/.claude/tmp/thing-title.txt"
+```
+
+The quoted delimiter is the whole point — it disables every expansion inside
+the heredoc, so the text arrives as inert characters. Leaving it unquoted
+reintroduces exactly what the heredoc was for. Where the content is untrusted
+and long, make the delimiter unpredictable per invocation (a random suffix), so
+a line inside the content that happens to equal the delimiter cannot terminate
+it early and have the remainder parsed as commands.
+
+**Values with a checked shape may be substituted directly.** `resolve_config`
+refuses a configured path containing a shell metacharacter — a quote, backtick,
+`$`, backslash, `;`, `|`, `&`, `<`, `>`, a glob character or a newline — and
+refuses a `..` segment in the parts that must stay inside their location. (It
+does NOT refuse an absolute location path: those are documented and normal, and
+that is exactly why the metacharacter check runs on them separately.) A slug
+derived by slugifying is `[a-z0-9-]`; `{identifier}` is `{TICKET}-{slug}`. The check is what earns the substitution — if a value has
+not been through one, it belongs in a file, not in a command.
+
+**Derive rather than carry.** `add-product-knowledge` slugifies the title once
+and carries the SLUG; every later block substitutes the slug. That is the
+general shape: constrain the value at the point it enters, then pass the
+constrained form.

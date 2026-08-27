@@ -47,6 +47,7 @@ else
   exit 1
 fi
 WORK_DIR=$(resolve_artifact work work)
+echo "WORK_DIR=$WORK_DIR"
 ```
 
 ---
@@ -62,14 +63,16 @@ First, resolve the runtime session id. The Claude Code runtime injects `CLAUDE_C
 **Work-id safety:** any `{identifier}` taken from the `.active-sessions` map, the manifest, or the git branch is untrusted input flowing into a filesystem path. Reject anything that is not `^[A-Za-z0-9._-]+$` before using it in a path (mirrors `auto-context.sh:84`). The validation below enforces this centrally.
 
 ```bash
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
 SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
-SENTINEL="$WORK_DIR/.active-sessions"
+SENTINEL="<WORK_DIR printed above>/.active-sessions"
 CANDIDATE=""
 SOURCE=""
 
 # Priority 1 — explicit argument: first non-flag token matching an existing work dir.
 # (Parse $ARGUMENTS: the first word not starting with '-' that matches
-#  "$WORK_DIR/<token>/" is {identifier}; the remaining text is the explicit {note}.)
+#  "<WORK_DIR printed above>/<token>/" is {identifier}; the remaining text is the explicit {note}.)
 # Set CANDIDATE / SOURCE="arg" here when an explicit id is supplied.
 
 # Priority 2 — active-sessions map (the session→ticket mapping).
@@ -81,7 +84,7 @@ if [ -z "$CANDIDATE" ] && [ -n "$SID" ] && [ -s "$SENTINEL" ]; then
     jq -r --arg s "$SID" '.[$s] // empty' "$SENTINEL" 2>/dev/null
   )
   # Reject a poisoned map value before it touches a path (mirror auto-context.sh:84).
-  if [ -n "$MAPPED" ] && [[ "$MAPPED" =~ ^[A-Za-z0-9._-]+$ ]] && [ -d "$WORK_DIR/$MAPPED" ]; then
+  if [ -n "$MAPPED" ] && [[ "$MAPPED" =~ ^[A-Za-z0-9._-]+$ ]] && [ -d "<WORK_DIR printed above>/$MAPPED" ]; then
     CANDIDATE="$MAPPED"; SOURCE="active-sessions map"
   fi
 fi
@@ -89,18 +92,18 @@ fi
 # Priority 3 — most-recently-updated non-completed session from the manifest.
 # Git branch is a secondary tie-break signal: a feature/<id> branch whose <id>
 # matches a non-completed session is preferred over pure recency.
-if [ -z "$CANDIDATE" ] && [ -f "$WORK_DIR/manifest.json" ]; then
+if [ -z "$CANDIDATE" ] && [ -f "<WORK_DIR printed above>/manifest.json" ]; then
   BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
   # Only treat the branch as an id signal when it follows the feature/<id> convention.
   case "$BRANCH" in
     feature/*) BRANCH_ID="${BRANCH#feature/}" ;;
     *)         BRANCH_ID="" ;;
   esac
-  if [ -n "$BRANCH_ID" ] && [[ "$BRANCH_ID" =~ ^[A-Za-z0-9._-]+$ ]] && [ -d "$WORK_DIR/$BRANCH_ID" ] \
-     && [ "$(jq -r --arg id "$BRANCH_ID" '.items[] | select(.identifier==$id) | .status // empty' "$WORK_DIR/manifest.json" 2>/dev/null)" != "completed" ]; then
+  if [ -n "$BRANCH_ID" ] && [[ "$BRANCH_ID" =~ ^[A-Za-z0-9._-]+$ ]] && [ -d "<WORK_DIR printed above>/$BRANCH_ID" ] \
+     && [ "$(jq -r --arg id "$BRANCH_ID" '.items[] | select(.identifier==$id) | .status // empty' "<WORK_DIR printed above>/manifest.json" 2>/dev/null)" != "completed" ]; then
     CANDIDATE="$BRANCH_ID"; SOURCE="current git branch"
   else
-    CANDIDATE=$(jq -r '[.items[] | select(.status != "completed")] | sort_by(.updated_at) | reverse | .[0].identifier // empty' "$WORK_DIR/manifest.json" 2>/dev/null)
+    CANDIDATE=$(jq -r '[.items[] | select(.status != "completed")] | sort_by(.updated_at) | reverse | .[0].identifier // empty' "<WORK_DIR printed above>/manifest.json" 2>/dev/null)
     [ -n "$CANDIDATE" ] && SOURCE="most-recent non-completed session"
   fi
 fi
@@ -117,7 +120,7 @@ fi
 
 ```bash
 jq -r '.items[] | select(.status != "completed") | "\(.identifier)  \(.title)  [\(.type)]"' \
-  "${WORK_DIR}/manifest.json" 2>/dev/null
+  "<WORK_DIR printed above>/manifest.json" 2>/dev/null
 ```
 
 Use AskUserQuestion to have the user pick an identifier (or, if the manifest is missing, scan `$WORK_DIR/*/` directories). If nothing non-completed exists, say so plainly and stop — do not fail silently.
@@ -144,7 +147,7 @@ Hold the composed text as `{note}` and the origin as `NOTE_SOURCE` for the confi
 ### Step 3: Load state
 
 ```bash
-STATE_FILE="$WORK_DIR/{identifier}/state.json"
+STATE_FILE="<WORK_DIR printed above>/{identifier}/state.json"
 
 if [[ ! -f "$STATE_FILE" ]]; then
   echo "Error: No state found for '{identifier}'"
@@ -278,16 +281,33 @@ Serialize the write against the `auto-context.sh` hook with the same exclusive l
 
 For a **synthesized** note, tag the entry `"source":"synthesis"`. For an **explicit user-supplied** note, omit the `source` field (it stays a plain manual entry).
 
+The note is free text — and, as the untrusted-input warning above says, it may
+have been synthesized from Jira or meeting content. So it reaches the shell
+through a file, never a command line: written straight into `--arg note "…"`, a
+note containing `$( )` or backticks is executed before jq ever sees it. The
+delimiter is QUOTED, which is what stops the body expanding as it is written,
+and `$(cat …)` afterwards is safe because the content becomes an argument value
+rather than shell source.
+
 ```bash
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
+STATE_FILE="<WORK_DIR printed above>/{identifier}/state.json"
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 STATE_LOCK="${STATE_FILE}.lock"
+NOTE_FILE="${STATE_FILE}.note.$$"
+
+cat > "$NOTE_FILE" <<'UPDATE_NOTE_EOF'
+{note}
+UPDATE_NOTE_EOF
+NOTE="$(cat "$NOTE_FILE")"
+rm -f "$NOTE_FILE"
 touch "$STATE_LOCK"
 
 if [ "$NOTE_SOURCE" = "explicit" ]; then
   # Explicit user-supplied note — no source tag (plain manual entry per schema)
   (
     flock -x -w 2 200 || { echo "Could not acquire lock on $STATE_FILE"; exit 1; }
-    jq --arg note "{note}" --arg ts "$TIMESTAMP" \
+    jq --arg note "$NOTE" --arg ts "$TIMESTAMP" \
       '.updates = ((.updates // []) + [{"timestamp": $ts, "note": $note}]) | .updated_at = $ts' \
       "$STATE_FILE" > "${STATE_FILE}.tmp.$$" \
       && mv "${STATE_FILE}.tmp.$$" "$STATE_FILE" \
@@ -297,7 +317,7 @@ else
   # Synthesized note (default when no explicit note was given) — tagged source:"synthesis"
   (
     flock -x -w 2 200 || { echo "Could not acquire lock on $STATE_FILE"; exit 1; }
-    jq --arg note "{note}" --arg ts "$TIMESTAMP" --arg src "synthesis" \
+    jq --arg note "$NOTE" --arg ts "$TIMESTAMP" --arg src "synthesis" \
       '.updates = ((.updates // []) + [{"timestamp": $ts, "note": $note, "source": $src}]) | .updated_at = $ts' \
       "$STATE_FILE" > "${STATE_FILE}.tmp.$$" \
       && mv "${STATE_FILE}.tmp.$$" "$STATE_FILE" \
@@ -311,7 +331,12 @@ fi
 Same lock pattern as Step 5 — `/work-status` writes to this same manifest and can otherwise race it.
 
 ```bash
-MANIFEST="$WORK_DIR/manifest.json"
+# The literal already printed above — NOT a fresh `date`, which would
+# stamp a value different from the one the user was shown.
+TIMESTAMP=<TIMESTAMP printed above>
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
+MANIFEST="<WORK_DIR printed above>/manifest.json"
 
 if [[ -f "$MANIFEST" ]]; then
   MANIFEST_LOCK="${MANIFEST}.lock"

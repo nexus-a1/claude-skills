@@ -110,6 +110,10 @@ Skip if `resolve_worktree_enabled` returns `"false"`.
 1. Call `EnterWorktree(name: "troubleshoot-{short_slug}")` where `{short_slug}` is derived from the issue description (e.g., `troubleshoot-login-500`)
 2. CWD moves to worktree; `$WORK_DIR` still resolves to original workspace root
 
+**Where these values come from.** Shell state does not survive between Bash tool
+calls, so `WT_ROOT` and `TROUBLESHOOT_WORKSPACE` are re-derived in each block
+that uses them.
+
 **Multi mode** (`WORKSPACE_MODE == "multi"`):
 1. Create per-service worktrees using each service's current branch:
 ```bash
@@ -119,6 +123,11 @@ mkdir -p "$TROUBLESHOOT_WORKSPACE"
 
 for svc in $(resolve_services); do
   svc_path=$(resolve_service_path "$svc")
+  # A rejected service NAME returns 1 with EMPTY stdout (a rejected PATH is
+  # different: it falls back to the name-is-the-directory convention). `git -C ""`
+  # is a documented no-op that runs in the CURRENT repo, so an unguarded empty
+  # value here creates the worktree in whatever repository the session is in.
+  [ -n "$svc_path" ] || { echo "skipping $svc: no usable path" >&2; continue; }
   wt_path="${TROUBLESHOOT_WORKSPACE}/${svc}"
   [[ -d "$wt_path" ]] && continue
   CURRENT_BRANCH=$(git -C "$svc_path" branch --show-current 2>/dev/null || echo "HEAD")
@@ -131,8 +140,24 @@ done
 
 **After Phase 7 (Commit)**: Single mode → `ExitWorktree(action: "remove")`. Multi mode → remove worktrees:
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+WT_ROOT=$(resolve_worktree_root)
+TROUBLESHOOT_WORKSPACE="${WT_ROOT}/troubleshoot-{short_slug}"
 for svc in $(resolve_services); do
   svc_path=$(resolve_service_path "$svc")
+  # A rejected service NAME returns 1 with EMPTY stdout (a rejected PATH is
+  # different: it falls back to the name-is-the-directory convention). `git -C ""`
+  # is a documented no-op that runs in the CURRENT repo, so an unguarded empty
+  # value here creates the worktree in whatever repository the session is in.
+  [ -n "$svc_path" ] || { echo "skipping $svc: no usable path" >&2; continue; }
   wt_path="${TROUBLESHOOT_WORKSPACE}/${svc}"
   [[ -d "$wt_path" ]] && git -C "$svc_path" worktree remove "$wt_path" --force 2>/dev/null
 done
@@ -442,12 +467,30 @@ Run inline — the hook enforces credential scan and branch protection automatic
 
 ```bash
 git add <files>
+```
+
+> The verb below leads its own call: the mutation guard anchors on
+> `^git commit` / `^git push`, so anything ahead of it in the same call
+> skips the credential scan and the push gate.
+
+```bash
 git commit -m "$(cat <<'EOF'
 [TICKET-123] fix(scope): description
 EOF
 )"
-# If pushing: record security-auditor confirmation first (after a clean scan)
+```
+
+If pushing, record the security-auditor confirmation first, after a clean scan:
+
+```bash
 bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
+```
+
+> The push gets its OWN call. Sharing a block with the commit means the guard
+> sees one input starting with `git commit`, scans that, and lets the push
+> through with no audit check, no branch protection and no WARNs.
+
+```bash
 git push
 ```
 

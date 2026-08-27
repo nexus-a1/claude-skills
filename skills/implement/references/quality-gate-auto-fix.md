@@ -37,6 +37,13 @@ If any fixes were applied successfully:
 
    ```bash
    git add <fixed-files>
+   ```
+
+   > The verb below leads its own call: the mutation guard anchors on
+   > `^git commit` / `^git push`, so anything ahead of it in the same call
+   > skips the credential scan and the push gate.
+
+   ```bash
    git commit -m "[{identifier}] fix: address critical QA findings"
    ```
 

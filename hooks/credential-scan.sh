@@ -35,26 +35,30 @@ if command -v gitleaks >/dev/null 2>&1 && [[ -n "$repo_root" && -f "$repo_root/.
     exit "$any_findings"
 fi
 
-# Inline pattern list (conservative baseline).
-patterns=(
-    'Anthropic API key|sk-ant-api[0-9]{2}-[A-Za-z0-9_-]{24,}'
-    'OpenAI/generic sk- key|sk-[A-Za-z0-9]{32,}'
-    'GitHub PAT|ghp_[A-Za-z0-9]{36}'
-    'GitHub OAuth token|gho_[A-Za-z0-9]{36}'
-    'GitHub user-to-server token|ghu_[A-Za-z0-9]{36}'
-    'GitHub server-to-server token|ghs_[A-Za-z0-9]{36}'
-    'GitHub refresh token|ghr_[A-Za-z0-9]{36}'
-    'GitHub fine-grained PAT|github_pat_[A-Za-z0-9_]{22}_[A-Za-z0-9]{59}'
-    'AWS access key ID|AKIA[0-9A-Z]{16}'
-    'AWS temporary access key|ASIA[0-9A-Z]{16}'
-    'Slack token|xox[baprs]-[A-Za-z0-9-]{10,}'
-    'Discord webhook URL|https://discord(app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]+'
-    'Google API key|AIza[0-9A-Za-z_-]{35}'
-    'Stripe live secret key|sk_live_[A-Za-z0-9]{24,}'
-    'Stripe restricted key|rk_live_[A-Za-z0-9]{24,}'
-    'Private key (PEM)|-----BEGIN [A-Z ]*PRIVATE KEY-----'
-    'JWT token|eyJ[A-Za-z0-9_=-]+\.eyJ[A-Za-z0-9_=-]+\.[A-Za-z0-9_.+/=-]{20,}'
-)
+# Inline pattern list (conservative baseline), sourced from the shared library
+# so the /pr-review report redactor uses the same list rather than a copy.
+#
+# HARD FAIL on absence, deliberately. This is a security control: if the
+# library is missing or unreadable and we continued, `patterns` would be empty,
+# every loop below would match nothing, and the hook would exit 0 on a file
+# full of live credentials — reporting clean because it checked nothing. The
+# permissive `[[ -x ... ]] || skip` pattern used elsewhere for optional tooling
+# is wrong here for exactly that reason.
+_cred_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/credential-patterns.sh"
+if [[ ! -r "$_cred_lib" ]]; then
+    echo "credential-scan: FATAL — cannot read $_cred_lib" >&2
+    echo "credential-scan: refusing to scan with an empty pattern list." >&2
+    exit 2
+fi
+# shellcheck source=../shared/credential-patterns.sh
+source "$_cred_lib"
+
+if [[ ${#NEXUS_CREDENTIAL_PATTERNS[@]} -eq 0 ]]; then
+    echo "credential-scan: FATAL — pattern list loaded but empty." >&2
+    exit 2
+fi
+
+patterns=("${NEXUS_CREDENTIAL_PATTERNS[@]}")
 
 total=0
 for f in "$@"; do

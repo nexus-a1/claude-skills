@@ -45,9 +45,9 @@ Read **both** `hooks.json` (command strings) **and** the referenced hook scripts
 | `eval` on any input-derived value | CRITICAL |
 | `exec bash -c "$VAR"` / `sh -c "$VAR"` with an interpolated variable | CRITICAL |
 | `subprocess.run(..., shell=True)` on stdin/argument-derived input | CRITICAL |
-| Unquoted `$CLAUDE_TOOL_INPUT` (or other tool-input var) in a shell-operator / command-substitution context — `$(… $VAR …)`, backticks, unquoted word-split | IMPORTANT |
+| The tool-input command used unquoted in a shell-operator / command-substitution context — `$(… $VAR …)`, backticks, unquoted word-split | IMPORTANT |
 
-**False-positive guard:** `$CLAUDE_TOOL_INPUT` used **only** inside a bash `[[ … =~ … ]]` regex test, or assigned with quotes (`input="${CLAUDE_TOOL_INPUT:-}"`), is **NOT** flagged — that is safe, non-executing use.
+**False-positive guard:** the payload-derived command variable used **only** inside a bash `[[ … =~ … ]]` regex test, or assigned with quotes (`input="${HOOK_COMMAND:-}"`), is **NOT** flagged — that is safe, non-executing use. Note the source: a hook receives its payload as JSON on **stdin**, never in the environment, so an example citing an environment variable for the command is describing an interface that does not exist.
 
 ### Check 3 — CLAUDE.md Injection (`CLAUDE.md`)
 

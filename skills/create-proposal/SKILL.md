@@ -43,9 +43,10 @@ else
 fi
 WORK_DIR=$(resolve_artifact work work)
 PROPOSALS_DIR=$(resolve_artifact proposals proposals)
+echo "WORK_DIR=$WORK_DIR"
 ```
 
-Use `$WORK_DIR` and `$PROPOSALS_DIR` instead of hardcoded paths throughout this workflow.
+Use `$WORK_DIR` and `$PROPOSALS_DIR` instead of hardcoded paths — but only inside this block. Each later block is its own Bash tool call and does not inherit them, so those substitute the values printed above instead.
 
 **Important:** All path references in this skill MUST use `$WORK_DIR` and `$PROPOSALS_DIR` variables. Never use hardcoded `.claude/work/` or `.claude/proposals/` paths.
 
@@ -144,6 +145,17 @@ ECOSYSTEM=$(yq -r '.project.ecosystem // ""' "$CONFIG" 2>/dev/null)
 
 **If not configured, auto-detect from project files:**
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls, so a
+# value resolved in an earlier block is empty in this one.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+ECOSYSTEM=$(yq -r '.project.ecosystem // ""' "$CONFIG" 2>/dev/null)
 if [[ -z "$ECOSYSTEM" ]]; then
   if [[ -f "composer.json" ]]; then
     if grep -q "symfony/framework-bundle" composer.json 2>/dev/null; then
@@ -209,8 +221,10 @@ Store confirmed value as `{ecosystem}`.
 ### 0.5 Initialize Work Directory
 
 ```bash
-mkdir -p $WORK_DIR/{identifier}/context
-mkdir -p $WORK_DIR/{identifier}/notes
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
+mkdir -p <WORK_DIR printed above>/{identifier}/context
+mkdir -p <WORK_DIR printed above>/{identifier}/notes
 ```
 
 ### 0.6 Initialize State File
@@ -273,19 +287,21 @@ Update `last_updated` and `total_items` in the envelope.
 Register active session for the optional `auto-context.sh` PostToolUse hook (no-op when neither `CLAUDE_SESSION_ID` nor `CLAUDE_CODE_SESSION_ID` is set):
 
 ```bash
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
 SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
 if [ -n "$SID" ] && command -v jq >/dev/null 2>&1; then
-  mkdir -p "$WORK_DIR"
-  touch "$WORK_DIR/.active-sessions.lock"
+  mkdir -p "<WORK_DIR printed above>"
+  touch "<WORK_DIR printed above>/.active-sessions.lock"
   (
     flock -x -w 2 200 || exit 0
-    [ -s "$WORK_DIR/.active-sessions" ] || echo '{}' > "$WORK_DIR/.active-sessions"
+    [ -s "<WORK_DIR printed above>/.active-sessions" ] || echo '{}' > "<WORK_DIR printed above>/.active-sessions"
     jq --arg s "$SID" --arg w "{identifier}" \
-       '. + {($s): $w}' "$WORK_DIR/.active-sessions" \
-       > "$WORK_DIR/.active-sessions.tmp.$$" \
-       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
-       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
-  ) 200>"$WORK_DIR/.active-sessions.lock"
+       '. + {($s): $w}' "<WORK_DIR printed above>/.active-sessions" \
+       > "<WORK_DIR printed above>/.active-sessions.tmp.$$" \
+       && mv "<WORK_DIR printed above>/.active-sessions.tmp.$$" "<WORK_DIR printed above>/.active-sessions" \
+       || rm -f "<WORK_DIR printed above>/.active-sessions.tmp.$$"
+  ) 200>"<WORK_DIR printed above>/.active-sessions.lock"
 fi
 ```
 

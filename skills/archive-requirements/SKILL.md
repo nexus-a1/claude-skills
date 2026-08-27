@@ -55,9 +55,14 @@ else
   exit 1
 fi
 WORK_DIR=$(resolve_artifact work work)
+echo "WORK_DIR=$WORK_DIR"
 ```
 
-Use `$WORK_DIR` instead of hardcoded `.claude/work` throughout this workflow.
+Use `$WORK_DIR` instead of a hardcoded `.claude/work` — but only inside this block. Each later block is its own Bash tool call and does not inherit the variable, so those substitute the value printed above instead.
+
+**Where these values come from.** Shell state does not survive between Bash tool
+calls, so `REPO` is re-resolved in each block that uses it rather than carried
+from the block above.
 
 **Important:** All path references in this skill MUST use `$WORK_DIR`. Never use hardcoded `.claude/work` paths.
 
@@ -69,11 +74,11 @@ Use `$WORK_DIR` instead of hardcoded `.claude/work` throughout this workflow.
 
 **If identifier provided:**
 ```bash
-if [ ! -d "$WORK_DIR/${identifier}" ]; then
-  echo "❌ Work directory not found: $WORK_DIR/${identifier}"
+if [ ! -d "<WORK_DIR printed above>/${identifier}" ]; then
+  echo "❌ Work directory not found: <WORK_DIR printed above>/${identifier}"
   echo ""
   echo "Available work:"
-  ls -1 $WORK_DIR/
+  ls -1 <WORK_DIR printed above>/
   exit 1
 fi
 ```
@@ -83,7 +88,7 @@ fi
 Scan for completed work:
 ```bash
 # Find work directories with completed requirements
-for dir in $WORK_DIR/*/; do
+for dir in <WORK_DIR printed above>/*/; do
   identifier=$(basename "$dir")
 
   if [ -f "$dir/state.json" ]; then
@@ -109,10 +114,14 @@ Select [1-3]:
 
 ### Step 2: Validate Work State
 
-Read state files:
-```bash
-Read("$WORK_DIR/${identifier}/state.json")
-Read("$WORK_DIR/${identifier}/context/")
+Read state files — these are **Read tool calls, not shell**, so the fence is
+untagged: `$WORK_DIR` and `${identifier}` here are values to substitute, not
+variables a shell would expand. Tagged `bash` they read as a block using state
+from an earlier call, which is neither what they are nor what they do.
+
+```text
+Read("<WORK_DIR>/<identifier>/state.json")
+Read("<WORK_DIR>/<identifier>/context/")
 ```
 
 **Check:**
@@ -132,21 +141,68 @@ Archive anyway? [y/n]
 
 ### Step 3: Resolve Requirements Storage
 
-Resolve the requirements artifact path using the config functions loaded in the Configuration section above:
+Resolve the requirements artifact path using the config functions loaded in the Configuration section above.
+
+**Use `resolve_artifact_strict`, never `resolve_artifact_typed`.** The typed
+resolver is advisory: on an install that never configured a knowledge base it
+fabricates `.claude/requirements` and returns it as though it were real, so the
+"not configured" branch below could never fire and an archive would proceed
+into a directory nobody set up. The strict resolver refuses instead, and it is
+the same rule the archivist itself gates on — one rule, one answer (CL-32; see
+[ADR-014](../../../docs/decisions/014-artifact-resolution-strictness.md)).
 
 ```bash
-IFS='|' read -r REPO _TYPE <<< "$(resolve_artifact_typed requirements requirements)"
-_BASE="$(dirname "$REPO")"
+if _RESOLVED=$(resolve_artifact_strict requirements requirements); then
+  IFS='|' read -r REPO _TYPE <<< "$_RESOLVED"
+  # No _BASE here on purpose. Nothing below needs the location root, and
+  # `dirname "$REPO"` is not reliably it: with `subdir: .` the strict resolver
+  # normalises REPO to the root already, so dirname would climb ABOVE the KB.
+else
+  REPO=""   # not configured — print the block below and stop
+fi
 ```
 
 If the storage location type is `git`, sync before reading:
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls, so a
+# value resolved in an earlier block is empty in this one.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+if _RESOLVED=$(resolve_artifact_strict requirements requirements); then
+  IFS='|' read -r REPO _TYPE <<< "$_RESOLVED"
+else
+  REPO=""
+fi
 if [[ "$_TYPE" == "git" ]]; then
-  cd "$_BASE" && git pull
+  # `cd "$REPO"`, not `cd "$_BASE"`: git pull operates on the containing
+  # repository from any directory inside it, and dirname is not the location
+  # root when subdir has more than one segment (or is ".", where the strict
+  # resolver normalises REPO to the root itself and dirname would climb ABOVE
+  # the KB). Same form the archivist's SEARCH sync uses.
+  # The emptiness test is the guard; `cd … || exit 1` is not one on its own,
+  # because `cd ""` returns 0 and stays put.
+  [ -n "$REPO" ] || exit 1
+  cd "$REPO" || exit 1
+  git pull
 fi
 ```
 
-**If not configured:**
+**If not configured** — `resolve_artifact_strict` exited non-zero, so `REPO` is
+empty. Print this and stop; do not delegate to the archivist, and do not
+proceed on a default path:
+
+> A non-zero exit is not always "not configured". Exit `5` means a configured
+> value would resolve outside its storage location — a broken config, not a
+> missing one — and the resolver's stderr names the key. Surface that message
+> rather than the setup instructions above, which would send the user to fix
+> something that is already set.
+
 ```
 Requirements storage not configured
 

@@ -39,40 +39,137 @@ case ",${NEXUS_DISABLED_HOOKS//[[:space:]]/}," in *",$_nexus_name,"*) echo "WARN
 
 set -u
 
-input="${CLAUDE_TOOL_INPUT:-}"
+# The payload arrives as JSON on stdin. This hook read an environment variable
+# Claude Code never sets, so `input` was always empty, the git check below never
+# matched, and every policy here was inert. See hook-input.sh for the full
+# account; bash-token-filter.py in this same PreToolUse block is the reference
+# implementation.
+# shellcheck source=hook-input.sh
+# ${BASH_SOURCE[0]%/*}, not $(dirname …): dirname is an external command, and a
+# safety hook that needs PATH to find its own contract can be turned off by
+# PATH. Parameter expansion needs nothing.
+. "${BASH_SOURCE[0]%/*}/hook-input.sh" || {
+    echo "BLOCKED: git-mutation-guard could not load its input contract (hooks/hook-input.sh)." >&2
+    echo "Refusing to run unguarded." >&2
+    exit 2
+}
+# The file existing is not the same as the contract being loaded: a truncated
+# or partially written hook-input.sh sources without error and leaves the
+# function undefined, which is command-not-found — status 127, and then rc 0
+# from the hook. Fail closed on that too.
+#
+# Two guards, either of which suffices: the `type` check names the problem, and
+# the `|| exit 2` catches the 127. Measured — removing either one alone changes
+# no outcome, and only removing BOTH fails the test. Keep both; do not delete
+# one on the grounds that the suite still passes.
+type hook_read_input >/dev/null 2>&1 || {
+    echo "BLOCKED: git-mutation-guard loaded hooks/hook-input.sh but hook_read_input is not defined." >&2
+    echo "The contract file is present but incomplete. Refusing to run unguarded." >&2
+    exit 2
+}
+hook_read_input "$_nexus_name" || exit 2
 
-# Fast exit: not a git command.
-if [[ ! "$input" =~ (^|[[:space:]])git[[:space:]] ]]; then
-    exit 0
+input="${HOOK_COMMAND:-}"
+
+# BEFORE the fast exit below, which requires `git` to follow whitespace or start
+# the string. In `bash -c "git push"` the character before `git` is a quote, so
+# the fast exit fired and the refusal was never reached — the one shape that
+# most needs refusing looked like "not a git command".
+#
+# A shell inside a string still runs, and blanking quoted runs would hide the
+# verb from every check below. Refuse rather than guess: an unreadable mutation
+# is not an absent one.
+if hook_has_shell_in_string "$input"; then
+    echo "BLOCKED: a git commit/push inside a shell string (bash -c \"…\" or eval) cannot be inspected." >&2
+    echo "Run the git command directly so the guard can see it — branch protection, the credential" >&2
+    echo "scan and the audit gate all read the command text." >&2
+    exit 2
 fi
+
+# Fast exit: no mention of git at all.
+#
+# A plain substring test, deliberately. The old form required `git` to follow
+# whitespace or start the string, which is false for `(git push)`, `$(git push)`
+# and `/usr/bin/git push` — all of which the segmenter finds, and all of which
+# exited here before it ever ran. This test exists to skip work on unrelated
+# commands, so it should err toward doing the work: `digit` costs one wasted
+# segmentation pass and nothing else, while a missed shape is an unguarded push.
+case "$input" in
+    *git*) : ;;
+    *) exit 0 ;;
+esac
 
 # Legacy bypass — keep commands issued by existing git-operator callers and
 # the release skills working without rewriting every caller at once.
-if [[ "$input" =~ ^GIT_AUTHORIZED=1[[:space:]]+git[[:space:]] ]]; then
-    exit 0
+# GIT_AUTHORIZED is read PER SEGMENT and skips only that segment.
+#
+# It used to set one flag and `exit 0` for the whole command, so
+# `GIT_AUTHORIZED=1 git commit -m x && git push origin master` ran the push with
+# no branch protection, no audit gate and no scan — one segment vouching for
+# another, which is the precise failure this whole change exists to remove. It
+# appeared here, in the fix for it.
+
+
+# A git mutation the segmenter could not attribute to a command it understands —
+# `nice git push`, `timeout 5 git push`, and whatever wrapper comes next.
+# Enumerating wrappers is a losing game and each one missed is an unguarded
+# push, so the guard refuses what it cannot read instead of allowing it.
+# Quotes spliced into the verb — `"git" push`, `g'i't push` — are ordinary shell
+# that runs git, but blanking quoted runs erases the word, so neither the
+# segmenter nor the residue check sees it.
+if hook_has_spliced_verb "$input"; then
+    echo "BLOCKED: this command splices quotes into a git verb, which the guard cannot read." >&2
+    echo "Write the command without the embedded quotes so branch protection, the credential scan" >&2
+    echo "and the audit gate can see what it does." >&2
+    exit 2
 fi
 
-# Strip leading env assignments (KEY=val ... git <subcmd>) we know about so
-# the mutation regexes below see the git invocation cleanly. NEXUS_KB_WRITE is
-# stripped alongside the two bypass vars: without it, a real
-# `NEXUS_KB_WRITE=1 git push …` command would fail the anchored `git push`
-# regex and silently skip the ENTIRE push block (branch protection AND the
-# audit gate) instead of just branch protection — defeating the guarantee that
-# the audit gate still applies. The value is still read from the environment
-# below; stripping only cleans the string used for regex matching.
-cmd="$input"
-while [[ "$cmd" =~ ^[[:space:]]*(GIT_AUTHORIZED|SECURITY_AUDITOR_BYPASS|NEXUS_KB_WRITE)=[^[:space:]]+[[:space:]]+(.*)$ ]]; do
-    cmd="${BASH_REMATCH[2]}"
-done
+if hook_unmatched_git_verb "$input"; then
+    echo "BLOCKED: this command contains a git commit/push the guard cannot attribute to a command it understands." >&2
+    echo "That usually means a wrapper (nice, timeout, xargs, nohup) in front of git. Run the git command" >&2
+    echo "directly so branch protection, the credential scan and the audit gate can read it." >&2
+    exit 2
+fi
+
+# Every occurrence, each gated on its own terms. The checks were anchored at the
+# start of the command, so `echo hi && git push` and `cd /tmp && git push` were
+# ungated entirely — a guard against the shapes our own prompts use rather than
+# against what a model composes.
+# EVERY segment, not the first of each kind. Keeping only the first meant its
+# declarations gated the whole command: `NEXUS_KB_WRITE=1 git push kb main &&
+# git push origin master` skipped branch protection for the SECOND push, a
+# direct push to a protected branch on the strength of a bypass that applied to
+# a different remote.
+push_segments=()
+commit_segments=()
+while IFS= read -r _s; do
+    _seg="${_s#*$'\t'}"
+    case "${_s%%$'\t'*}" in
+        push)
+            # A segment carrying the legacy full bypass is skipped, and only it.
+            hook_declares "$_seg" GIT_AUTHORIZED || push_segments+=("$_seg") ;;
+        commit)
+            hook_declares "$_seg" GIT_AUTHORIZED || commit_segments+=("$_seg") ;;
+        exempt) ;;      # --help, or a dry-run push: looked at, nothing to gate
+        unreadable) ;;  # refused above, before this loop runs
+        *)  # A class this loop does not know. Dropping it silently is how a
+            # later addition to the segmenter would arrive ungated.
+            echo "BLOCKED: git-mutation-guard saw a segment class it does not handle: ${_s%%$'\t'*}" >&2
+            exit 2 ;;
+    esac
+done < <(hook_git_segments "$input")
 
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
 
 # ---------------------------------------------------------------------------
 # 1. Branch protection + security-auditor gate on push
 # ---------------------------------------------------------------------------
-if [[ "$cmd" =~ ^[[:space:]]*git[[:space:]]+push([[:space:]]|$) ]]; then
+for push_segment in ${push_segments[@]+"${push_segments[@]}"}; do
     current_branch=$(git branch --show-current 2>/dev/null || true)
-    if [[ "${NEXUS_KB_WRITE:-}" == "1" ]]; then
+    # The declaration must lead the SEGMENT whose verb it precedes, and each
+    # segment is judged on its own — a bypass on one push does not license
+    # another push in the same command.
+    if hook_declares "$push_segment" NEXUS_KB_WRITE; then
         echo "WARN: NEXUS_KB_WRITE=1 — skipping branch-protection check (sanctioned direct-to-trunk push to a git-backed KB repo, not this project). Credential scan and security-auditor state check still apply." >&2
     else
         case "$current_branch" in
@@ -89,7 +186,7 @@ if [[ "$cmd" =~ ^[[:space:]]*git[[:space:]]+push([[:space:]]|$) ]]; then
         esac
     fi
 
-    if [[ "${SECURITY_AUDITOR_BYPASS:-}" != "1" ]]; then
+    if ! hook_declares "$push_segment" SECURITY_AUDITOR_BYPASS; then
         state_file="$repo_root/.claude/session-state/git-audit.json"
         head_sha=$(git rev-parse HEAD 2>/dev/null || true)
         if [[ ! -f "$state_file" ]]; then
@@ -110,33 +207,61 @@ if [[ "$cmd" =~ ^[[:space:]]*git[[:space:]]+push([[:space:]]|$) ]]; then
     else
         echo "WARN: SECURITY_AUDITOR_BYPASS=1 — skipping audit state check." >&2
     fi
-fi
+done
 
 # ---------------------------------------------------------------------------
 # 2. Credential scan on commit
 # ---------------------------------------------------------------------------
-if [[ "$cmd" =~ ^[[:space:]]*git[[:space:]]+commit([[:space:]]|$) ]]; then
-    mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null)
+# The staged set is a property of the REPOSITORY, not of a segment, so it is
+# collected once. Inside the loop, `git commit -m x && git commit -m y` ran the
+# scanner twice over an identical file list and printed every finding twice.
+staged=()
+while IFS= read -r _f; do [ -n "$_f" ] && staged+=("$_f"); done \
+    < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null)
+
+for commit_segment in ${commit_segments[@]+"${commit_segments[@]}"}; do
+    # `while read`, not mapfile. mapfile does not exist in bash 3.2, which is
+    # still /bin/bash on macOS — and there the array expansion below would abort
+    # under `set -u` with exit 1, a status Claude Code does not treat as a block.
+    # The credential scan would have failed OPEN on that platform even once the
+    # hook could read its input again. Pre-existing, and invisible until now
+    # because the hook never got this far.
     extra=()
     # `git commit -a` / `--all` also stages all modified tracked files.
-    if [[ "$cmd" =~ git[[:space:]]+commit[[:space:]]+(-[a-zA-Z]*a[a-zA-Z]*|--all)([[:space:]]|$) ]]; then
-        mapfile -t extra < <(git diff --name-only --diff-filter=ACM 2>/dev/null)
+    if [[ "$commit_segment" =~ git[[:space:]]+commit[[:space:]]+(-[a-zA-Z]*a[a-zA-Z]*|--all)([[:space:]]|$) ]]; then
+        while IFS= read -r _f; do [ -n "$_f" ] && extra+=("$_f"); done \
+            < <(git diff --name-only --diff-filter=ACM 2>/dev/null)
     fi
     targets=()
-    for f in "${staged[@]}" "${extra[@]}"; do
+    # ${arr[@]+"${arr[@]}"}: bash < 4.4 — macOS /bin/bash 3.2 — treats expansion
+    # of an EMPTY array as unbound under `set -u`. A commit without -a leaves
+    # `extra` empty, so this line aborted with exit 1, which is not a block, and
+    # the credential scan never ran. The same silent fail-open this branch
+    # exists to close, one level down and only on the platform CI does not run.
+    for f in ${staged[@]+"${staged[@]}"} ${extra[@]+"${extra[@]}"}; do
         [[ -n "$f" && -f "$repo_root/$f" ]] && targets+=("$repo_root/$f")
     done
 
     if (( ${#targets[@]} > 0 )); then
-        scanner="$(dirname "$0")/credential-scan.sh"
-        if [[ -x "$scanner" ]]; then
-            if ! "$scanner" "${targets[@]}" >&2; then
-                echo "BLOCKED: credential-scan findings above. Commit refused." >&2
-                echo "Resolve the finding, or use GIT_AUTHORIZED=1 git commit … to bypass all checks (legacy; document the reason in the commit body)." >&2
-                exit 2
-            fi
+        # ${BASH_SOURCE[0]%/*}, not $(dirname "$0"): dirname is external, so a
+        # PATH without it made this empty and the scanner path `/credential-scan.sh`.
+        scanner="${BASH_SOURCE[0]%/*}/credential-scan.sh"
+        # No `if [[ -x ]]` without an else. That form allowed the commit with no
+        # scan and no message whenever the scanner was missing or lost its exec
+        # bit — including after a marketplace sync that does not preserve modes.
+        # A scan that cannot run is not a scan that passed.
+        if [[ ! -x "$scanner" ]]; then
+            echo "BLOCKED: credential scanner not found or not executable at $scanner." >&2
+            echo "Refusing to commit unscanned. Check the plugin installation, or disable" >&2
+            echo "this hook explicitly with NEXUS_DISABLED_HOOKS=git-mutation-guard." >&2
+            exit 2
+        fi
+        if ! "$scanner" "${targets[@]}" >&2; then
+            echo "BLOCKED: credential-scan findings above. Commit refused." >&2
+            echo "Resolve the finding, or use GIT_AUTHORIZED=1 git commit … to bypass all checks (legacy; document the reason in the commit body)." >&2
+            exit 2
         fi
     fi
-fi
+done
 
 exit 0

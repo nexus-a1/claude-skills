@@ -5,7 +5,7 @@ category: analysis
 userInvocable: true
 description: Draft and submit a bug report or feature request to the nexus plugin repository, using current conversation context to auto-populate details.
 argument-hint: "[--feature-request]"
-allowed-tools: "Read, Bash(gh issue create:*), Bash(gh auth status:*), Bash(jq:*), Bash(mktemp:*), Bash(grep:*), Bash(sed:*), Bash(sort:*), Bash(rm:*), Bash(cat:*), Bash(echo:*), Bash(false:*), AskUserQuestion"
+allowed-tools: "Read, Bash(gh issue create:*), Bash(gh auth status:*), Bash(jq:*), Bash(mkdir:*), Bash(umask:*), Bash(printf:*), Bash(grep:*), Bash(sed:*), Bash(sort:*), Bash(rm:*), Bash(cat:*), Bash(echo:*), Bash(false:*), AskUserQuestion"
 ---
 
 # Report Issue
@@ -268,15 +268,45 @@ If **No**: stop and display `Issue cancelled. Draft was not submitted.`
 If **Yes**: before invoking `gh issue create`, run a deterministic regex scan over the body and title. This is a non-LLM enforcement layer that catches secrets the Step 5 / Step 6 LLM scans may have missed. **A match here hard-blocks submission.**
 
 ```bash
-BODY_FILE=$(mktemp)
-ERROR_FILE=$(mktemp)
+# The draft lives in the project work area, not /tmp, and not under an mktemp
+# name. Both matter, for different reasons:
+#   - mktemp names do not survive a Bash tool call, and neither does the
+#     variable holding one. The submit block below is a separate call, so it
+#     could never have named the file the gate scanned.
+#   - a PREDICTABLE name in a world-writable directory is the vector mktemp was
+#     avoiding: another process can pre-create or symlink /tmp/<known-name>
+#     between the write and the read. A private directory under .claude with
+#     umask 077 gives a stable name without that exposure.
+umask 077
+SCAN_DIR=".claude/report-issue"
+mkdir -p "$SCAN_DIR"
+BODY_FILE="$SCAN_DIR/body.md"
+ERROR_FILE_PRE="$SCAN_DIR/error.log"
+# A stable name can be pre-created as a SYMLINK by anything that can write the
+# directory, and `cat >` follows it: the draft would overwrite the link target
+# and then be published from it. Refuse a symlink outright, and remove any
+# existing file before writing so `set -C` cannot be satisfied by a leftover.
+for _f in "$BODY_FILE" "$ERROR_FILE_PRE" "$SCAN_DIR/scan-patterns.txt"; do
+  if [ -L "$_f" ]; then
+    echo "⛔ Refusing to write: $_f is a symlink. Remove it and re-run." >&2
+    return 1 2>/dev/null || exit 1
+  fi
+  rm -f "$_f"
+done
+set -C   # no clobber: a file appearing between the rm and the write is a race
+ERROR_FILE="$SCAN_DIR/error.log"
+PATTERN_FILE="$SCAN_DIR/scan-patterns.txt"
 cat > "$BODY_FILE" << 'REPORT_ISSUE_BODY_EOF'
 {full issue body, post-redaction}
 REPORT_ISSUE_BODY_EOF
 
 ISSUE_TITLE='{final title, post-redaction}'
 
+# Written to a file as well as used here, so the re-scan in the submit block
+# uses THE SAME patterns rather than a second copy that can drift from this one.
 SCAN_PATTERNS='AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|ghp_[A-Za-z0-9_]+|gho_[A-Za-z0-9_]+|ghu_[A-Za-z0-9_]+|ghs_[A-Za-z0-9_]+|ghr_[A-Za-z0-9_]+|xox[baprs]-[A-Za-z0-9-]+|-----BEGIN [A-Z ]+-----|sk_live_[A-Za-z0-9]+|rk_live_[A-Za-z0-9]+|sk-ant-[A-Za-z0-9-]+|AIza[0-9A-Za-z_-]{35}'
+
+printf '%s\n' "$SCAN_PATTERNS" > "$PATTERN_FILE"
 
 if grep -qE "$SCAN_PATTERNS" "$BODY_FILE" || echo "$ISSUE_TITLE" | grep -qE "$SCAN_PATTERNS"; then
   echo "⛔ Submission blocked — deterministic scan detected a high-confidence secret pattern in the draft." >&2
@@ -286,7 +316,7 @@ if grep -qE "$SCAN_PATTERNS" "$BODY_FILE" || echo "$ISSUE_TITLE" | grep -qE "$SC
     | sort -u | sed 's/^/  - /' >&2
   echo "" >&2
   echo "The LLM redaction in Steps 5/6 missed at least one secret. Edit the conversation to remove the secret values, then re-run /report-issue." >&2
-  rm -f "$BODY_FILE" "$ERROR_FILE"
+  rm -f "$BODY_FILE" "$ERROR_FILE" "$PATTERN_FILE"
   false
 fi
 ```
@@ -295,9 +325,49 @@ If the gate hard-blocks, the skill stops here. Do not retry, do not call `gh iss
 
 ### Submission
 
-If the deterministic gate passes, create the issue:
+If the deterministic gate passes, create the issue. **The scan is re-run here,
+in the same call as the publish.** The gate above runs in a different Bash tool
+call, and between the two the file can change — the model can edit it, a stale
+file can be left at the same path by an earlier run, another process can write
+to it. A scan in one call and a publish in another cannot make the claim this
+gate exists to make; only a scan and a publish in the same call can, so the last
+thing before `gh issue create` is the scan itself.
 
 ```bash
+umask 077
+SCAN_DIR=".claude/report-issue"
+BODY_FILE="$SCAN_DIR/body.md"
+ERROR_FILE="$SCAN_DIR/error.log"
+PATTERN_FILE="$SCAN_DIR/scan-patterns.txt"
+ISSUE_TITLE='{final title, post-redaction}'
+# Same symlink refusal on the read side: publishing through a link would send
+# whatever the link points at, which is not what the gate scanned.
+for _f in "$BODY_FILE" "$PATTERN_FILE"; do
+  if [ -L "$_f" ]; then
+    echo "⛔ Refusing to publish: $_f is a symlink, so it is not the file that was scanned." >&2
+    false
+  fi
+done
+
+# Re-scan the exact bytes about to be published, with the patterns the gate
+# wrote. Refuse if either file is missing: an unreadable scan is not a clean
+# scan, and "the gate already ran" is a claim about a different call.
+if [ ! -r "$BODY_FILE" ] || [ ! -r "$PATTERN_FILE" ]; then
+  echo "⛔ Refusing to publish: the scanned draft or its patterns are missing — re-run the gate." >&2
+  false
+else
+  grep -qE -f "$PATTERN_FILE" "$BODY_FILE"
+  body_rc=$?
+  printf '%s' "$ISSUE_TITLE" | grep -qE -f "$PATTERN_FILE"
+  title_rc=$?
+  if [ "$body_rc" -eq 0 ] || [ "$title_rc" -eq 0 ]; then
+    echo "⛔ Refusing to publish: a secret pattern is present in the bytes about to be sent." >&2
+    false
+  elif [ "$body_rc" -ge 2 ] || [ "$title_rc" -ge 2 ]; then
+    echo "⛔ Refusing to publish: the pre-publish scan itself failed (grep exit $body_rc/$title_rc) — that is not a clean scan." >&2
+    false
+  else
+
 gh issue create \
   --repo "nexus-a1/claude-skills" \
   --title "$ISSUE_TITLE" \
@@ -319,8 +389,10 @@ if [ $GH_RC -ne 0 ]; then
   fi
 fi
 
-rm -f "$BODY_FILE" "$ERROR_FILE"
-[ $GH_RC -eq 0 ] || false
+    rm -f "$BODY_FILE" "$ERROR_FILE" "$PATTERN_FILE"
+    [ $GH_RC -eq 0 ] || false
+  fi
+fi
 ```
 
 > Using `--body-file` avoids shell quoting issues with error messages, stack traces, and special characters in the body. The title is passed through `--title "$ISSUE_TITLE"` (argv, never via `bash -c` or string interpolation) to prevent shell-metacharacter injection. Stderr is captured to a temp file so label-not-found errors trigger a no-label fallback; cleanup runs on every path before the final exit.

@@ -78,14 +78,33 @@ The `git-operator` agent now exists only for operations where isolation from the
 
 Anything else — plain commit, push, branch create, simple PR — runs inline. No delegation. Don't spawn a 15k-token agent to execute a one-line command the hook already guards.
 
-```
-# Routine (do inline):
-git add src/foo.ts src/bar.ts
-git commit -m "[JIRA-123] feat(x): ..."
-bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"   # after security-auditor clean
-git push -u origin feature/JIRA-123
+Routine, inline — and note that this is **four separate Bash calls**, not one
+block. The hook reads a whole tool input anchored at its start, so only a
+LEADING `git commit` gets the credential scan and only a leading `git push`
+gets branch protection and the audit gate. Behind anything else — a `cd`, a
+`git add`, even a comment — they are skipped silently, with no error to notice.
 
-# Narrow cases (delegate):
+```bash
+git add src/foo.ts src/bar.ts
+```
+
+```bash
+git commit -m "[JIRA-123] feat(x): ..."
+```
+
+After a clean security-auditor run, record the confirmation:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
+```
+
+```bash
+git push -u origin feature/JIRA-123
+```
+
+Narrow cases (delegate):
+
+```
 Use Task tool with subagent_type: "git-operator"
 Prompt: Resolve the merge conflict in src/PaymentService.php (keeping both the new validation and the existing logging).
 ```
@@ -97,7 +116,7 @@ Use Task tool with subagent_type: "doc-writer"
 Prompt: Document the {feature/component} including: {details}
 ```
 
-**doc-writer has no git access** — it writes/edits documentation files and returns their paths. Never ask it to commit. After it returns, commit its output inline (`git add <files> && git commit …`, hook-guarded as usual).
+**doc-writer has no git access** — it writes/edits documentation files and returns their paths. Never ask it to commit. After it returns, commit its output inline: `git add <files>` in one call, then `git commit …` as its own call. Not `git add … && git commit …` — the guard anchors at the start of a tool input, so a compound like that leads with `git add` and the credential scan never runs.
 
 #### Pre-Commit Security Scan → `security-auditor`
 Before every commit in the implementation pipeline, run the `security-auditor` agent via the **Task tool with `subagent_type: "security-auditor"`**.

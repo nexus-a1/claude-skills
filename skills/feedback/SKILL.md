@@ -57,9 +57,10 @@ PLUGIN_REPO=""
 if [[ -f "$CONFIG" ]]; then
   PLUGIN_REPO=$(yq -r '.feedback.plugin_repo // ""' "$CONFIG")
 fi
+echo "WORK_DIR=$WORK_DIR"
 ```
 
-Use `$WORK_DIR` instead of hardcoded `.claude/work` throughout this workflow.
+Use `$WORK_DIR` instead of a hardcoded `.claude/work` — but only inside this block. Each later block is its own Bash tool call and does not inherit the variable, so those substitute the value printed above instead.
 Use `$PLUGIN_REPO` for GitHub issue creation in Phase 7.
 
 ---
@@ -82,12 +83,12 @@ Use `$PLUGIN_REPO` for GitHub issue creation in Phase 7.
 
 ```bash
 # Check for manifest first
-if [[ -f "${WORK_DIR}/manifest.json" ]]; then
+if [[ -f "<WORK_DIR printed above>/manifest.json" ]]; then
   # Top 3 most recent non-archived sessions by updated_at, newest first
-  jq -r '[.items[] | select(.status != "archived")] | sort_by(.updated_at) | reverse | .[0:3] | .[] | .identifier' "${WORK_DIR}/manifest.json"
+  jq -r '[.items[] | select(.status != "archived")] | sort_by(.updated_at) | reverse | .[0:3] | .[] | .identifier' "<WORK_DIR printed above>/manifest.json"
 else
   # Fall back to Glob for directory listing (preferred over ls)
-  # Call: Glob("*/", path="${WORK_DIR}/")
+  # Call: Glob("*/", path="<WORK_DIR printed above>/")
   # Glob results are sorted by mtime ascending — reverse the order and take the first 3 as the most recent sessions.
   # If Glob returns no results, set identifier="" and proceed to the error path below.
 fi
@@ -141,13 +142,13 @@ Collect the list of available artifacts for analysis:
 
 ```bash
 # State files
-Glob("state.json", path="${WORK_DIR}/${identifier}/")
+Glob("state.json", path="<WORK_DIR printed above>/${identifier}/")
 
 # Agent output files
-Glob("context/*.md", path="${WORK_DIR}/${identifier}/")
+Glob("context/*.md", path="<WORK_DIR printed above>/${identifier}/")
 
 # Output documents
-Glob("*.md", path="${WORK_DIR}/${identifier}/")
+Glob("*.md", path="<WORK_DIR printed above>/${identifier}/")
 
 # Check for feature branch
 git branch -a --list "*${identifier}*"
@@ -292,7 +293,7 @@ If a branch exists with commits beyond the base branch:
 git diff --stat ${base_branch}...${feature_branch}
 
 # Get the requirements document
-# Read ${WORK_DIR}/${identifier}/*-TECHNICAL_REQUIREMENTS.md or similar
+# Read <WORK_DIR printed above>/${identifier}/*-TECHNICAL_REQUIREMENTS.md or similar
 ```
 
 Compare requirements against actual changes:
@@ -429,7 +430,9 @@ Ordered by impact (highest first). Each improvement must include:
 ### Phase 5: Save Report
 
 ```bash
-mkdir -p ${WORK_DIR}/feedback/
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
+mkdir -p <WORK_DIR printed above>/feedback/
 ```
 
 Save the synthesized report to `${WORK_DIR}/feedback/${identifier}-feedback.md`.
@@ -437,7 +440,7 @@ Save the synthesized report to `${WORK_DIR}/feedback/${identifier}-feedback.md`.
 After saving, verify:
 ```bash
 # Confirm file exists and is non-empty
-wc -l ${WORK_DIR}/feedback/${identifier}-feedback.md
+wc -l <WORK_DIR printed above>/feedback/${identifier}-feedback.md
 ```
 
 **No manifest update** — feedback reports are ephemeral analysis artifacts, not tracked in manifests.
@@ -532,15 +535,29 @@ ${full_report_content}
 ```
 
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls, so a
+# value resolved in an earlier block is empty in this one.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+PLUGIN_REPO=""
+if [[ -f "$CONFIG" ]]; then
+  PLUGIN_REPO=$(yq -r '.feedback.plugin_repo // ""' "$CONFIG")
+fi
 gh issue create \
   --repo "${PLUGIN_REPO}" \
   --title "[Feedback] ${identifier}: ${score}/100 (Grade: ${grade}) — ${date}" \
-  --body "$(cat ${WORK_DIR}/feedback/${identifier}-feedback.md)" \
+  --body "$(cat <WORK_DIR printed above>/feedback/${identifier}-feedback.md)" \
   --label "feedback" 2>/dev/null || \
 gh issue create \
   --repo "${PLUGIN_REPO}" \
   --title "[Feedback] ${identifier}: ${score}/100 (Grade: ${grade}) — ${date}" \
-  --body "$(cat ${WORK_DIR}/feedback/${identifier}-feedback.md)"
+  --body "$(cat <WORK_DIR printed above>/feedback/${identifier}-feedback.md)"
 ```
 
 > The first attempt includes `--label feedback`. If the label doesn't exist in the repo, the command falls back without it.

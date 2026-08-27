@@ -151,12 +151,12 @@ Fix:  `$this->logger->info("Processing payment: " . mask($cardNumber))`
 | C1 | `settings.json` `allow` | `Bash(gh api *)` & read-scoped wildcards | 🟢 MINOR-info |
 | C1 | `settings.json` `deny` | missing `Bash(sudo *)` / `Bash(rm -rf *)` / `Bash(curl *\|bash)` / `Bash(wget *\|bash)` | 🟡 IMPORTANT |
 | C2 | `hooks/hooks.json` **+ hook scripts** | `eval`, `exec bash -c "$VAR"`, `subprocess.run(shell=True)` on input | 🔴 CRITICAL |
-| C2 | same | unquoted `$CLAUDE_TOOL_INPUT` in shell-operator / `$()` / backtick context | 🟡 IMPORTANT |
+| C2 | same | the command from the stdin payload used unquoted in shell-operator / `$()` / backtick context | 🟡 IMPORTANT |
 | C3 | `CLAUDE.md` | override directives, fabricated `[SYSTEM]`/`[ADMIN]`, `always allow`, `bypass`+audit, zero-width/RTL/base64 obfuscation, embedded secrets, `curl\|bash` as advice | 🔴 CRITICAL |
 | C4 | `.mcp.json` / `mcpServers` | `npx -y` / `--yes`, `curl\|bash`, `wget\|sh`, unpinned versions | 🔴 CRITICAL |
 | C5 | agent `tools:` / skill `allowed-tools:` | bare `Bash` (no subcommand scoping) | 🟡 IMPORTANT |
 
-**False-positive guards** (do NOT flag): `$CLAUDE_TOOL_INPUT` used only in `[[ =~ ]]` regex or quoted assignment (C2); scoped `Bash(git:*)`, `Bash(npm run *)` (C5); absent `.mcp.json`/`mcpServers` produces no C4 output (C4); any absent config file → one `file not found — check skipped` note, never a finding.
+**False-positive guards** (do NOT flag): the payload command used only in `[[ =~ ]]` regex or quoted assignment (C2); scoped `Bash(git:*)`, `Bash(npm run *)` (C5); absent `.mcp.json`/`mcpServers` produces no C4 output (C4); any absent config file → one `file not found — check skipped` note, never a finding.
 
 **Justification.** A flagged entry with a valid `# security-audit: justified — <reason> | reviewed: <YYYY-MM-DD>` comment (or, for `settings.json`, a `settings-security-exceptions.json` sidecar entry) is reported **one severity lower** with the rationale noted. If `reviewed:` is >180 days old or malformed/unparseable, the original severity stands.
 

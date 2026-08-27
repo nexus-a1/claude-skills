@@ -285,9 +285,19 @@ Revised Plan
 file, never pasted plan text, so the revised plan must be written to disk before
 handoff:
 
+The heading is free text, so it reaches the shell through a file rather than a
+command line. Substituted straight into `echo "…"`, a heading containing a quote
+would close the argument and run the rest, and one containing `$( )` or
+backticks would be executed outright. The delimiter is QUOTED, which is what
+stops the body being expanded as it is written.
+
 ```bash
 mkdir -p .claude/session-state
-SLUG=$(echo "{first heading or first line of the revised plan}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -d'-' -f1-6)
+cat > .claude/session-state/.plan-title <<'PLAN_TITLE_EOF'
+{first heading or first line of the revised plan}
+PLAN_TITLE_EOF
+SLUG=$(tr '[:upper:]' '[:lower:]' < .claude/session-state/.plan-title | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -d'-' -f1-6)
+rm -f .claude/session-state/.plan-title
 REVISED_PLAN_PATH=".claude/session-state/review-plan-${SLUG}.md"
 ```
 

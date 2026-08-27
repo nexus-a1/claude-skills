@@ -408,3 +408,72 @@ requirements:
 #     max_suggestions: 3
 #     archive_on_pr: true
 # =============================================================================
+# PR REVIEW  (optional — omit entirely and /pr-review behaves exactly as before)
+# =============================================================================
+#
+# Two independent settings. Both are optional and both have safe defaults, so
+# an existing config that predates them needs no migration.
+#
+#   pr_review.gates              deterministic checks run BEFORE any LLM
+#                                reviewer. Default: none — the phase is
+#                                skipped. There is deliberately no built-in
+#                                default command, because a command that makes
+#                                sense in one project is meaningless in another.
+#
+#   pr_review.workflow.enabled   whether to use the orchestrated review path
+#                                (blind fan-out + adversarial verification)
+#                                when it is available. Default: true. Setting
+#                                false always falls back to the classic path.
+#
+# --- How gates are specified, and why they look like this -------------------
+#
+# A gate names a TEMPLATE plus ONE argument. It does not supply a command line.
+# That is a security boundary, not a stylistic choice: this file is writable by
+# anyone who can open a pull request, and /pr-review may be run in a clone you
+# do not control. Templates keep the set of executable commands fixed in the
+# plugin, where it can be reviewed, instead of in your repository, where it
+# cannot.
+#
+# Supported templates and what each runs:
+#
+#     npm_script       -> npm run <args>
+#     composer_script  -> composer run-script <args>
+#     make_target      -> make <args>
+#     pytest           -> pytest <args>
+#     go_test          -> go test <args>
+#     cargo_test       -> cargo test <args>
+#     bash_script      -> bash <args>          (<args> must resolve INSIDE the repo)
+#
+# <args> is a single token matching [A-Za-z0-9][A-Za-z0-9._:/-]* — no spaces,
+# no shell metacharacters, no '..'. A check needing more than that belongs in a
+# script in your repository, invoked via bash_script.
+#
+# Two further protections you should know about, because they affect when you
+# get prompted:
+#
+#   * Gate definitions are read from the MERGE BASE, not your working tree.
+#     A branch cannot introduce a gate that runs during its own review. The
+#     practical consequence: changing gates here takes effect only once the
+#     change lands on the base branch.
+#
+#   * The first run in a project asks you to confirm the resolved gate set, and
+#     asks again whenever it changes — including when only the CONTENT of a
+#     referenced script changes, with this file untouched.
+#
+# --- Example ---------------------------------------------------------------
+#
+#   pr_review:
+#     gates:
+#       - name: lint
+#         template: npm_script
+#         args: lint
+#       - name: unit
+#         template: npm_script
+#         args: test
+#       - name: validate
+#         template: bash_script
+#         args: scripts/validate.sh
+#     workflow:
+#       enabled: true
+#
+# =============================================================================

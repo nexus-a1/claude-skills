@@ -3,14 +3,26 @@ name: create-release-branch
 category: release-management
 model: claude-haiku-4-5
 userInvocable: true
-description: Create a release/vX.Y.Z branch from the repo's default branch (default), any branch, or a specific tag using tag@vX.Y.Z syntax
-argument-hint: <version> [source]
+description: Create a release/vX.Y.Z branch from the repo's default branch (default), any branch, or a specific tag using tag@vX.Y.Z syntax. Takes a version and an optional source. Step 1 of the release workflow.
+argument-hint: "<version> [source]"
 allowed-tools: "Bash(pwd:*), Bash(echo:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git fetch:*), Bash(bash:*), AskUserQuestion"
 ---
 
 # Create Release Branch Command
 
 > Workflow: **`/create-release-branch`** → `/create-release` → `/merge-release` → `/release`
+
+## Usage
+
+```bash
+/create-release-branch v1.2.0              # from the repo's default branch
+/create-release-branch v1.2.0 develop      # from another branch
+/create-release-branch v1.2.0 tag@v1.1.0   # from a specific tag
+```
+
+The version is required — omit it and you are prompted rather than guessed at:
+`version-suggest.sh` proposes one from the repo's release tags/branches and the
+commits since, and you pick. `source` defaults to the repo's default branch.
 
 ## Context
 

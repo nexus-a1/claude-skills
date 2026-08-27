@@ -58,6 +58,32 @@ NEXUS_DISABLED_HOOKS=bash-token-filter claude
 | `notify` | advisory | ❌ off | ❌ off | Send desktop notification on session end |
 | `output-guard` | advisory | ❌ off | ❌ off | Advisory nudge when Bash output exceeds thresholds |
 
+> **How a hook receives the tool call.** Claude Code passes it as JSON on
+> **stdin**. A hook here depends only on `CLAUDE_PROJECT_DIR`,
+> `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA` and `CLAUDE_EFFORT` — other
+> `CLAUDE_*` variables may be present in the environment, but relying on one is
+> how the defect below happened. What matters is that **`CLAUDE_TOOL_INPUT` and
+> `CLAUDE_TOOL_NAME` are never provided**: there is no variable carrying the
+> command or the tool. `git-mutation-guard` and `validate-commit`
+> read one that does not exist, so both saw an empty command and
+> enforced nothing in every real installation — while their tests passed,
+> because the tests set that variable themselves. `plugin/hooks/hook-input.sh`
+> is the shared reader; `bash-token-filter.py` is the reference implementation.
+> A safety hook that cannot read its payload now **blocks**; an advisory hook
+> degrades and says so.
+>
+> Two consequences worth knowing before you meet them. **`jq` is required**: on
+> a machine without it, a Bash call whose payload looks like a git command is
+> refused rather than waved through, because a guard that cannot read its input
+> must not approve it. Install `jq`, or disable the hook explicitly with
+> `NEXUS_DISABLED_HOOKS=git-mutation-guard` — unrelated commands are unaffected.
+>
+> And **`validate-commit` cannot check every commit**. `git commit -F <file>`,
+> `--amend`, an interactive editor, and `-m "$(…)"` all produce their message
+> somewhere the hook cannot see, so those pass unchecked and the last of them
+> says so with a WARN. The check covers `-m`, `-am`, `--message` and the
+> quoted-heredoc form; it is not a guarantee that every commit carries a ticket.
+
 **Safety hooks** are enforced in `minimal` mode because they protect against
 silent data leaks and accidental pushes to protected branches. Disabling them
 requires the explicit `off` profile or naming them in `NEXUS_DISABLED_HOOKS`.

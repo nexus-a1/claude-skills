@@ -41,9 +41,10 @@ else
   exit 1
 fi
 WORK_DIR=$(resolve_artifact work work)
+echo "WORK_DIR=$WORK_DIR"
 ```
 
-Use `$WORK_DIR` instead of hardcoded `.claude/work` throughout this workflow.
+Use `$WORK_DIR` instead of a hardcoded `.claude/work` — but only inside this block. Each later block is its own Bash tool call and does not inherit the variable, so those substitute the value printed above instead.
 
 **Important:** All path references in this skill MUST use `$WORK_DIR`. Never use hardcoded `.claude/work/` paths.
 
@@ -346,12 +347,16 @@ Return: APPROVED / CONDITIONAL (list specific issues) / REJECTED (fundamental re
 Create directory structure:
 
 ```bash
-mkdir -p $WORK_DIR/{epic-id}
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
+mkdir -p <WORK_DIR printed above>/{epic-id}
 ```
 
 For each ticket:
 ```bash
-mkdir -p $WORK_DIR/{epic-id}/{ticket-id}
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
+mkdir -p <WORK_DIR printed above>/{epic-id}/{ticket-id}
 ```
 
 Save files:
@@ -362,19 +367,21 @@ Save files:
 Register active session for the optional `auto-context.sh` PostToolUse hook (no-op when neither `CLAUDE_SESSION_ID` nor `CLAUDE_CODE_SESSION_ID` is set):
 
 ```bash
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
 SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
 if [ -n "$SID" ] && command -v jq >/dev/null 2>&1; then
-  mkdir -p "$WORK_DIR"
-  touch "$WORK_DIR/.active-sessions.lock"
+  mkdir -p "<WORK_DIR printed above>"
+  touch "<WORK_DIR printed above>/.active-sessions.lock"
   (
     flock -x -w 2 200 || exit 0
-    [ -s "$WORK_DIR/.active-sessions" ] || echo '{}' > "$WORK_DIR/.active-sessions"
+    [ -s "<WORK_DIR printed above>/.active-sessions" ] || echo '{}' > "<WORK_DIR printed above>/.active-sessions"
     jq --arg s "$SID" --arg w "{epic-id}" \
-       '. + {($s): $w}' "$WORK_DIR/.active-sessions" \
-       > "$WORK_DIR/.active-sessions.tmp.$$" \
-       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
-       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
-  ) 200>"$WORK_DIR/.active-sessions.lock"
+       '. + {($s): $w}' "<WORK_DIR printed above>/.active-sessions" \
+       > "<WORK_DIR printed above>/.active-sessions.tmp.$$" \
+       && mv "<WORK_DIR printed above>/.active-sessions.tmp.$$" "<WORK_DIR printed above>/.active-sessions" \
+       || rm -f "<WORK_DIR printed above>/.active-sessions.tmp.$$"
+  ) 200>"<WORK_DIR printed above>/.active-sessions.lock"
 fi
 ```
 
@@ -491,18 +498,20 @@ Next Steps
 ```
 
 ```bash
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
 # Clear auto-context sentinel on completion
 SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
 if [ -n "$SID" ] \
-   && [ -f "$WORK_DIR/.active-sessions" ] \
+   && [ -f "<WORK_DIR printed above>/.active-sessions" ] \
    && command -v jq >/dev/null 2>&1; then
   (
     flock -x -w 2 200 || exit 0
-    jq --arg s "$SID" 'del(.[$s])' "$WORK_DIR/.active-sessions" \
-       > "$WORK_DIR/.active-sessions.tmp.$$" \
-       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
-       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
-  ) 200>"$WORK_DIR/.active-sessions.lock"
+    jq --arg s "$SID" 'del(.[$s])' "<WORK_DIR printed above>/.active-sessions" \
+       > "<WORK_DIR printed above>/.active-sessions.tmp.$$" \
+       && mv "<WORK_DIR printed above>/.active-sessions.tmp.$$" "<WORK_DIR printed above>/.active-sessions" \
+       || rm -f "<WORK_DIR printed above>/.active-sessions.tmp.$$"
+  ) 200>"<WORK_DIR printed above>/.active-sessions.lock"
 fi
 ```
 

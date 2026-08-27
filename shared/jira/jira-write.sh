@@ -2,19 +2,34 @@
 # plugin/shared/jira/jira-write.sh
 #
 # Write access to Jira work items via the Atlassian CLI (acli): comment,
-# transition, and assign. Invoked flag-first by plugin/skills/jira/SKILL.md
-# Step 2b, ONLY after an AskUserQuestion confirmation:
+# transition, assign, and create. Invoked flag-first by
+# plugin/skills/jira/SKILL.md Step 2b, ONLY after an AskUserQuestion
+# confirmation:
 #
 #   jira-write.sh --op comment-create --key KEY-123 --body TEXT --confirmed
 #   jira-write.sh --op transition     --key KEY-123 --status NAME --confirmed
 #   jira-write.sh --op assign         --key KEY-123 --assignee VALUE --confirmed
 #   jira-write.sh --op assign         --key KEY-123 --remove-assignee --confirmed
+#   jira-write.sh --op create --project P --type T --summary S [--description D] --confirmed
 #
-# `create` (a new work item) is deliberately NOT implemented here — its
-# success-response shape was never captured live (the ticket owner scoped
-# Wave-0 verification to reusing an existing disposable item, not creating a
-# new one). It is split to a follow-up ticket. See
-# docs/decisions/012-jira-write-verb-contract.md.
+# `create` (CL-44) is the one verb here whose gate is NOT the shared
+# results[] envelope, because its live-captured behaviour differs from every
+# other write verb's on both halves of the contract:
+#
+#   * on success it returns a BARE Jira REST issue object — top-level `key`,
+#     `id`, `self`, `fields`, and no results[]/successCount/totalCount at all;
+#   * on failure it exits NON-ZERO with an empty stdout and plain text on
+#     stderr — there is no JSON failure body to parse.
+#
+# Both were captured live across eleven runs; see addenda 2, 3 and 4 of
+# docs/decisions/012-jira-write-verb-contract.md. So create gates on rc first
+# and then on a top-level `key`, while the mandatory read-back stays exactly
+# as mandatory as everywhere else — partial success (the item is created but
+# a follow-on field write fails) was never reproduced deliberately, so it is
+# unobserved rather than ruled out, and the read-back is its only defence.
+#
+# `create-bulk` remains out of scope: the confirmation model is per-write,
+# and bulk creation needs its own consent design.
 #
 # This file exists SEPARATELY from jira.sh so the read path's structural
 # guarantees (tests/jira/03-invocation-contract.test's source-grep
@@ -25,11 +40,13 @@
 #
 # The core guarantee: a reported success is a VERIFIED success. acli returns
 # exit code 0 even when a write totally fails (confirmed live, see the
-# contract doc above) — this file NEVER trusts rc for success. It gates on
-# the response body's results[0].status + successCount == totalCount == 1,
-# and every op re-reads the affected field afterward as the real authority.
-# Any response this file cannot fully verify reports the ambiguous EX_AMBIGUOUS
-# state, never a false success or a false failure.
+# contract doc above) — NO op in this file ever treats rc as evidence of
+# success. comment/transition/assign gate on the response body's
+# results[0].status + successCount == totalCount == 1; create gates on a
+# top-level `key` (see above). Every op then re-reads the affected item
+# afterward as the real authority. Any response this file cannot fully verify
+# reports the ambiguous EX_AMBIGUOUS state, never a false success or a false
+# failure.
 #
 # Verified against acli 1.3.22-stable, live, on 2026-08-15. See
 # docs/decisions/012-jira-write-verb-contract.md for the exact captured
@@ -47,6 +64,11 @@ source "$JIRA_LIB_DIR/lib.sh"
 # exit, so cleanup is registered once at top level on EXIT.
 OUT_F=""
 ERR_F=""
+# create only: the submitted description is handed to acli as a FILE
+# (--description-file), never as a flag value, because --description-file is
+# the form every live capture in the ADR used. Registered for cleanup here
+# with the other temp files for the same reason they are.
+DESC_F=""
 
 # Set by main() once past every gate, right before dispatching to an op —
 # never for an early usage/validation/config-disabled exit, since those are
@@ -55,10 +77,25 @@ ERR_F=""
 AUDIT_ACTION=""
 AUDIT_KEY=""
 AUDIT_SITE=""
+AUDIT_SITE_RAW=""
+
+# acli's raw `current_profile` label, set alongside them. Kept separate from
+# the displayed site because create's browse URL must resolve from the identity
+# the config is keyed by, not from the string a human reads (CL-49).
+SITE_RAW=""
+
+# Whether SITE_RAW resolved to a hostname — "true"/"false", emitted as
+# `site_resolved` in every write envelope. `site` alone is a display string and
+# on the fallback path reads "<label> (unresolved — …)", so a consumer parsing
+# it as a hostname would silently get prose. The boolean is what makes the two
+# cases machine-distinguishable, matching what `jira.sh --op site` already
+# returns to the confirmation prompt.
+SITE_RESOLVED="false"
 
 _cleanup() {
   [[ -n "$OUT_F" ]] && rm -f "$OUT_F"
   [[ -n "$ERR_F" ]] && rm -f "$ERR_F"
+  [[ -n "$DESC_F" ]] && rm -f "$DESC_F"
   return 0
 }
 
@@ -112,8 +149,9 @@ _audit_write() {
 
   if ! jq -nc \
     --arg action "$AUDIT_ACTION" --arg key "$AUDIT_KEY" --arg site "$AUDIT_SITE" \
+    --arg site_raw "$AUDIT_SITE_RAW" \
     --arg ts "$ts" --arg outcome "$outcome" \
-    '{action:$action, key:$key, site:$site, timestamp:$ts, confirmed:true, outcome:$outcome, verified:($outcome=="success" or $outcome=="failure")}' \
+    '{action:$action, key:$key, site:$site, site_raw:$site_raw, timestamp:$ts, confirmed:true, outcome:$outcome, verified:($outcome=="success" or $outcome=="failure")}' \
     >> "$audit_dir/jira-write-audit.jsonl" 2>/dev/null
   then
     _log "WARNING: could not append to $audit_dir/jira-write-audit.jsonl — this write's audit record was not persisted (AC-SEC-5)." || true
@@ -133,9 +171,13 @@ Usage:
   jira-write.sh --op transition     --key KEY-123 --status NAME --confirmed
   jira-write.sh --op assign         --key KEY-123 --assignee VALUE --confirmed
   jira-write.sh --op assign         --key KEY-123 --remove-assignee --confirmed
+  jira-write.sh --op create --project PROJ --type TYPE --summary TEXT \
+                            [--description TEXT] --confirmed
 
 --confirmed is required on every invocation. Writes are refused unless
 enabled in .claude/configuration.yml (jira.write.enabled: true).
+
+create takes no --key: the key does not exist until Jira assigns one.
 USAGE
 }
 
@@ -160,7 +202,7 @@ jira_validate_body() {
 jira_validate_status() {
   local status="${1:-}"
   [[ -n "$status" ]] || _die "$EX_USER" "No target status supplied. Use --status NAME."
-  # A whitespace-only value would normalize to "" in _normalize_status,
+  # A whitespace-only value would normalize to "" in _normalize_text,
   # matching an absent/blank read-back status and turning a claimed
   # success into a false-positive match instead of a correct ambiguous
   # outcome. Reject before it ever reaches the comparison.
@@ -171,6 +213,39 @@ jira_validate_assignee() {
   local assignee="${1:-}"
   [[ -n "$assignee" ]] || _die "$EX_USER" \
     "No assignee supplied. Use --assignee VALUE (email, account id, or @me), or --remove-assignee to unassign."
+}
+
+# create only. The project key is the one create-time value with a known,
+# checkable shape — and the only one this script can compare the returned
+# key against, which is what makes "the item Jira created is the item this
+# invocation asked for" a checkable claim rather than a trusting one.
+# Deliberately the same character class as jira_validate_key's project half,
+# so a project this accepts can never produce a key the read-back path would
+# then refuse as malformed.
+jira_validate_project() {
+  local project="${1:-}"
+  [[ -n "$project" ]] || _die "$EX_USER" "No project supplied. Use --project PROJ."
+  [[ "$project" =~ ^[A-Z][A-Z0-9]+$ ]] || _die "$EX_USER" \
+    "Invalid project key '$project' — expected an uppercase key of two or more characters, e.g. PROJ."
+}
+
+# Issue types are per-project and unbounded (Epic/Story/Task/Bug/Subtask plus
+# whatever a project has configured), so this is a non-empty check only —
+# exactly the AC-2.3 reasoning that keeps --status off a built-in list. Jira
+# itself rejects an unknown type, and that rejection is now a verified
+# failure this script can report (acli exits non-zero on it — addendum 3).
+jira_validate_type() {
+  local type="${1:-}"
+  [[ -n "${type//[[:space:]]/}" ]] || _die "$EX_USER" "No issue type supplied. Use --type TYPE (e.g. Task, Bug, Story)."
+}
+
+# A whitespace-only summary would create a real work item with a blank title
+# and then read back as a "match" against the equally-blank submitted value —
+# a false success. Rejected before it can reach acli, same rationale as
+# jira_validate_status's whitespace check.
+jira_validate_summary() {
+  local summary="${1:-}"
+  [[ -n "${summary//[[:space:]]/}" ]] || _die "$EX_USER" "No summary supplied. Use --summary TEXT."
 }
 
 # ---------------------------------------------------------------------------
@@ -256,10 +331,20 @@ unresolvable"
 # docs/decisions/012-jira-write-verb-contract.md proved false for write
 # verbs — acli returns rc=0 on total write failure. Success/failure here is
 # decided entirely by _write_gate, from the response body.
+#
+# ACLI_RC records the exit code for the one verb whose rc is load-bearing:
+# `create` exits non-zero on every failure mode probed (addendum 3), unlike
+# comment/transition/assign which exit 0 on total failure. It is RECORDED,
+# never acted on here — each op decides for itself whether rc means anything
+# for its own verb, so the three exit-0-always verbs keep ignoring it exactly
+# as before.
+ACLI_RC=0
+
 _run_acli_write() {
   local what="$1"; shift
   local rc=0
   timeout "$ACLI_TIMEOUT" acli "$@" >"$OUT_F" 2>"$ERR_F" </dev/null || rc=$?
+  ACLI_RC="$rc"
 
   if (( rc == TIMEOUT_RC )); then
     _die "$EX_SYSTEM" "Timed out after ${ACLI_TIMEOUT}s attempting $what. Check your network or try again."
@@ -402,8 +487,8 @@ op_comment_create() {
       "Comment on $key: a new comment (id $new_id) appeared but its body does not match what was submitted. The write may or may not have completed as intended — verify the ticket manually before retrying."
   fi
 
-  jq -n --arg key "$key" --arg id "$new_id" --arg site "$site" \
-    '{key: $key, site: $site, action: "comment", outcome: "success", comment_id: $id}'
+  jq -n --arg key "$key" --arg id "$new_id" --arg site "$site" --argjson resolved "$SITE_RESOLVED" \
+    '{key: $key, site: $site, site_resolved: $resolved, action: "comment", outcome: "success", comment_id: $id}'
 }
 
 # Lowercase + trim only — used solely to compare the requested status
@@ -412,11 +497,18 @@ op_comment_create() {
 # through to the acli call completely untouched). `tr`, not bash 4's
 # ${var,,}: the plugin must not assume a bash newer than macOS's default
 # 3.2 (see jira.sh's own header on avoiding non-portable assumptions).
-_normalize_status() {
+# Leading/trailing whitespace only — the half of _normalize_text that applies
+# where case must be preserved (a summary is user-visible prose; a case
+# difference there is a real difference, a trailing space Jira stripped is not).
+_trim() {
   local s="$1"
   s="${s#"${s%%[![:space:]]*}"}"
   s="${s%"${s##*[![:space:]]}"}"
-  printf '%s' "$s" | tr '[:upper:]' '[:lower:]'
+  printf '%s' "$s"
+}
+
+_normalize_text() {
+  printf '%s' "$(_trim "$1")" | tr '[:upper:]' '[:lower:]'
 }
 
 # Status names pass through verbatim, never validated against a built-in
@@ -450,13 +542,13 @@ op_transition() {
   # requested as e.g. "in progress" must not read back as a false ambiguous
   # just because Jira renders it "In Progress". A real mismatch still exits
   # 40 either way — this only widens what counts as a match, never narrows it.
-  if [[ "$(_normalize_status "$actual_status")" != "$(_normalize_status "$status")" ]]; then
+  if [[ "$(_normalize_text "$actual_status")" != "$(_normalize_text "$status")" ]]; then
     _die "$EX_AMBIGUOUS" \
       "Transition of $key: acli reported success but the ticket now shows status '$actual_status', not the requested '$status'. The write may or may not have completed as intended — verify the ticket manually before retrying."
   fi
 
-  jq -n --arg key "$key" --arg status "$actual_status" --arg site "$site" \
-    '{key: $key, site: $site, action: "transition", outcome: "success", status: $status}'
+  jq -n --arg key "$key" --arg status "$actual_status" --arg site "$site" --argjson resolved "$SITE_RESOLVED" \
+    '{key: $key, site: $site, site_resolved: $resolved, action: "transition", outcome: "success", status: $status}'
 }
 
 # Handles both assign and unassign (--remove-assignee). The no-op case
@@ -507,8 +599,175 @@ op_assign() {
     fi
   fi
 
-  jq -n --arg key "$key" --arg assignee "$actual_assignee" --arg site "$site" \
-    '{key: $key, site: $site, action: "assign", outcome: "success", assignee: $assignee}'
+  jq -n --arg key "$key" --arg assignee "$actual_assignee" --arg site "$site" --argjson resolved "$SITE_RESOLVED" \
+    '{key: $key, site: $site, site_resolved: $resolved, action: "assign", outcome: "success", assignee: $assignee}'
+}
+
+# ---------------------------------------------------------------------------
+# create (US-4 / CL-44)
+# ---------------------------------------------------------------------------
+
+# `jira_resolve_site` returns acli's `current_profile`, a LABEL that on a real
+# OAuth profile is "<cloud_id>:<account_id>" and not a hostname. Resolving that
+# label to the profile's own `site` host now lives in lib.sh
+# (`jira_resolve_site_host` / `jira_clean_site` / `jira_is_hostname`), moved
+# there by CL-49 once the other three verbs and the confirmation prompt needed
+# it too — CL-44 wrote it here when create's browse URL was its only caller.
+
+# The user-facing link for a newly created item, built from the KEY and the
+# configured site — never from the response's `self`, which live capture
+# showed to be a `/rest/api/3/issue/<id>` URL on an internal API host, not
+# anywhere a person can open. Echoes nothing when the site cannot be resolved
+# to a plain hostname, for the reason above.
+_browse_url() {
+  local key="$1" site="$2" host
+  host="$(jira_resolve_site_host "$site")"
+  [[ -n "$host" ]] || return 0
+  printf 'https://%s/browse/%s' "$host" "$key"
+}
+
+# create's own success gate. Deliberately NOT _write_gate: the envelope has
+# no results[]/successCount/totalCount to read (addendum 2), and rc is
+# load-bearing here where it is worthless everywhere else (addendum 3).
+# Echoes the new key on stdout; every other path dies.
+_create_gate() {
+  local what="$1"
+  local stderr_hint=""
+  [[ -s "$ERR_F" ]] && stderr_hint="
+acli stderr: $(_excerpt "$ERR_F")"
+
+  if (( ACLI_RC != 0 )); then
+    # Observed in all eight probed failure modes: exit 1, stdout exactly 0
+    # bytes, the reason as plain text on stderr — client-side validation and
+    # server-side rejection alike. Nothing was created, so this is a VERIFIED
+    # failure (EX_USER), not the ambiguous state.
+    if [[ -s "$OUT_F" ]]; then
+      # Never observed: a non-zero exit that still produced a body. Refusing
+      # to classify it either way is the whole point of EX_AMBIGUOUS —
+      # this is exactly the "a mode that exits differently may still exist"
+      # caveat addendum 3 recorded rather than discharged.
+      _die "$EX_AMBIGUOUS" \
+        "$what: acli exited $ACLI_RC but still returned a response body, a combination never observed. The work item may or may not have been created — check the project in Jira before retrying.
+Received: $(_excerpt "$OUT_F")${stderr_hint}"
+    fi
+    _die "$EX_USER" "Could not create the work item.${stderr_hint}"
+  fi
+
+  if [[ ! -s "$OUT_F" ]]; then
+    _die "$EX_AMBIGUOUS" \
+      "$what: acli exited 0 but produced no output. The work item may or may not have been created — check the project in Jira before retrying.${stderr_hint}"
+  fi
+
+  local new_key
+  if ! new_key=$(jq -r '.key // empty' <"$OUT_F" 2>/dev/null); then
+    _die "$EX_AMBIGUOUS" \
+      "$what: acli's response could not be interpreted as JSON. The work item may or may not have been created — check the project in Jira before retrying.
+Received: $(_excerpt "$OUT_F")${stderr_hint}"
+  fi
+
+  if [[ -z "$new_key" ]]; then
+    # Covers the shared results[] envelope too: if acli ever starts returning
+    # comment-create's shape here, it has no top-level key and lands right
+    # here as ambiguous rather than being silently mis-parsed.
+    _die "$EX_AMBIGUOUS" \
+      "$what: acli's response carried no top-level 'key'. The work item may or may not have been created — check the project in Jira before retrying.
+Received: $(_excerpt "$OUT_F")"
+  fi
+
+  # jira_validate_key's exact pattern, reused rather than re-invented: a key
+  # this accepts is by construction one the read-back below can pass to
+  # jira.sh, so the gate can never hand the next step a key it will refuse.
+  if [[ ! "$new_key" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]]; then
+    _die "$EX_AMBIGUOUS" \
+      "$what: acli returned '${new_key:0:64}' as the new key, which is not a work item key. The work item may or may not have been created — check the project in Jira before retrying."
+  fi
+
+  printf '%s' "$new_key"
+}
+
+# Creates one work item. The read-back asserts ONLY on fields `view --json`
+# actually returns populated (addendum 2 measured that projection at five:
+# assignee, description, issuetype, status, summary) — asserting on project
+# or reporter would fail a CORRECT write, since those come back null from
+# the view projection no matter what the item holds.
+#
+# Description is NOT asserted on, deliberately. It is submitted as plain text
+# and read back through jira.sh's ADF renderer, so a correct write does not
+# round-trip byte-for-byte; comparing them would manufacture ambiguous
+# outcomes for writes that actually landed. Summary (a plain string on both
+# sides) and issue type carry the identity check instead.
+op_create() {
+  local project="$1" type="$2" summary="$3" description="$4" site="$5"
+
+  local argv=(jira workitem create --project "$project" --type "$type" --summary "$summary")
+  if [[ -n "$description" ]]; then
+    DESC_F="$(mktemp)"
+    printf '%s' "$description" >"$DESC_F"
+    argv+=(--description-file "$DESC_F")
+  fi
+  argv+=(--json)
+
+  _run_acli_write "creating a $type in $project" "${argv[@]}"
+
+  local new_key
+  new_key="$(_create_gate "create in $project")"
+
+  # The audit record names the item that was actually created, not just the
+  # project it was aimed at — set as soon as the key is known so every exit
+  # path below (including an ambiguous read-back) records it.
+  AUDIT_KEY="$new_key"
+
+  # acli claims the item exists — now the mandatory, independent read-back.
+  local after actual_summary actual_type actual_status
+  after="$(bash "$JIRA_LIB_DIR/jira.sh" --op view --key "$new_key" 2>/dev/null)" || _die "$EX_AMBIGUOUS" \
+    "Create in $project: acli reported $new_key was created but reading it back failed. The work item may or may not exist as intended — check $new_key in Jira before retrying, rather than creating a second one."
+
+  local actual_key
+  actual_key="$(jq -r '.key // empty' <<<"$after" 2>/dev/null)"
+  actual_summary="$(jq -r '.summary // empty' <<<"$after" 2>/dev/null)"
+  actual_type="$(jq -r '.type // empty' <<<"$after" 2>/dev/null)"
+  actual_status="$(jq -r '.status // empty' <<<"$after" 2>/dev/null)"
+
+  # The item read back must be the item the key names. jira.sh falls back to
+  # the requested key when the response carries none, so this can only fire
+  # on a response that actively disagrees — a moved or redirected item, say —
+  # never on a merely terse one.
+  if [[ "$actual_key" != "$new_key" ]]; then
+    _die "$EX_AMBIGUOUS" \
+      "Create in $project: acli reported $new_key was created but reading that key back returned '${actual_key:0:64}'. The work item may or may not have been created as intended — check $new_key in Jira before retrying, rather than creating a second one."
+  fi
+
+  # Trimmed on both sides, case-sensitive. Jira trims a submitted summary, so
+  # a trailing space would otherwise read back "changed" and turn a perfectly
+  # good write into a false ambiguous. Case is NOT folded: a summary is
+  # user-visible prose, and a case difference there is a real difference.
+  if [[ "$(_trim "$actual_summary")" != "$(_trim "$summary")" ]]; then
+    _die "$EX_AMBIGUOUS" \
+      "Create in $project: $new_key was reported created but its summary reads back as '${actual_summary:0:120}', not the submitted one. The work item may or may not have been created as intended — check $new_key in Jira before retrying, rather than creating a second one."
+  fi
+
+  # Case/whitespace-insensitive for the same reason the transition read-back
+  # is: how acli matches a requested type name against Jira's own rendering
+  # was never live-verified, and a correct write must not read back as a
+  # false ambiguous merely because "bug" is rendered "Bug". A real mismatch
+  # still exits 40 either way.
+  if [[ "$(_normalize_text "$actual_type")" != "$(_normalize_text "$type")" ]]; then
+    _die "$EX_AMBIGUOUS" \
+      "Create in $project: $new_key was reported created but its type reads back as '${actual_type:0:64}', not the requested '$type'. The work item may or may not have been created as intended — check $new_key in Jira before retrying, rather than creating a second one."
+  fi
+
+  # From SITE_RAW, not from $site: $site is the display string, which carries
+  # the "(unresolved …)" annotation when the label did not resolve and would
+  # never be a hostname anyway. Building the URL from the raw label keeps
+  # create's link behaviour byte-identical to CL-44's.
+  local url
+  url="$(_browse_url "$new_key" "$SITE_RAW")"
+
+  jq -n --arg key "$new_key" --arg site "$site" --argjson resolved "$SITE_RESOLVED" --arg type "$actual_type" \
+        --arg summary "$actual_summary" --arg status "$actual_status" --arg url "$url" \
+    '{key: $key, site: $site, site_resolved: $resolved, action: "create", outcome: "success",
+      type: $type, summary: $summary, status: $status,
+      url: (if $url == "" then null else $url end)}'
 }
 
 # ---------------------------------------------------------------------------
@@ -521,13 +780,22 @@ _need_value() {
 main() {
   local op="" key="" confirmed="false"
   local body="" status="" assignee="" remove_assignee="false"
+  local project="" type="" summary="" description="" key_given="false"
 
   while (( $# > 0 )); do
     case "$1" in
       --op=*)             op="${1#--op=}";               shift ;;
       --op)               _need_value $# "--op";            op="$2";           shift 2 ;;
-      --key=*)            key="${1#--key=}";              shift ;;
-      --key)              _need_value $# "--key";           key="$2";          shift 2 ;;
+      --key=*)            key="${1#--key=}"; key_given="true";             shift ;;
+      --key)              _need_value $# "--key";           key="$2"; key_given="true"; shift 2 ;;
+      --project=*)        project="${1#--project=}";      shift ;;
+      --project)           _need_value $# "--project";       project="$2";      shift 2 ;;
+      --type=*)           type="${1#--type=}";            shift ;;
+      --type)              _need_value $# "--type";          type="$2";         shift 2 ;;
+      --summary=*)        summary="${1#--summary=}";      shift ;;
+      --summary)           _need_value $# "--summary";       summary="$2";      shift 2 ;;
+      --description=*)    description="${1#--description=}"; shift ;;
+      --description)       _need_value $# "--description";   description="$2";  shift 2 ;;
       --body=*)           body="${1#--body=}";            shift ;;
       --body)              _need_value $# "--body";          body="$2";         shift 2 ;;
       --status=*)         status="${1#--status=}";        shift ;;
@@ -560,8 +828,17 @@ main() {
   fi
 
   case "$op" in
-    comment-create|transition|assign) ;;
-    *) _usage; _die "$EX_USER" "Unsupported operation '$op'. Supported: comment-create, transition, assign." ;;
+    comment-create|transition|assign|create) ;;
+    # create-bulk is named explicitly rather than falling into the generic
+    # arm: it is a real acli verb whose omission is a deliberate consent
+    # decision, not an oversight, and a caller reaching for it deserves to
+    # be told which of those it is.
+    create-bulk)
+      _usage
+      _die "$EX_USER" \
+        "jira-write.sh: 'create-bulk' is not supported. Every write here targets exactly one item and carries its own confirmation; bulk creation needs its own consent design."
+      ;;
+    *) _usage; _die "$EX_USER" "Unsupported operation '$op'. Supported: comment-create, transition, assign, create." ;;
   esac
 
   # --confirmed is a loud-failure guard against an ACCIDENTAL direct
@@ -570,11 +847,26 @@ main() {
   [[ "$confirmed" == "true" ]] || _die "$EX_USER" \
     "jira-write.sh: --confirmed is required. This performs a real Jira write and must not run without explicit confirmation."
 
-  jira_validate_key "$key"
+  # create is the one op with no key to validate — the key does not exist
+  # until Jira assigns one. A --key passed anyway is refused rather than
+  # ignored: it names a target this op cannot honour, so the executed write
+  # would not be the one the caller described (the same reasoning that makes
+  # --assignee + --remove-assignee a rejection rather than a precedence rule).
+  if [[ "$op" == "create" ]]; then
+    [[ "$key_given" != "true" ]] || _die "$EX_USER" \
+      "jira-write.sh: --key is not accepted for --op create. A new work item's key is assigned by Jira; pass --project, --type and --summary instead."
+  else
+    jira_validate_key "$key"
+  fi
 
   case "$op" in
     comment-create) jira_validate_body "$body" ;;
     transition)     jira_validate_status "$status" ;;
+    create)
+      jira_validate_project "$project"
+      jira_validate_type "$type"
+      jira_validate_summary "$summary"
+      ;;
     assign)
       if [[ "$remove_assignee" == "true" && -n "$assignee" ]]; then
         _die "$EX_USER" \
@@ -618,19 +910,46 @@ Enable them by adding to .claude/configuration.yml:
 
   OUT_F="$(mktemp)"; ERR_F="$(mktemp)"
 
-  local site
-  site="$(jira_resolve_site)"
+  # Two values, deliberately. SITE_RAW is acli's `current_profile` — the
+  # identity the config is keyed by, and the only thing create's browse URL can
+  # be resolved from. $site is what a human is shown: the resolved hostname, or
+  # the raw label marked unresolved (CL-49). Every user-facing field below
+  # carries the second; nothing resolves from the first except the URL.
+  local site site_host
+  SITE_RAW="$(jira_resolve_site)"
+  site="$(jira_site_display "$SITE_RAW")"
+  # Decided by whether a host came back, never by comparing display against raw:
+  # a profile whose label already IS its hostname resolves to itself, and a
+  # string comparison would report that — the one unambiguous case — as
+  # unresolved. Same rule jira.sh's `site` op applies.
+  site_host="$(jira_resolve_site_host "$SITE_RAW")"
+  [[ -n "$site_host" ]] && SITE_RESOLVED="true"
 
   # From here on this IS a write attempt (AC-SEC-5) — every exit path below,
   # success or not, is captured by the _audit_write EXIT trap.
   AUDIT_ACTION="$op"
-  AUDIT_KEY="$key"
+  # create has no key yet; op_create overwrites this the moment Jira returns
+  # one, so a record is never lost even if the read-back then comes back
+  # ambiguous. Until then the record still names the target project, so an
+  # attempt that failed before any key existed is auditable too.
+  if [[ "$op" == "create" ]]; then
+    AUDIT_KEY="(new item in $project)"
+  else
+    AUDIT_KEY="$key"
+  fi
   AUDIT_SITE="$site"
+  # The audit record keeps the RAW label too. The displayed hostname is the
+  # readable half, but `current_profile` is the identity acli keys by and the
+  # only value that still means something if the config is later edited — an
+  # audit trail that kept only the rendered string would have quietly changed
+  # format when CL-49 changed what `site` displays.
+  AUDIT_SITE_RAW="$SITE_RAW"
 
   case "$op" in
     comment-create) op_comment_create "$key" "$body" "$site" ;;
     transition)     op_transition "$key" "$status" "$site" ;;
     assign)         op_assign "$key" "$assignee" "$remove_assignee" "$site" ;;
+    create)         op_create "$project" "$type" "$summary" "$description" "$site" ;;
   esac
 }
 

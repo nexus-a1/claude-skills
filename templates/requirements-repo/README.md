@@ -54,21 +54,45 @@ requirements-repo/
 
 ### Step 1: Create Repository
 
+Point `REPO_DIR` wherever you keep the repository — the path below is only a
+default. Check it before changing into it: `cd ""` returns success and stays
+put, so an empty or unset value leaves you in whatever directory you started
+from, and every command after it runs against that repository instead.
+
 ```bash
-# Create new repository
-mkdir requirements-repo
-cd requirements-repo
-git init
+REPO_DIR="$HOME/requirements-repo"
+[ -n "$REPO_DIR" ] || exit 1
+mkdir -p "$REPO_DIR"
+cd "$REPO_DIR" || exit 1
+git init -b main   # the push below says main; do not leave it to the default
 
 # Copy templates from claude-skills
 cp -r /path/to/claude-skills/plugin/templates/requirements-repo/* .
-
-# Initial commit
 git add .
-git commit -m "Initial requirements repository setup"
+```
 
-# Optional: Push to remote
+Commit on its own, in the same shell as the block above — these blocks are
+split, not independent, and each relies on the working directory the first one
+set. Claude Code's `git-mutation-guard.sh` hook scans staged content for
+credentials, and it reads a whole Bash tool call anchored at the start, so
+anything ahead of `git commit` in the same call skips the scan.
+
+```bash
+git commit -m "Initial requirements repository setup"
+```
+
+Optional: add a remote.
+
+```bash
 git remote add origin https://github.com/your-org/requirements-repo.git
+```
+
+The push goes in its own call for the same reason — behind another command it
+gets no credential scan, no branch protection and no audit gate, and none of
+that failure is visible. Same shell again: run it from the repository, not from
+a fresh terminal, or you will push whatever project you happen to be sitting in.
+
+```bash
 git push -u origin main
 ```
 
@@ -308,13 +332,22 @@ Verify:
 
 ### Merge Conflicts
 
-If multiple developers archive simultaneously:
+If multiple developers archive simultaneously, rebase onto their work first:
+
 ```bash
-cd requirements-repo
+REPO_DIR="$HOME/requirements-repo"
+[ -n "$REPO_DIR" ] || exit 1
+cd "$REPO_DIR" || exit 1
 git pull --rebase
-# Resolve conflicts in index.json
+# Resolve the conflicts in index.json, then:
 git add index.json
 git rebase --continue
+```
+
+Push separately, from the same shell — behind `git rebase` in one call it would
+get no credential scan, no branch protection and no audit gate, silently.
+
+```bash
 git push
 ```
 

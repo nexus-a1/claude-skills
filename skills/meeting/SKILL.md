@@ -109,7 +109,25 @@ the work session store.
 Whenever a mode resolves an *existing* meeting, **rebind `MDIR` to the directory
 it was actually found in** — not unconditionally to `$MEETINGS_DIR`:
 
+**Where these values come from.** Shell state does not survive between Bash tool
+calls: `MDIR` is printed by the block that resolves it and substituted into later
+blocks as the literal `<MDIR printed above>`, while `MEETINGS_DIR`, `RENDER` and
+the `resolve_meeting_dir` function are re-derived in each block that needs them.
+A `$MDIR` carried across a call boundary is empty, and `"$MDIR/summary.html"`
+then writes to `/summary.html` — at the filesystem root, with no error.
+
 ```bash
+# resolve_meeting_dir and find_in_progress_meetings are defined by a sourced
+# file, and a sourced FUNCTION survives a Bash tool call no better than a
+# variable does — without this the block fails with "command not found".
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/meeting/resolve-meeting-dir.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/meeting/resolve-meeting-dir.sh"
+elif [ -f "$HOME/.claude/shared/meeting/resolve-meeting-dir.sh" ]; then
+  source "$HOME/.claude/shared/meeting/resolve-meeting-dir.sh"
+else
+  echo "ERROR: resolve-meeting-dir.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
 # Resolve {slug} to the directory that holds it. The argument may be a bare
 # slug (newest match wins) or a full directory name. resolve_meeting_dir
 # searches both roots and both naming shapes — see
@@ -158,6 +176,28 @@ diffable). Confirm the slug with the user if ambiguous.
 **VALIDATION** — `{slug}` becomes a directory name; guard it at runtime:
 
 ```bash
+# resolve_meeting_dir is defined by a sourced file, and a sourced function no
+# more survives between Bash tool calls than a variable does — source it here.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/meeting/resolve-meeting-dir.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/meeting/resolve-meeting-dir.sh"
+elif [ -f "$HOME/.claude/shared/meeting/resolve-meeting-dir.sh" ]; then
+  source "$HOME/.claude/shared/meeting/resolve-meeting-dir.sh"
+else
+  echo "ERROR: resolve-meeting-dir.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+# MEETINGS_DIR was resolved in the configuration block above, and that value did
+# not survive into this call either — resolve it again here.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+MEETINGS_DIR=$(resolve_artifact meetings meetings)
+
 case "{slug}" in
   *[!a-z0-9-]*|''|-*|*-) echo "ERROR: unsafe slug '{slug}' — expected kebab-case [a-z0-9-], no slashes/dots" >&2; exit 1 ;;
 esac
@@ -221,10 +261,10 @@ PARTIES_JSON=$(cat <<'PARTIES_EOF' | jq -R 'select(length > 0)' | jq -s .
 {parties_one_per_line}
 PARTIES_EOF
 )
-tmp="$MDIR/.state.json.tmp.$$"
+tmp="<MDIR printed above>/.state.json.tmp.$$"
 jq --arg topic "$SUBJECT" --argjson parties "$PARTIES_JSON" --arg t "$NOW" \
   '.topic=$topic | .parties=$parties | .updated_at=$t' \
-  "$MDIR/state.json" > "$tmp" && mv "$tmp" "$MDIR/state.json" || rm -f "$tmp"
+  "<MDIR printed above>/state.json" > "$tmp" && mv "$tmp" "<MDIR printed above>/state.json" || rm -f "$tmp"
 ```
 
 Then start `meeting-record.md` from the Meeting-Record schema with
@@ -316,6 +356,17 @@ branch that applies:
   discovered path **directly**:
 
   ```bash
+  # resolve_meeting_dir and find_in_progress_meetings are defined by a sourced
+  # file, and a sourced FUNCTION survives a Bash tool call no better than a
+  # variable does — without this the block fails with "command not found".
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/meeting/resolve-meeting-dir.sh" ]; then
+    source "${CLAUDE_PLUGIN_ROOT}/shared/meeting/resolve-meeting-dir.sh"
+  elif [ -f "$HOME/.claude/shared/meeting/resolve-meeting-dir.sh" ]; then
+    source "$HOME/.claude/shared/meeting/resolve-meeting-dir.sh"
+  else
+    echo "ERROR: resolve-meeting-dir.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+    exit 1
+  fi
   find_in_progress_meetings   # emits "path<TAB>slug<TAB>status", both roots/shapes
   ```
 
@@ -351,11 +402,11 @@ Set `Status: Draft`.
 
 ```bash
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-tmp="$MDIR/.state.json.tmp.$$"
+tmp="<MDIR printed above>/.state.json.tmp.$$"
 jq --arg t "$NOW" '.status="wrapped" | .wrapped_at=$t | .updated_at=$t' \
-  "$MDIR/state.json" > "$tmp" && mv "$tmp" "$MDIR/state.json" || rm -f "$tmp"
+  "<MDIR printed above>/state.json" > "$tmp" && mv "$tmp" "<MDIR printed above>/state.json" || rm -f "$tmp"
 # Set the record header Status to "wrapped" via the Edit tool as well.
-echo "WRAPPED=$MDIR"
+echo "WRAPPED=<MDIR printed above>"
 ```
 
 **Step W4.5 — Catalog in the meetings manifest** (see `manifest-schema.md`'s
@@ -494,6 +545,16 @@ required. Do this for `summary.md` always, and `changes.md` unless `--lite`.
 ```bash
 RENDER="${CLAUDE_PLUGIN_ROOT}/shared/render-doc-html.sh"
 [ -f "$RENDER" ] || RENDER="$HOME/.claude/shared/render-doc-html.sh"
+
+# The title is free text the user wrote, so it goes to a file through a QUOTED
+# heredoc and never onto a command line. Substituted directly into --title "…",
+# a title containing a quote closes the argument and the rest runs as commands;
+# one containing $( ) or backticks is executed outright. The quoted delimiter is
+# what disables that — an unquoted one would expand the body as it is written.
+cat > "<MDIR printed above>/.doc-title" <<'MEETING_TITLE_EOF'
+{Meeting Title}
+MEETING_TITLE_EOF
+TITLE="$(cat "<MDIR printed above>/.doc-title")"
 # Only exit 3 (pandoc absent) means "fall back to a caller-authored body".
 # Exit 2 (usage / missing input file) is a real error — surface it rather
 # than mislabel it as PANDOC_ABSENT and silently fall back over a genuine bug.
@@ -506,9 +567,12 @@ render_doc() {  # $1=title  $2=out  $3=md  $4=label
     echo "RENDER_ERROR_$4 — bad inputs ($3); fix, do NOT fall back" >&2
   fi
 }
-render_doc "{Meeting Title}" "$MDIR/summary.html" "$MDIR/summary.md" summary
+render_doc "$TITLE" "<MDIR printed above>/summary.html" "<MDIR printed above>/summary.md" summary
 # repeat for changes.md unless --lite:
-render_doc "Changes — {Meeting Title}" "$MDIR/changes.html" "$MDIR/changes.md" changes
+render_doc "Changes — $TITLE" "<MDIR printed above>/changes.html" "<MDIR printed above>/changes.md" changes
+# The title file stays: the pandoc-absent fallback below is a separate Bash
+# call and re-reads it, since shell variables do not survive between calls.
+# MDIR is substituted rather than carried, for the same reason.
 ```
 
 **If it printed `PANDOC_ABSENT_*`** (exit 3 — pandoc not installed), author the
@@ -518,7 +582,14 @@ lists → `<ul>/<ol>`) — no markdown parser needed. Write it with the **Write*
 to `$MDIR/{summary|changes}-body.html`, then wrap it:
 
 ```bash
-bash "$RENDER" --title "{Meeting Title}" --out "$MDIR/summary.html" --body-file "$MDIR/summary-body.html"
+# RENDER was set in the pandoc block above and did not survive into this call.
+# It is a fixed plugin path, so re-derive it rather than carrying it. TITLE
+# comes back from the file that block wrote — a file crosses a call boundary,
+# a variable does not.
+RENDER="${CLAUDE_PLUGIN_ROOT}/shared/render-doc-html.sh"
+[ -f "$RENDER" ] || RENDER="$HOME/.claude/shared/render-doc-html.sh"
+TITLE="$(cat "<MDIR printed above>/.doc-title")"
+bash "$RENDER" --title "$TITLE" --out "<MDIR printed above>/summary.html" --body-file "<MDIR printed above>/summary-body.html"
 echo "HTML_OK=summary"
 ```
 

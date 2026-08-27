@@ -3,7 +3,7 @@ name: create-release
 category: release-management
 model: claude-haiku-4-5
 userInvocable: true
-description: Push a release branch and open a PR to the target branch. Step 2 of the release workflow — runs after branching, before merging.
+description: Push a release branch and open a PR to the target branch. Takes an optional target branch and version. Step 2 of the release workflow — runs after branching, before merging.
 argument-hint: "[target-branch] [version]"
 allowed-tools: "Bash(pwd:*), Bash(echo:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git fetch:*), Bash(git log:*), Bash(git remote:*), Bash(bash:*), Bash(gh pr list:*), Bash(gh pr view:*), AskUserQuestion, Write"
 ---
@@ -11,6 +11,19 @@ allowed-tools: "Bash(pwd:*), Bash(echo:*), Bash(git rev-parse:*), Bash(git branc
 # Create Release PR Command
 
 > Workflow: `/create-release-branch` → **`/create-release`** → `/merge-release` → `/release`
+
+## Usage
+
+```bash
+/create-release                     # prompts for the version
+/create-release master              # explicit target branch
+/create-release master v1.2.0       # explicit target and version
+```
+
+Both arguments are optional. The target defaults to the repo's default branch.
+The version is **not** inferred from the branch you are on — with none supplied
+the parser reports it missing, `version-suggest.sh` proposes one from the repo's
+release tags/branches and the commits since, and you pick.
 
 ## Context
 

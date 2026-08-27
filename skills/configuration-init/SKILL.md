@@ -69,6 +69,16 @@ WRITE_CONFIG=".claude/configuration.yml"
 If `$EXISTING_CONFIG` is found (in current or parent directory), read it and show current state. Read the location and artifact names out of the file rather than listing them from memory — a fixed list here would misreport any config that differs from it:
 
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+EXISTING_CONFIG="$CONFIG"
 yq -r '.storage.locations // {} | keys | join(", ")' "$EXISTING_CONFIG"
 yq -r '.storage.artifacts // {} | keys | join(", ")' "$EXISTING_CONFIG"
 ```
@@ -226,11 +236,15 @@ Show setup instructions and stop the repository section:
 To create a team-knowledge repository:
 
   mkdir team-knowledge
-  cd team-knowledge
-  git init
+  cd team-knowledge || exit 1
+  git init -b main
   mkdir requirements proposals
   cp -r ${CLAUDE_PLUGIN_ROOT}/templates/requirements-repo/* requirements/  # or ~/.claude/templates/requirements-repo/ for local/dev copies; skip if templates not present
-  git add . && git commit -m "Initial setup"
+  git add .
+
+  # Then, as its own command — a compound `git add . && git commit` starts with
+  # `git add`, and the credential scan only runs on a LEADING `git commit`:
+  git commit -m "Initial setup"
 
 Then re-run /configuration-init to connect it.
 
@@ -888,6 +902,9 @@ fi
 
 **config-json-to-yml** (uses `yq` to convert JSON to YAML):
 ```bash
+# The literal already printed in the plan — NOT a fresh `date`. A new value
+# would put backups at a suffix the user never saw.
+TIMESTAMP=<the literal timestamp printed in the plan>
 artifact_backup_once ".claude/configuration.json" "${TIMESTAMP}" || exit 1
 yq -P '.' ".claude/configuration.json" > ".claude/configuration.yml"
 # Only remove original after successful YAML write
@@ -898,6 +915,9 @@ fi
 
 **state-rename** (add `type` field, rename file). Plan entries are `state-rename:<path-to-old-file>:<type>`, so bind all three variables first — with the backup now checked, leaving `old_path` unset aborts the migration rather than silently doing nothing:
 ```bash
+# The literal already printed in the plan — NOT a fresh `date`. A new value
+# would put backups at a suffix the user never saw.
+TIMESTAMP=<the literal timestamp printed in the plan>
 entry="${plan_entry}"                 # e.g. state-rename:.claude/work/X/requirements-state.json:requirements
 type_field="${entry##*:}"
 old_path="${entry#state-rename:}"; old_path="${old_path%:*}"
@@ -916,12 +936,18 @@ fi
 
 **rename-key** (update a top-level YAML key, preserve structure):
 ```bash
+# The literal already printed in the plan — NOT a fresh `date`. A new value
+# would put backups at a suffix the user never saw.
+TIMESTAMP=<the literal timestamp printed in the plan>
 artifact_backup_once "${file}" "${TIMESTAMP}" || exit 1
 yq -i '.product_knowledge = .domain_knowledge | del(.domain_knowledge)' "${file}"
 ```
 
 **location-rename** (rename a storage location and repoint every artifact that used it). Plan entries have the form `location-rename:<config-path>:<old>:<new>`. **Apply every one of these before any `artifact-backfill` entry** — a backfill whose location has not been renamed yet is skipped, and the run would report success while leaving the config exactly as drifted as it found it:
 ```bash
+# The literal already printed in the plan — NOT a fresh `date`. A new value
+# would put backups at a suffix the user never saw.
+TIMESTAMP=<the literal timestamp printed in the plan>
 entry="${plan_entry}"                  # e.g. location-rename:.claude/configuration.yml:team-repo:team-knowledge
 new="${entry##*:}"
 rest="${entry%:*}"; old="${rest##*:}"
@@ -938,6 +964,19 @@ The rename and the artifact repointing are one write inside the library, so ther
 
 **artifact-backfill** (add one missing artifact using the template's mapping). Plan entries have the form `artifact-backfill:<config-path>:<artifact-name>`, so split on the last colon — an artifact name never contains one:
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+TEMPLATE=$(artifact_template_path) || TEMPLATE=""
+# The literal already printed in the plan — NOT a fresh `date`. A new value
+# would put backups at a suffix the user never saw.
+TIMESTAMP=<the literal timestamp printed in the plan>
 entry="${plan_entry}"                  # e.g. artifact-backfill:.claude/configuration.yml:meetings
 name="${entry##*:}"
 file="${entry#artifact-backfill:}"; file="${file%:*}"

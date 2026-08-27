@@ -3,14 +3,29 @@ name: release
 category: release-management
 model: claude-haiku-4-5
 userInvocable: true
-description: Create a GitHub release with a version tag and LLM-authored release notes. Supports pre-releases. Final step of the release workflow.
-argument-hint: "[version] [branch] [--pre-release] [--fasttrack|-y|--yes]"
+description: Create a GitHub release with a version tag and LLM-authored release notes. Takes an optional version and source branch; --pre-release marks it a pre-release, --fasttrack (-y / --yes) skips the confirmation prompt. Final step of the release workflow.
+argument-hint: "[version] [branch] [--pre-release|--prerelease] [--fasttrack|-y|--yes]"
 allowed-tools: "Bash(pwd:*), Bash(echo:*), Bash(grep:*), Bash(git rev-parse:*), Bash(git branch:*), Bash(git fetch:*), Bash(git tag:*), Bash(git log:*), Bash(bash:*), Bash(gh pr list:*), Bash(gh release view:*), AskUserQuestion, Skill, Write"
 ---
 
 # Release Command
 
 > Workflow: `/create-release-branch` → `/create-release` → `/merge-release` → **`/release`**
+
+## Usage
+
+```bash
+/release                                  # interactive — suggests the version bump
+/release v1.0.2                           # stable release from the default branch
+/release v1.0.2 develop                   # stable release from another branch
+/release v1.2.0-rc.1 --pre-release        # explicit pre-release
+/release v1.2.0-rc.1 release/v1.2.0       # a release/* branch implies --pre-release
+/release v1.0.2 -y                        # skip the confirmation prompt
+```
+
+`--prerelease` is accepted as an alias of `--pre-release`, and `--yes` /
+`--fasttrack` as aliases of `-y`. Fasttrack still aborts rather than
+auto-routing when the workflow case needs a decision — see Important Notes.
 
 ## Context
 

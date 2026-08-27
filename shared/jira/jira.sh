@@ -96,8 +96,9 @@ _usage() {
 Usage:
   jira.sh --op view         --key KEY-123
   jira.sh --op comment-list --key KEY-123 [--limit N]
+  jira.sh --op site
 
-Read-only. Supported operations: view, comment-list.
+Read-only. Supported operations: view, comment-list, site.
 USAGE
 }
 
@@ -295,16 +296,20 @@ main() {
 
   if [[ -z "$op" ]]; then
     _usage
-    _die "$EX_USER" "No operation supplied. Use --op view or --op comment-list."
+    _die "$EX_USER" "No operation supplied. Use --op view, --op comment-list, or --op site."
   fi
 
   case "$op" in
-    view|comment-list) ;;
-    *) _usage; _die "$EX_USER" "Unsupported operation '$op'. Supported: view, comment-list." ;;
+    view|comment-list|site) ;;
+    *) _usage; _die "$EX_USER" "Unsupported operation '$op'. Supported: view, comment-list, site." ;;
   esac
 
-  jira_validate_key "$key"
-  limit="$(jira_validate_limit "$limit")"
+  # `site` is the one operation that names no work item (see below), so it is
+  # the one operation with no key to validate.
+  if [[ "$op" != "site" ]]; then
+    jira_validate_key "$key"
+    limit="$(jira_validate_limit "$limit")"
+  fi
 
   local _master_state
   _master_state="$(jira_master_enabled)"
@@ -312,6 +317,41 @@ main() {
     _die "$EX_USER" \
       "Jira integration is disabled for this project (jira.enabled: false in .claude/configuration.yml).
 Run /configuration-init to re-enable it, or edit the config directly."
+  fi
+
+  # `site` names no work item, so there is no key to validate and nothing to
+  # ask acli for — it reads acli's own config and answers which tenant a
+  # request would go to. It exists because the write path's confirmation
+  # prompt has to name the tenant BEFORE the write runs (CL-18 AC-SEC-1), and
+  # by then jira-write.sh has not been invoked yet.
+  #
+  # Placed after the master gate so a project with jira.enabled:false gets the
+  # same refusal every other operation gets, and before jira_preflight because
+  # this reads a config file — it needs neither acli on PATH nor an
+  # authenticated session, and an unauthenticated install is exactly when a
+  # caller most needs to be told the site is unknown rather than handed an
+  # error.
+  if [[ "$op" == "site" ]]; then
+    # Skipping jira_preflight also skips its dependency check, and this branch
+    # still shells out to both tools. Without this guard an install missing jq
+    # dies rc=127 with "jq: command not found" — outside the documented 0/20/30
+    # contract, and unreadable to a caller that only knows those three. acli
+    # itself is deliberately NOT required: this reads a config file.
+    command -v jq >/dev/null 2>&1 || _die "$EX_SYSTEM" "jq is required but was not found on PATH."
+    command -v yq >/dev/null 2>&1 || _die "$EX_SYSTEM" "yq is required but was not found on PATH."
+
+    local raw display host resolved
+    raw="$(jira_resolve_site)"
+    display="$(jira_site_display "$raw")"
+    # Resolution is decided by whether a host came back, never by comparing
+    # display against raw: a profile whose label already IS its hostname
+    # resolves to itself, and a string comparison would report that — the one
+    # unambiguous case — as unresolved.
+    host="$(jira_resolve_site_host "$raw")"
+    resolved=$([[ -n "$host" ]] && echo true || echo false)
+    jq -n --arg site "$display" --arg profile "$raw" --argjson resolved "$resolved" \
+      '{site: $site, profile: $profile, resolved: $resolved}'
+    return 0
   fi
 
   jira_preflight

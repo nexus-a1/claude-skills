@@ -68,6 +68,11 @@ mkdir -p "$REFACTOR_WORKSPACE"
 # Create worktree only for services that need changes
 for svc in {affected_services}; do
   svc_path=$(resolve_service_path "$svc")
+  # A rejected service NAME returns 1 with EMPTY stdout (a rejected PATH is
+  # different: it falls back to the name-is-the-directory convention). `git -C ""`
+  # is a documented no-op that runs in the CURRENT repo, so an unguarded empty
+  # value here creates the worktree in whatever repository the session is in.
+  [ -n "$svc_path" ] || { echo "skipping $svc: no usable path" >&2; continue; }
   wt_path="${REFACTOR_WORKSPACE}/${svc}"
   [[ -d "$wt_path" ]] && continue
   git -C "$svc_path" worktree add "$wt_path" HEAD

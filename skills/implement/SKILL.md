@@ -50,9 +50,10 @@ else
 fi
 WORK_DIR=$(resolve_artifact work work)
 QA_EXEC_MODE=$(resolve_exec_mode qa_review team)
+echo "WORK_DIR=$WORK_DIR"
 ```
 
-Use `$WORK_DIR` instead of hardcoded `.claude/work` throughout this workflow.
+Use `$WORK_DIR` instead of a hardcoded `.claude/work` — but only inside this block. Each later block is its own Bash tool call and does not inherit the variable, so those substitute the value printed above instead.
 Use `$QA_EXEC_MODE` to determine team vs sub-agent behavior in Phase 4 (QA).
 
 **Important:** All path references in this skill MUST use `$WORK_DIR`. Never use hardcoded `.claude/work/` paths.
@@ -124,7 +125,7 @@ If no arguments provided, scan for incomplete implementations:
 
 ```bash
 # Check for work directories with incomplete implementation
-ls -1 $WORK_DIR/*/state.json 2>/dev/null
+ls -1 <WORK_DIR printed above>/*/state.json 2>/dev/null
 ```
 
 **If incomplete work found:**
@@ -158,31 +159,34 @@ later, so the state.json requirement below is waived under the same condition:
 
 ```bash
 EPIC_TICKET_NO_STATE=false
-PARENT_DIR="$(dirname "$WORK_DIR/{identifier}")"
-if [[ ! -f "$WORK_DIR/{identifier}/state.json" ]] \
-   && [[ -f "$WORK_DIR/{identifier}/spec.md" ]] \
+PARENT_DIR="$(dirname "<WORK_DIR printed above>/{identifier}")"
+if [[ ! -f "<WORK_DIR printed above>/{identifier}/state.json" ]] \
+   && [[ -f "<WORK_DIR printed above>/{identifier}/spec.md" ]] \
    && [[ -f "$PARENT_DIR/EPIC_PLAN.md" ]]; then
   EPIC_TICKET_NO_STATE=true
-  echo "✓ Epic ticket detected ($WORK_DIR/{identifier}/spec.md + $PARENT_DIR/EPIC_PLAN.md) — no per-ticket state.json expected yet"
+  echo "✓ Epic ticket detected (<WORK_DIR printed above>/{identifier}/spec.md + $PARENT_DIR/EPIC_PLAN.md) — no per-ticket state.json expected yet"
 fi
 ```
 
 **VALIDATION** (required, skipped when `EPIC_TICKET_NO_STATE == true`):
 ```bash
+# Substitute the literal the earlier block printed: this is a decision already
+# made, and recomputing it here would re-decide it against different inputs.
+EPIC_TICKET_NO_STATE=<EPIC_TICKET_NO_STATE printed above>
 if [[ "$EPIC_TICKET_NO_STATE" == false ]]; then
   # CRITICAL: Verify requirements state file exists
-  if [[ ! -f "$WORK_DIR/{identifier}/state.json" ]]; then
+  if [[ ! -f "<WORK_DIR printed above>/{identifier}/state.json" ]]; then
     echo "ERROR: No requirements found for {identifier}"
-    echo "Expected: $WORK_DIR/{identifier}/state.json"
+    echo "Expected: <WORK_DIR printed above>/{identifier}/state.json"
     echo ""
     echo "Please run /create-requirements first (or /epic for a ticketed sub-ticket)."
     exit 1
   fi
 
   # Validate requirements state file is valid JSON
-  if ! jq empty "$WORK_DIR/{identifier}/state.json" 2>/dev/null; then
+  if ! jq empty "<WORK_DIR printed above>/{identifier}/state.json" 2>/dev/null; then
     echo "ERROR: Corrupted requirements state file"
-    echo "File: $WORK_DIR/{identifier}/state.json"
+    echo "File: <WORK_DIR printed above>/{identifier}/state.json"
     echo ""
     echo "The state file is not valid JSON. It may have been corrupted."
     echo "You may need to regenerate requirements."
@@ -190,7 +194,7 @@ if [[ "$EPIC_TICKET_NO_STATE" == false ]]; then
   fi
 
   # Validate requirements phase completed
-  req_status=$(jq -r '.status' "$WORK_DIR/{identifier}/state.json")
+  req_status=$(jq -r '.status' "<WORK_DIR printed above>/{identifier}/state.json")
   if [[ "$req_status" != "completed" ]]; then
     echo "WARNING: Requirements phase status is: $req_status"
     echo "Expected: completed"
@@ -204,6 +208,9 @@ fi
 ```
 
 ```bash
+# Substitute the literal the earlier block printed: this is a decision already
+# made, and recomputing it here would re-decide it against different inputs.
+EPIC_TICKET_NO_STATE=<EPIC_TICKET_NO_STATE printed above>
 if [[ "$EPIC_TICKET_NO_STATE" == true ]]; then
   # No state.json to read yet — identifier is the argument itself, and the
   # feature branch is resolved/created in the checkout step below (it may
@@ -213,23 +220,23 @@ if [[ "$EPIC_TICKET_NO_STATE" == true ]]; then
   base_branch=""
 else
   # Load and parse state files
-  identifier=$(jq -r '.identifier' "$WORK_DIR/{identifier}/state.json")
+  identifier=$(jq -r '.identifier' "<WORK_DIR printed above>/{identifier}/state.json")
   # After the 0.3 type transition (requirements -> implementation), branches
   # move under .requirements.branches; a fresh requirements-phase state.json
   # still has them at the top level. Try the post-transition path first so
   # resume doesn't silently null these out and empty Phase 5.2's PR target.
-  base_branch=$(jq -r '.requirements.branches.base // .branches.base' "$WORK_DIR/{identifier}/state.json")
-  feature_branch=$(jq -r '.requirements.branches.feature // .branches.feature' "$WORK_DIR/{identifier}/state.json")
+  base_branch=$(jq -r '.requirements.branches.base // .branches.base' "<WORK_DIR printed above>/{identifier}/state.json")
+  feature_branch=$(jq -r '.requirements.branches.feature // .branches.feature' "<WORK_DIR printed above>/{identifier}/state.json")
 fi
 
 # Load implementation state if exists
-if [[ -f "$WORK_DIR/{identifier}/state.json" ]]; then
-  if ! jq empty "$WORK_DIR/{identifier}/state.json" 2>/dev/null; then
+if [[ -f "<WORK_DIR printed above>/{identifier}/state.json" ]]; then
+  if ! jq empty "<WORK_DIR printed above>/{identifier}/state.json" 2>/dev/null; then
     echo "WARNING: Implementation state file is corrupted"
     echo "Starting fresh implementation"
   else
-    impl_status=$(jq -r '.status' "$WORK_DIR/{identifier}/state.json")
-    chunks_completed=$(jq -r '.phases.implement.chunks_completed // 0' "$WORK_DIR/{identifier}/state.json")
+    impl_status=$(jq -r '.status' "<WORK_DIR printed above>/{identifier}/state.json")
+    chunks_completed=$(jq -r '.phases.implement.chunks_completed // 0' "<WORK_DIR printed above>/{identifier}/state.json")
     echo "✓ Resuming implementation: $chunks_completed chunks completed"
   fi
 fi
@@ -265,6 +272,9 @@ Ensure on correct branch:
 Run inline — the guard hook allows branch checkout without agent delegation:
 
 ```bash
+# Substitute the literal the earlier block printed: this is a decision already
+# made, and recomputing it here would re-decide it against different inputs.
+EPIC_TICKET_NO_STATE=<EPIC_TICKET_NO_STATE printed above>
 if git show-ref --verify --quiet "refs/heads/feature/{identifier}"; then
   git checkout feature/{identifier}
 elif [[ "$EPIC_TICKET_NO_STATE" == true ]]; then
@@ -378,19 +388,21 @@ If the optional `auto-context.sh` PostToolUse hook is enabled (opt-in via `hooks
 Register the current session → work-id mapping:
 
 ```bash
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
 SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
 if [ -n "$SID" ] && command -v jq >/dev/null 2>&1; then
-  mkdir -p "$WORK_DIR"
-  touch "$WORK_DIR/.active-sessions.lock"
+  mkdir -p "<WORK_DIR printed above>"
+  touch "<WORK_DIR printed above>/.active-sessions.lock"
   (
     flock -x -w 2 200 || exit 0
-    [ -s "$WORK_DIR/.active-sessions" ] || echo '{}' > "$WORK_DIR/.active-sessions"
+    [ -s "<WORK_DIR printed above>/.active-sessions" ] || echo '{}' > "<WORK_DIR printed above>/.active-sessions"
     jq --arg s "$SID" --arg w "{identifier}" \
-       '. + {($s): $w}' "$WORK_DIR/.active-sessions" \
-       > "$WORK_DIR/.active-sessions.tmp.$$" \
-       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
-       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
-  ) 200>"$WORK_DIR/.active-sessions.lock"
+       '. + {($s): $w}' "<WORK_DIR printed above>/.active-sessions" \
+       > "<WORK_DIR printed above>/.active-sessions.tmp.$$" \
+       && mv "<WORK_DIR printed above>/.active-sessions.tmp.$$" "<WORK_DIR printed above>/.active-sessions" \
+       || rm -f "<WORK_DIR printed above>/.active-sessions.tmp.$$"
+  ) 200>"<WORK_DIR printed above>/.active-sessions.lock"
 fi
 ```
 
@@ -423,20 +435,20 @@ Detection logic:
 ```bash
 # Standalone ticket from /create-requirements (full triad)
 TRIAD_FULL=false
-[ -f "$WORK_DIR/{identifier}/spec.md" ] && [ -f "$WORK_DIR/{identifier}/plan.md" ] && [ -f "$WORK_DIR/{identifier}/tasks.md" ] && TRIAD_FULL=true
+[ -f "<WORK_DIR printed above>/{identifier}/spec.md" ] && [ -f "<WORK_DIR printed above>/{identifier}/plan.md" ] && [ -f "<WORK_DIR printed above>/{identifier}/tasks.md" ] && TRIAD_FULL=true
 
 # Epic-ticket from /epic (spec-only, parent EPIC_PLAN.md provides shared HOW)
 EPIC_TICKET=false
-PARENT_DIR="$(dirname "$WORK_DIR/{identifier}")"
-if [ -f "$WORK_DIR/{identifier}/spec.md" ] \
-   && [ ! -f "$WORK_DIR/{identifier}/plan.md" ] \
+PARENT_DIR="$(dirname "<WORK_DIR printed above>/{identifier}")"
+if [ -f "<WORK_DIR printed above>/{identifier}/spec.md" ] \
+   && [ ! -f "<WORK_DIR printed above>/{identifier}/plan.md" ] \
    && [ -f "$PARENT_DIR/EPIC_PLAN.md" ]; then
   EPIC_TICKET=true
 fi
 
 # Legacy single-doc format
 LEGACY=false
-[ -f "$WORK_DIR/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md" ] && [ "$TRIAD_FULL" = false ] && [ "$EPIC_TICKET" = false ] && LEGACY=true
+[ -f "<WORK_DIR printed above>/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md" ] && [ "$TRIAD_FULL" = false ] && [ "$EPIC_TICKET" = false ] && LEGACY=true
 
 # Guard: partial triad (e.g. crashed mid-Stage-4.2) — none of the three cases matches
 if [ "$TRIAD_FULL" = false ] && [ "$EPIC_TICKET" = false ] && [ "$LEGACY" = false ]; then
@@ -445,8 +457,8 @@ if [ "$TRIAD_FULL" = false ] && [ "$EPIC_TICKET" = false ] && [ "$LEGACY" = fals
   echo "    A) Full triad: spec.md + plan.md + tasks.md"
   echo "    B) Epic ticket: spec.md + parent EPIC_PLAN.md"
   echo "    C) Legacy: {identifier}-TECHNICAL_REQUIREMENTS.md"
-  echo "  Found files in $WORK_DIR/{identifier}/:"
-  ls "$WORK_DIR/{identifier}/" 2>/dev/null || echo "    (directory does not exist)"
+  echo "  Found files in <WORK_DIR printed above>/{identifier}/:"
+  ls "<WORK_DIR printed above>/{identifier}/" 2>/dev/null || echo "    (directory does not exist)"
   echo "If a previous /create-requirements run crashed mid-way, re-run it to regenerate the missing files."
   exit 1
 fi
@@ -552,7 +564,7 @@ Read the requirements file and extract:
 **Check for existing context:**
 ```bash
 # Check if context files exist from requirements phase
-if [[ -f "$WORK_DIR/{identifier}/context/archaeologist.md" ]]; then
+if [[ -f "<WORK_DIR printed above>/{identifier}/context/archaeologist.md" ]]; then
   echo "✓ Found existing context from requirements phase"
   echo "  Skipping Explore agent - using cached context"
   SKIP_EXPLORE=true
@@ -579,7 +591,7 @@ optional_files=("data-modeler.md" "integration-analyst.md" "security-requirement
 missing_required=()
 
 for file in "${required_files[@]}"; do
-  if [[ ! -f "$WORK_DIR/{identifier}/context/$file" ]]; then
+  if [[ ! -f "<WORK_DIR printed above>/{identifier}/context/$file" ]]; then
     missing_required+=("$file")
   fi
 done
@@ -592,7 +604,7 @@ else
   echo "✓ All required context files present"
 
   # Verify context files are valid JSON
-  for file in $WORK_DIR/{identifier}/context/*.json; do
+  for file in <WORK_DIR printed above>/{identifier}/context/*.json; do
     if [[ -f "$file" ]] && ! jq empty "$file" 2>/dev/null; then
       echo "⚠ Invalid JSON in $(basename $file)"
       echo "Running Explore agent to regenerate context"
@@ -842,6 +854,13 @@ For each chunk:
    # Per-file diff only when the commit message needs it:
    # git diff HEAD -- <file>
    git add <files>
+   ```
+
+   > The verb below leads its own call: the mutation guard anchors on
+   > `^git commit` / `^git push`, so anything ahead of it in the same call
+   > skips the credential scan and the push gate.
+
+   ```bash
    git commit -m "$(cat <<'EOF'
 [TICKET-123] type(scope): description
 
@@ -1018,10 +1037,18 @@ fi
 if [[ -z "$FRONTEND_CHANGED" ]]; then
   FRONTEND_CHANGED=false
 
+  # The file list goes to a file, not onto a command line: a path can legally
+  # contain a quote, a backtick or $( ), and echo "{implemented_files}" would
+  # execute it. The delimiter is QUOTED so nothing in the body expands.
+  mkdir -p -m 700 "$HOME/.claude/tmp"
+  cat > "$HOME/.claude/tmp/implemented-files.txt" <<'IMPLEMENTED_FILES_EOF'
+{implemented_files}
+IMPLEMENTED_FILES_EOF
+
   # Check implemented files for frontend extensions or directories
-  if echo "{implemented_files}" | grep -qE '\.(tsx|jsx|vue|svelte)$'; then
+  if grep -qE '\.(tsx|jsx|vue|svelte)$' "$HOME/.claude/tmp/implemented-files.txt"; then
     FRONTEND_CHANGED=true
-  elif echo "{implemented_files}" | grep -qE '/(pages|components|views)/'; then
+  elif grep -qE '/(pages|components|views)/' "$HOME/.claude/tmp/implemented-files.txt"; then
     FRONTEND_CHANGED=true
   elif [[ "$PLAYWRIGHT_CONFIG_EXISTS" == "true" ]]; then
     FRONTEND_CHANGED=true
@@ -1191,12 +1218,14 @@ Save all agent outputs to `$WORK_DIR/{identifier}/context/`:
 After the parallel QA tasks return, verify every expected output file exists and has non-trivial content before advancing to the skeptic step:
 
 ```bash
+# Substitute the literal the earlier block printed.
+FRONTEND_CHANGED=<FRONTEND_CHANGED printed above>
 qa_agents=(test-writer code-reviewer security-auditor)
 [[ "$FRONTEND_CHANGED" == "true" ]] && qa_agents+=(playwright-engineer)
 [[ "$INCLUDE_ARCHITECT" == "true" ]] && qa_agents+=(architect)
 
 for agent in "${qa_agents[@]}"; do
-  f="$WORK_DIR/{identifier}/context/qa-${agent}.md"
+  f="<WORK_DIR printed above>/{identifier}/context/qa-${agent}.md"
   if [[ ! -s "$f" ]] || [[ $(wc -c <"$f") -lt 200 ]]; then
     echo "⚠ Missing or under-threshold output: $f — halting. Re-spawn the responsible agent with the same prompt. After one re-spawn failure, escalate via AskUserQuestion. Do NOT advance to the skeptic step."
     exit 1
@@ -1412,6 +1441,13 @@ For auto-fixable issues, apply fixes and create an additional commit inline:
 
 ```bash
 git add <files>
+```
+
+> The verb below leads its own call: the mutation guard anchors on
+> `^git commit` / `^git push`, so anything ahead of it in the same call
+> skips the credential scan and the push gate.
+
+```bash
 git commit -m "[TICKET-123] fix(review): address review feedback"
 ```
 
@@ -1741,6 +1777,13 @@ Before the push, record the security-auditor confirmation for the final HEAD (th
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
+```
+
+> The verb below leads its own call: the mutation guard anchors on
+> `^git commit` / `^git push`, so anything ahead of it in the same call
+> skips the credential scan and the push gate.
+
+```bash
 git push -u origin feature/{identifier}
 ```
 
@@ -1844,7 +1887,7 @@ if [[ -n "$CFG" ]]; then
   _raw=$(yq -r '.requirements.archive_on_pr' "$CFG" 2>/dev/null)
   [[ "$_raw" == "false" ]] && ARCHIVE_ON_PR=false
 fi
-ARCHIVED_STATUS=$(jq -r '.phases.archived.status // "pending"' "$WORK_DIR/{identifier}/state.json" 2>/dev/null || echo pending)
+ARCHIVED_STATUS=$(jq -r '.phases.archived.status // "pending"' "<WORK_DIR printed above>/{identifier}/state.json" 2>/dev/null || echo pending)
 echo "ARCHIVE_ON_PR=$ARCHIVE_ON_PR ARCHIVED_STATUS=$ARCHIVED_STATUS"
 ```
 
@@ -2011,21 +2054,30 @@ Skill: /implement
 |-------|-------|-------|---------|
 | Explore | built-in | Phase 2 | Codebase exploration |
 | Plan | built-in | Phase 2 | Implementation planning |
-| architect | sonnet | Phase 2, 4 | Plan validation (Phase 2); design-drift review of built code when the gate fires (Phase 4) |
-| test-writer | sonnet | Phase 4 | Test creation |
-| code-reviewer | opus | Phase 4 | Code review |
-| security-auditor | opus | Phase 4 | Security audit |
-| playwright-engineer | sonnet | Phase 4 | E2E tests (frontend changes only) |
-| quality-guard | opus | Phase 4 | Skeptic validation |
-| test-fixer | sonnet | Phase 4 | Test fixes (if needed) |
-| refactorer | sonnet | Phase 4.7 | Auto-fix (if needed) |
-| git-operator | sonnet | Phase 5 | PR body authoring (large ranges only, conditional) |
+| {agent} | {tier} | {phase} | {purpose} |
 
 ## Summary
 - Opus agents: {count}
 - Sonnet agents: {count}
 - Lightweight mode: {yes/no}
 ```
+
+**Read `{tier}` from each agent's own frontmatter — never from a list written here.**
+Emit one row per agent this run actually spawned, in spawn order, and take its tier from
+that agent's static frontmatter at the time you write the summary:
+`grep -m1 '^model:' "${CLAUDE_PLUGIN_ROOT}/agents/{agent}.md"` (quoted; or
+`"$HOME/.claude/agents/{agent}.md"` for local/dev copies), or the `Read` tool, which has
+no shell-interpolation surface at all. Validate `{agent}` against `^[a-z][a-z0-9-]*$`
+before it reaches any command, and omit the row rather than run an unvalidated value.
+Map the pinned ID to its bare tier word by reading the tier segment of the ID itself
+(`claude-<tier>-<version>` → `<tier>`), never by matching a hardcoded list of IDs — a
+list goes stale on the next model bump, the segment does not. `/create-requirements`
+builds its own telemetry table exactly this way.
+
+A table of agent names and tiers written out here would be a second source of truth for
+data that already lives in frontmatter: correct on the day it is written, silently wrong
+the first time an agent changes tier, and invisible to the reader of either file. Keep
+the row templated.
 
 `Explore` and `Plan` are built-in Claude Code subagent types, not files in this
 plugin, so their tier is set by the runtime rather than by frontmatter we can read.
@@ -2034,7 +2086,6 @@ no way to verify which tier they resolve to, and three skills previously asserte
 different answers for `Plan`. Counting a guess would make the cost summary confidently
 wrong rather than honestly incomplete.
 
-Adjust the table based on which agents were actually spawned (some are conditional).
 
 #### 6.2 Print Report
 
@@ -2111,7 +2162,7 @@ if [[ -n "$CFG" ]]; then
   _raw=$(yq -r '.requirements.auto_archive' "$CFG" 2>/dev/null)
   [[ "$_raw" == "false" ]] && AUTO_ARCHIVE=false
 fi
-ARCHIVED_STATUS=$(jq -r '.phases.archived.status // "pending"' "$WORK_DIR/{identifier}/state.json" 2>/dev/null || echo pending)
+ARCHIVED_STATUS=$(jq -r '.phases.archived.status // "pending"' "<WORK_DIR printed above>/{identifier}/state.json" 2>/dev/null || echo pending)
 echo "AUTO_ARCHIVE=$AUTO_ARCHIVE ARCHIVED_STATUS=$ARCHIVED_STATUS"
 ```
 
@@ -2178,17 +2229,19 @@ Read `references/branch-safety-rules.md` for the complete branch safety rules. *
 After Phase 5 (PR creation) completes — or if the skill ends early for any reason — clear the session from the auto-context sentinel (complements Phase 0.5). No-op when the feature is not in use:
 
 ```bash
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
 SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
 if [ -n "$SID" ] \
-   && [ -f "$WORK_DIR/.active-sessions" ] \
+   && [ -f "<WORK_DIR printed above>/.active-sessions" ] \
    && command -v jq >/dev/null 2>&1; then
   (
     flock -x -w 2 200 || exit 0
-    jq --arg s "$SID" 'del(.[$s])' "$WORK_DIR/.active-sessions" \
-       > "$WORK_DIR/.active-sessions.tmp.$$" \
-       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
-       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
-  ) 200>"$WORK_DIR/.active-sessions.lock"
+    jq --arg s "$SID" 'del(.[$s])' "<WORK_DIR printed above>/.active-sessions" \
+       > "<WORK_DIR printed above>/.active-sessions.tmp.$$" \
+       && mv "<WORK_DIR printed above>/.active-sessions.tmp.$$" "<WORK_DIR printed above>/.active-sessions" \
+       || rm -f "<WORK_DIR printed above>/.active-sessions.tmp.$$"
+  ) 200>"<WORK_DIR printed above>/.active-sessions.lock"
 fi
 ```
 

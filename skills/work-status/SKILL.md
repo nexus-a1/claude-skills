@@ -59,6 +59,7 @@ MANIFEST="${WORK_DIR}/manifest.json"
 # brainstorms" rather than an error.
 BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
 BS_MANIFEST="${BRAINSTORM_DIR}/manifest.json"
+echo "WORK_DIR=$WORK_DIR"
 ```
 
 Every mode that enumerates sessions reads **both** manifests. Normalize
@@ -86,13 +87,25 @@ Parse `$ARGUMENTS`:
 ### 1a. List all active sessions (`/work-status`)
 
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
+BS_MANIFEST="${BRAINSTORM_DIR}/manifest.json"
+MANIFEST="<WORK_DIR printed above>/manifest.json"
 # Work sessions
 if [[ -f "$MANIFEST" ]]; then
   jq -r '.items[]
     | select((.status // "") != "completed" and (.lifecycle // "") != "done")
     | "\(.identifier)\t\(.title)\t\(.type)\t\(.current_phase)\t\(.progress)\t\(.updated_at)"' "$MANIFEST"
 else
-  for dir in "${WORK_DIR}"/*/; do
+  for dir in "<WORK_DIR printed above>"/*/; do
     [[ -f "${dir}state.json" ]] && echo "${dir}state.json"
   done
 fi
@@ -286,17 +299,33 @@ If the user picks "No" or no candidate was found, list all non-completed session
 Once `{identifier}` is confirmed, set:
 
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
 # A session may be a work session or a brainstorm; they live in different
 # artifacts with differently-keyed manifests. Resolve which before writing.
-if [[ -f "$WORK_DIR/{identifier}/state.json" ]]; then
-  SESSION_ROOT="$WORK_DIR";      TARGET_MANIFEST="$MANIFEST";    MF_KEY="identifier"
+if [[ -f "<WORK_DIR printed above>/{identifier}/state.json" ]]; then
+  SESSION_ROOT="<WORK_DIR printed above>"; MF_KEY="identifier"
 elif [[ -f "$BRAINSTORM_DIR/{identifier}/state.json" ]]; then
-  SESSION_ROOT="$BRAINSTORM_DIR"; TARGET_MANIFEST="$BS_MANIFEST"; MF_KEY="slug"
+  SESSION_ROOT="$BRAINSTORM_DIR";          MF_KEY="slug"
 else
-  echo "Error: No state found for '{identifier}' in $WORK_DIR or $BRAINSTORM_DIR"
+  echo "Error: No state found for '{identifier}' in <WORK_DIR printed above> or $BRAINSTORM_DIR"
   exit 1
 fi
 STATE_FILE="$SESSION_ROOT/{identifier}/state.json"
+# Printed because the steps below run in their own Bash tool calls, and which
+# root owns this session cannot be recovered from {identifier} alone: both
+# artifacts can hold a directory of that name. Substituting <WORK_DIR> there
+# instead is what made Step 2.4 skip the manifest write silently.
+echo "SESSION_ROOT=$SESSION_ROOT"
+echo "MF_KEY=$MF_KEY"
 ```
 
 Step 2.4 writes to `$TARGET_MANIFEST` and matches on `$MF_KEY` — writing a
@@ -308,6 +337,7 @@ entry that no reader resolves.
 Read `phases.pr.pr_number` from `state.json`. If present:
 
 ```bash
+STATE_FILE="<SESSION_ROOT printed above>/{identifier}/state.json"
 PR_NUM=$(jq -r '.phases.pr.pr_number // empty' "$STATE_FILE")
 if [[ -n "$PR_NUM" ]]; then
   PR_JSON=$(gh pr view "$PR_NUM" --json state,mergedAt,reviewDecision,statusCheckRollup,isDraft 2>/dev/null)
@@ -362,6 +392,10 @@ Serialize the `state.json` write against the `auto-context.sh` hook with the sam
 `/update-context` Step 5 uses, so a concurrent hook write cannot be dropped by last-writer-wins.
 
 ```bash
+[ -n "<SESSION_ROOT printed above>" ] && [ -d "<SESSION_ROOT printed above>" ] || exit 1
+STATE_FILE="<SESSION_ROOT printed above>/{identifier}/state.json"
+TARGET_MANIFEST="<SESSION_ROOT printed above>/manifest.json"
+MF_KEY="<MF_KEY printed above>"
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 NEW_STATE="{chosen_state}"
 
@@ -413,6 +447,18 @@ Sweep all non-completed sessions and run the update flow per session.
 ### Step 3.1: Collect candidates
 
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
+BS_MANIFEST="${BRAINSTORM_DIR}/manifest.json"
+MANIFEST="<WORK_DIR printed above>/manifest.json"
 jq -r '.items[]
   | select((.status // "") != "completed" and (.lifecycle // "") != "done")
   | .identifier' "$MANIFEST"

@@ -161,6 +161,7 @@ elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
   source "$HOME/.claude/shared/resolve-config.sh"
 fi
 WORK_DIR=$(resolve_artifact work work 2>/dev/null || echo ".claude/work")
+echo "WORK_DIR=$WORK_DIR"
 ```
 
 Derive `{candidate}` from the title using the same slug rule as Step 8 point 1
@@ -169,7 +170,7 @@ otherwise) — this is the identifier `/implement` would look up.
 
 ```bash
 HAS_REQUIREMENTS=false
-[ -f "$WORK_DIR/{candidate}/state.json" ] && HAS_REQUIREMENTS=true
+[ -f "<WORK_DIR printed above>/{candidate}/state.json" ] && HAS_REQUIREMENTS=true
 ```
 
 Then use AskUserQuestion:

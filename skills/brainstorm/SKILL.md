@@ -78,6 +78,7 @@ LEGACY_BRAINSTORM_DIR="$WORK_DIR"
 # one session across two locations.
 BRAINSTORM_ROOT="$BRAINSTORM_DIR"
 echo "BRAINSTORM_DIR=$BRAINSTORM_DIR"
+echo "WORK_DIR=$WORK_DIR"
 ```
 
 Use `$BRAINSTORM_DIR` instead of hardcoded `.claude/brainstorm` throughout this workflow.
@@ -200,6 +201,17 @@ This reduces cost for exploratory brainstorming where deep reasoning is less cri
 Before starting, check whether an active brainstorm session already exists for this topic.
 
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
+LEGACY_BRAINSTORM_DIR="<WORK_DIR printed above>"
 # Brainstorms manifest: slug-keyed, no `type` field (every item is a brainstorm).
 # "promoted" is terminal — the work continues under the requirements session.
 if [[ -f "${BRAINSTORM_DIR}/manifest.json" ]]; then
@@ -290,6 +302,17 @@ Questions:
 #### 1.3 Create Work Directory and State File
 
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
+BRAINSTORM_ROOT="$BRAINSTORM_DIR"
 mkdir -p $BRAINSTORM_ROOT/{slug}/context
 ```
 
@@ -330,19 +353,32 @@ Initialize state file `$BRAINSTORM_ROOT/{slug}/state.json`:
 Register active session for the optional `auto-context.sh` PostToolUse hook (no-op when neither `CLAUDE_SESSION_ID` nor `CLAUDE_CODE_SESSION_ID` is set):
 
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
+BRAINSTORM_ROOT="$BRAINSTORM_DIR"
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
 SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
 if [ -n "$SID" ] && command -v jq >/dev/null 2>&1; then
-  mkdir -p "$BRAINSTORM_ROOT" "$WORK_DIR"
-  touch "$WORK_DIR/.active-sessions.lock"
+  mkdir -p "$BRAINSTORM_ROOT" "<WORK_DIR printed above>"
+  touch "<WORK_DIR printed above>/.active-sessions.lock"
   (
     flock -x -w 2 200 || exit 0
-    [ -s "$WORK_DIR/.active-sessions" ] || echo '{}' > "$WORK_DIR/.active-sessions"
+    [ -s "<WORK_DIR printed above>/.active-sessions" ] || echo '{}' > "<WORK_DIR printed above>/.active-sessions"
     jq --arg s "$SID" --arg w "{slug}" \
-       '. + {($s): $w}' "$WORK_DIR/.active-sessions" \
-       > "$WORK_DIR/.active-sessions.tmp.$$" \
-       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
-       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
-  ) 200>"$WORK_DIR/.active-sessions.lock"
+       '. + {($s): $w}' "<WORK_DIR printed above>/.active-sessions" \
+       > "<WORK_DIR printed above>/.active-sessions.tmp.$$" \
+       && mv "<WORK_DIR printed above>/.active-sessions.tmp.$$" "<WORK_DIR printed above>/.active-sessions" \
+       || rm -f "<WORK_DIR printed above>/.active-sessions.tmp.$$"
+  ) 200>"<WORK_DIR printed above>/.active-sessions.lock"
 fi
 ```
 
@@ -623,9 +659,20 @@ would keep reappearing as resumable in Phase 0, `/resume-work` and
 envelope/upsert contract):
 
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
+BRAINSTORM_ROOT="$BRAINSTORM_DIR"
 MANIFEST="${BRAINSTORM_ROOT}/manifest.json"
 # Initialize if missing. artifact_type follows the manifest being written:
-# "brainstorms" for $BRAINSTORM_DIR. A legacy $WORK_DIR manifest already exists
+# "brainstorms" for $BRAINSTORM_DIR. A legacy <WORK_DIR printed above> manifest already exists
 # with artifact_type "work" — never rewrite that envelope.
 if [[ ! -f "$MANIFEST" ]]; then
   # Create empty manifest with artifact_type: "brainstorms"
@@ -776,18 +823,20 @@ Update state: `"status": "completed", "updated_at": "{ISO_TIMESTAMP}"`.
 - Can lead directly to implementation
 
 ```bash
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
 # Clear auto-context sentinel on completion
 SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
 if [ -n "$SID" ] \
-   && [ -f "$WORK_DIR/.active-sessions" ] \
+   && [ -f "<WORK_DIR printed above>/.active-sessions" ] \
    && command -v jq >/dev/null 2>&1; then
   (
     flock -x -w 2 200 || exit 0
-    jq --arg s "$SID" 'del(.[$s])' "$WORK_DIR/.active-sessions" \
-       > "$WORK_DIR/.active-sessions.tmp.$$" \
-       && mv "$WORK_DIR/.active-sessions.tmp.$$" "$WORK_DIR/.active-sessions" \
-       || rm -f "$WORK_DIR/.active-sessions.tmp.$$"
-  ) 200>"$WORK_DIR/.active-sessions.lock"
+    jq --arg s "$SID" 'del(.[$s])' "<WORK_DIR printed above>/.active-sessions" \
+       > "<WORK_DIR printed above>/.active-sessions.tmp.$$" \
+       && mv "<WORK_DIR printed above>/.active-sessions.tmp.$$" "<WORK_DIR printed above>/.active-sessions" \
+       || rm -f "<WORK_DIR printed above>/.active-sessions.tmp.$$"
+  ) 200>"<WORK_DIR printed above>/.active-sessions.lock"
 fi
 ```
 

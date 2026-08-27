@@ -80,6 +80,10 @@ jira_validate_key() {
 }
 
 readonly SITE_UNKNOWN="(unknown — verify with: acli jira auth status)"
+# Appended to the raw profile label when it could not be resolved to a
+# hostname, so an opaque "<cloud_id>:<account_id>" is never shown as though it
+# were the site's name (CL-49).
+readonly SITE_UNRESOLVED=" (unresolved — verify with: acli jira auth status)"
 
 # ---------------------------------------------------------------------------
 # Master enable/disable gate
@@ -204,6 +208,113 @@ jira_resolve_site() {
   # emit the subtree into a user-visible field. Only a plain scalar passes.
   [[ "$site" =~ ^[A-Za-z0-9._:/-]{1,128}$ ]] || site="$SITE_UNKNOWN"
   printf '%s' "$site"
+}
+
+# ---------------------------------------------------------------------------
+# Resolving the profile LABEL to the site's actual hostname (CL-49)
+# ---------------------------------------------------------------------------
+# `jira_resolve_site` above returns acli's `current_profile`, which is a LABEL,
+# not necessarily a hostname — on a real OAuth profile it is
+# "<cloud_id>:<account_id>", an opaque UUID pair. The three helpers below turn
+# that label into the profile's actual `site` host, read from acli's own
+# config and matched on the identity acli itself keys by, so a hostname is
+# never shown for a profile other than the active one.
+#
+# They live here rather than in jira-write.sh (where CL-44 first wrote them for
+# create's browse URL) because the write path needs the hostname in four
+# success envelopes and in the pre-write confirmation prompt, not just in one
+# URL — ADR-012 addendum 5 recorded the label/host distinction, and CL-49
+# recorded that only create was acting on it.
+#
+# `jira_resolve_site` itself is still deliberately NOT changed: its value is
+# the site *label* both scripts display, and changing what it returns would
+# change every read result's site field too, which is not this ticket's
+# business.
+
+# A dotted, length-bounded hostname and nothing else. The dot is required: a
+# profile label like "default" or "work" is hostname-SHAPED but is not a host,
+# and https://default/browse/KEY-1 is exactly the wrong link this refuses. The
+# 253-byte cap mirrors the 128-byte bound applied to the site label above, so
+# an oversized value from the profiles list cannot land unbounded in a result.
+jira_is_hostname() {
+  local h="$1"
+  (( ${#h} >= 1 && ${#h} <= 253 )) || return 1
+  [[ "$h" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$ ]]
+}
+
+# A profile's `site` as acli might one day store it. Today it is a bare host,
+# but a future release storing "https://acme.atlassian.net/" must not silently
+# degrade the result to unresolved — normalise the two decorations that would.
+jira_clean_site() {
+  local s="$1"
+  s="${s#http://}"
+  s="${s#https://}"
+  s="${s%/}"
+  printf '%s' "$s"
+}
+
+# The config is consulted FIRST, and a literal host is accepted only when there
+# is no config to consult. Order matters here, and getting it backwards is a
+# real defect rather than a stylistic one: `current_profile` is a LABEL, and a
+# label may be dotted — an installation naming its profile `acme.prod` is
+# hostname-SHAPED and would otherwise be handed straight through as a host,
+# naming a tenant that does not exist. So the label only becomes a host after
+# the profiles list has been given the chance to say what the site actually is.
+#
+# Echoes nothing when it cannot resolve with certainty. Callers decide what to
+# do with that: create omits the URL, the other three verbs and the
+# confirmation prompt fall back to the raw label via jira_site_display below.
+jira_resolve_site_host() {
+  local site="$1"
+  local config="${HOME}/.config/acli/jira_config.yaml"
+
+  if [[ -r "$config" ]]; then
+    local ident host_candidate host=""
+    # One "<cloud_id>:<account_id> <site>" line per profile. The match happens
+    # in bash rather than inside the yq program so no caller-supplied value is
+    # ever interpolated into the expression. A profile matches on the identity
+    # acli itself keys by, or on its own site — some profiles are named after
+    # the site they point at, and that is a match, not a coincidence.
+    while IFS=' ' read -r ident host_candidate; do
+      host_candidate="$(jira_clean_site "$host_candidate")"
+      if [[ "$ident" == "$site" || "$host_candidate" == "$(jira_clean_site "$site")" ]]; then
+        host="$host_candidate"
+        break
+      fi
+    done < <(yq -r '.profiles[] | ((.cloud_id // "") + ":" + (.account_id // "")) + " " + (.site // "")' "$config" 2>/dev/null || true)
+
+    # A readable config that names no matching profile is not a licence to
+    # fall back to the label: it is evidence the label is not a site.
+    jira_is_hostname "$host" || return 0
+    printf '%s' "$host"
+    return 0
+  fi
+
+  # No config to consult. A hostname-shaped label is the only thing left, and
+  # accepting it here can only widen coverage — there is nothing to contradict.
+  local literal
+  literal="$(jira_clean_site "$site")"
+  jira_is_hostname "$literal" || return 0
+  printf '%s' "$literal"
+}
+
+# What a human is shown: the hostname when it resolves, otherwise the raw label
+# marked as what it is. The label is never silently dropped — a user confirming
+# a write has to be able to tell "this is the tenant" from "I could not work out
+# which tenant this is", and an unannotated UUID pair reads as neither.
+#
+# SITE_UNKNOWN is passed through untouched: it already carries its own
+# explanation, and appending a second parenthetical to it would say the same
+# thing twice.
+jira_site_display() {
+  local site="$1" host
+  [[ "$site" == "$SITE_UNKNOWN" ]] && { printf '%s' "$site"; return 0; }
+  host="$(jira_resolve_site_host "$site")"
+  if [[ -n "$host" ]]; then
+    printf '%s' "$host"
+  else
+    printf '%s%s' "$site" "$SITE_UNRESOLVED"
+  fi
 }
 
 # ---------------------------------------------------------------------------

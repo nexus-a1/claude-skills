@@ -26,10 +26,28 @@ if [[ -f "$LOG_FILE" ]]; then
     fi
 fi
 
-# Format: timestamp | session | tool | status
+# Both fields come from the stdin payload. They were read from
+# ${CLAUDE_SESSION_ID} and ${CLAUDE_TOOL_NAME} until CL-62 — variables Claude
+# Code never sets — so every line written since this hook shipped read
+# "unknown | unknown". The log was not missing, which is why nobody noticed: it
+# was full, and content-free. Treat entries older than this fix as worthless.
+# See hook-input.sh; bash-token-filter.py is the reference implementation.
+# shellcheck source=hook-input.sh
+. "$(dirname "${BASH_SOURCE[0]}")/hook-input.sh"
+
+# Advisory hook: a missing payload must not block the tool call, so this one
+# degrades instead of failing closed the way the safety hooks do. It still says
+# so in the line it writes, rather than silently claiming to have logged a tool.
+if hook_read_input "$_nexus_name" 1 2>/dev/null; then
+    SESSION="${HOOK_SESSION_ID:-unknown}"
+    TOOL="${HOOK_TOOL_NAME:-unknown}"
+else
+    SESSION="unreadable-payload"
+    TOOL="unreadable-payload"
+fi
+
+# Format: timestamp | session | tool
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-SESSION="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-unknown}}"
-TOOL="${CLAUDE_TOOL_NAME:-unknown}"
 
 echo "${TIMESTAMP} | ${SESSION} | ${TOOL}" >> "$LOG_FILE"
 

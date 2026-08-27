@@ -27,30 +27,71 @@ Resolve the `product-knowledge` artifact path from `storage.artifacts.product-kn
 **ALWAYS do this first:**
 
 1. **Read `.claude/configuration.yml`** and resolve the `product-knowledge` artifact path:
-   ```bash
-   # Find .claude/configuration.yml by walking up the directory tree
-   CONFIG=""
-   _d="$PWD"
-   while [[ "$_d" != "/" ]]; do
-     if [[ -f "$_d/.claude/configuration.yml" ]]; then
-       CONFIG="$_d/.claude/configuration.yml"
-       break
-     fi
-     _d="$(dirname "$_d")"
-   done
+   Resolution is **not** done inline. A local copy of the walk-up-and-compose
+   logic drifts from the shared resolver, and this one had no containment: a
+   `product-knowledge.subdir` of `../../outside` composed straight into
+   `KB_PATH`, and the sync below would then run `git pull` there.
 
-   if [[ -f "$CONFIG" ]]; then
-     _LOC=$(yq -r '.storage.artifacts.product-knowledge.location // ""' "$CONFIG")
-     if [[ -n "$_LOC" ]]; then
-       _BASE=$(yq -r ".storage.locations.${_LOC}.path // \"\"" "$CONFIG")
-       _SUB=$(yq -r '.storage.artifacts.product-knowledge.subdir // "."' "$CONFIG")
-       _TYPE=$(yq -r ".storage.locations.${_LOC}.type // \"directory\"" "$CONFIG")
-       KB_PATH="${_BASE}/${_SUB}"
-     fi
+   ```bash
+   # Marketplace installs get ${CLAUDE_PLUGIN_ROOT} substituted inline before
+   # bash runs; legacy local copies fall back to ~/.claude. If neither path
+   # resolves, fail loudly rather than letting the resolver be undefined.
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+     source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+   elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+     source "$HOME/.claude/shared/resolve-config.sh"
+   else
+     echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+     exit 1
    fi
+
+   # STRICT: fails closed. With no location configured it yields no path and
+   # this agent reports itself unconfigured and exits. The advisory resolver
+   # would instead fabricate a plausible-looking path at an existing but empty
+   # directory, which reads as "a knowledge base with nothing in it" — so the
+   # agent returns no findings and the run looks complete when a whole research
+   # dimension is missing.
+   if _RESOLVED=$(resolve_artifact_strict product-knowledge .); then
+     IFS='|' read -r KB_PATH _TYPE <<< "$_RESOLVED"
+   else
+     _RC=$?
+     KB_PATH=""
+     # The resolver distinguishes "nothing is configured" from "what is
+     # configured is broken", and so must the report: telling someone to set up
+     # a knowledge base they already have sends them to add config that exists.
+     case "$_RC" in
+       2|3) echo "product-knowledge: not configured" ;;
+       *)   echo "product-knowledge: MISCONFIGURED (resolver exit $_RC) — see the message above" ;;
+     esac
+   fi
+
+   # Echo both. Each bash block is a separate Bash tool call and shell state
+   # does not survive between them, so a value resolved here and not printed is
+   # invisible to the sync below — which would leave its `git` branch to be
+   # guessed.
+   echo "KB_PATH=$KB_PATH"
+   echo "TYPE=$_TYPE"
    ```
-2. **Sync the knowledge base** — if the location type is `git`, run `cd "$_BASE" && git pull`
-3. **Verify the repository path exists** before proceeding
+2. **Verify the path exists**, then **sync** — in that order. A configured but
+   not-yet-created KB is a different report from a failed sync, and checking
+   afterwards would surface it as the latter.
+
+   Substitute the literal `KB_PATH` printed above. Only sync when the printed
+   `TYPE` is `git`; a `directory` KB has no remote to pull from.
+
+   ```bash
+   [ -n "<KB_PATH printed above>" ] || exit 1
+   cd "<KB_PATH printed above>" || exit 1
+   git pull
+   ```
+
+   > The emptiness test is the guard that matters, and `cd … || exit 1` is NOT
+   > a substitute for it: **`cd ""` returns 0 and stays put.** So an empty
+   > `KB_PATH` would sail through the `cd` and run `git pull` against whatever
+   > repository this agent happens to be sitting in — the user's own project.
+   > `cd "$KB_PATH"`, not its parent: `git pull` operates on the containing
+   > repository from any directory inside it, and the KB is commonly a
+   > subdirectory of that repository.
 
 If `.claude/configuration.yml` doesn't exist or has no `storage.artifacts.product-knowledge` section, report that no product knowledge base is configured and exit.
 
