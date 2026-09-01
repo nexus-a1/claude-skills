@@ -140,32 +140,58 @@ fi
 # git push origin master` skipped branch protection for the SECOND push, a
 # direct push to a protected branch on the strength of a bypass that applied to
 # a different remote.
+# Each segment carries the directory its git will run in (NX-61). A hook runs
+# in the session's working directory, so a command that moves first -- and the
+# worktree-per-ticket workflow is nothing but such commands -- was gated
+# against the directory it started in rather than the repository it writes to.
 push_segments=()
+push_dirs=()
 commit_segments=()
-while IFS= read -r _s; do
-    _seg="${_s#*$'\t'}"
-    case "${_s%%$'\t'*}" in
+commit_dirs=()
+while IFS=$'\t' read -r _class _wd _seg; do
+    case "$_class" in
         push)
             # A segment carrying the legacy full bypass is skipped, and only it.
-            hook_declares "$_seg" GIT_AUTHORIZED || push_segments+=("$_seg") ;;
+            hook_declares "$_seg" GIT_AUTHORIZED || { push_segments+=("$_seg"); push_dirs+=("$_wd"); } ;;
         commit)
-            hook_declares "$_seg" GIT_AUTHORIZED || commit_segments+=("$_seg") ;;
+            hook_declares "$_seg" GIT_AUTHORIZED || { commit_segments+=("$_seg"); commit_dirs+=("$_wd"); } ;;
         exempt) ;;      # --help, or a dry-run push: looked at, nothing to gate
         unreadable) ;;  # refused above, before this loop runs
         *)  # A class this loop does not know. Dropping it silently is how a
             # later addition to the segmenter would arrive ungated.
-            echo "BLOCKED: git-mutation-guard saw a segment class it does not handle: ${_s%%$'\t'*}" >&2
+            echo "BLOCKED: git-mutation-guard saw a segment class it does not handle: $_class" >&2
             exit 2 ;;
     esac
 done < <(hook_git_segments "$input")
 
-repo_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+# A directory change the segmenter could see but not read. Refusing is not
+# caution for its own sake: the alternative is asking the hook's own cwd about
+# a branch, a HEAD and an audit record that belong to some other repository,
+# and then answering confidently. That is the NX-61 bug, and it fails in both
+# directions -- it blocked every legitimate worktree push, and it would just as
+# readily approve a push to master because the directory it asked was not the
+# one being written to.
+_refuse_unreadable_dir() {
+    echo "BLOCKED: git-mutation-guard cannot tell which repository this $1 is for." >&2
+    echo "The command changes directory in a way the guard cannot follow (a quoted or" >&2
+    echo "variable path, or --git-dir/--work-tree). Use an unquoted path, or address the" >&2
+    echo "repository with 'git -C <dir> $1 ...', so branch protection and the audit gate" >&2
+    echo "read the repository you are actually writing to." >&2
+    exit 2
+}
 
 # ---------------------------------------------------------------------------
 # 1. Branch protection + security-auditor gate on push
 # ---------------------------------------------------------------------------
+_i=0
 for push_segment in ${push_segments[@]+"${push_segments[@]}"}; do
-    current_branch=$(git branch --show-current 2>/dev/null || true)
+    push_dir="${push_dirs[$_i]}"
+    _i=$(( _i + 1 ))
+    [ "$push_dir" = "?" ] && _refuse_unreadable_dir push
+    # Every question below is asked of the repository being pushed, not of the
+    # directory the hook happens to be standing in.
+    current_branch=$(git -C "$push_dir" branch --show-current 2>/dev/null || true)
+    repo_root=$(git -C "$push_dir" rev-parse --show-toplevel 2>/dev/null || true)
     # The declaration must lead the SEGMENT whose verb it precedes, and each
     # segment is judged on its own — a bypass on one push does not license
     # another push in the same command.
@@ -176,7 +202,7 @@ for push_segment in ${push_segments[@]+"${push_segments[@]}"}; do
             main|master|release/*)
                 # Allow the initial creating push (remote branch doesn't exist yet).
                 # Subsequent pushes to an existing protected branch must go through a PR.
-                if git ls-remote --exit-code --heads origin "$current_branch" >/dev/null 2>&1; then
+                if git -C "$push_dir" ls-remote --exit-code --heads origin "$current_branch" >/dev/null 2>&1; then
                     echo "BLOCKED: direct push to protected branch '$current_branch'." >&2
                     echo "Remote branch already exists — subsequent changes must go through a PR." >&2
                     echo "Pushing to a git-backed knowledge-base repo (not this project)? Prefix with NEXUS_KB_WRITE=1." >&2
@@ -188,7 +214,7 @@ for push_segment in ${push_segments[@]+"${push_segments[@]}"}; do
 
     if ! hook_declares "$push_segment" SECURITY_AUDITOR_BYPASS; then
         state_file="$repo_root/.claude/session-state/git-audit.json"
-        head_sha=$(git rev-parse HEAD 2>/dev/null || true)
+        head_sha=$(git -C "$push_dir" rev-parse HEAD 2>/dev/null || true)
         if [[ ! -f "$state_file" ]]; then
             echo "BLOCKED: push requires a security-auditor confirmation." >&2
             echo "Run the security-auditor agent on the staged/committed changes first." >&2
@@ -212,14 +238,27 @@ done
 # ---------------------------------------------------------------------------
 # 2. Credential scan on commit
 # ---------------------------------------------------------------------------
-# The staged set is a property of the REPOSITORY, not of a segment, so it is
-# collected once. Inside the loop, `git commit -m x && git commit -m y` ran the
-# scanner twice over an identical file list and printed every finding twice.
-staged=()
-while IFS= read -r _f; do [ -n "$_f" ] && staged+=("$_f"); done \
-    < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null)
-
+# The staged set is a property of the REPOSITORY, not of a segment -- so it is
+# collected per repository and then reused. Two commits in one command used to
+# run the scanner twice over an identical file list and print every finding
+# twice; but two commits in one command can now be two different repositories,
+# and collecting once for all of them scanned the wrong tree for the second
+# (NX-61). `_scanned_dirs` keeps both properties: one scan per repository, and
+# no repository skipped.
+_scanned_dirs=""
+_j=0
 for commit_segment in ${commit_segments[@]+"${commit_segments[@]}"}; do
+    commit_dir="${commit_dirs[$_j]}"
+    _j=$(( _j + 1 ))
+    [ "$commit_dir" = "?" ] && _refuse_unreadable_dir commit
+    case "$_scanned_dirs" in
+        *"|$commit_dir|"*) continue ;;   # this repository is already scanned
+    esac
+    _scanned_dirs="$_scanned_dirs|$commit_dir|"
+    repo_root=$(git -C "$commit_dir" rev-parse --show-toplevel 2>/dev/null || true)
+    staged=()
+    while IFS= read -r _f; do [ -n "$_f" ] && staged+=("$_f"); done \
+        < <(git -C "$commit_dir" diff --cached --name-only --diff-filter=ACM 2>/dev/null)
     # `while read`, not mapfile. mapfile does not exist in bash 3.2, which is
     # still /bin/bash on macOS — and there the array expansion below would abort
     # under `set -u` with exit 1, a status Claude Code does not treat as a block.
@@ -230,7 +269,7 @@ for commit_segment in ${commit_segments[@]+"${commit_segments[@]}"}; do
     # `git commit -a` / `--all` also stages all modified tracked files.
     if [[ "$commit_segment" =~ git[[:space:]]+commit[[:space:]]+(-[a-zA-Z]*a[a-zA-Z]*|--all)([[:space:]]|$) ]]; then
         while IFS= read -r _f; do [ -n "$_f" ] && extra+=("$_f"); done \
-            < <(git diff --name-only --diff-filter=ACM 2>/dev/null)
+            < <(git -C "$commit_dir" diff --name-only --diff-filter=ACM 2>/dev/null)
     fi
     targets=()
     # ${arr[@]+"${arr[@]}"}: bash < 4.4 — macOS /bin/bash 3.2 — treats expansion

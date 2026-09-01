@@ -146,11 +146,30 @@ After implementation is complete:
 2. **Copy to proposals directory:**
 
 ```bash
-mkdir -p $PROPOSALS_DIR/{proposal_name}
-cp $WORK_DIR/{identifier}/{final_proposal} $PROPOSALS_DIR/{proposal_name}/proposal-final.md
-cp $WORK_DIR/{identifier}/README.md $PROPOSALS_DIR/{proposal_name}/
-cp -r $WORK_DIR/{identifier}/notes $PROPOSALS_DIR/{proposal_name}/
-cp -r $WORK_DIR/{identifier}/src $PROPOSALS_DIR/{proposal_name}/
+# Re-derived here: shell state does not survive between Bash tool calls, so a
+# value resolved in an earlier block is empty in this one. That is not cosmetic
+# on this block — an empty $PROPOSALS_DIR turns the `mkdir -p` below into a
+# write next to `/`, which succeeds, and the copies then follow it there.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+WORK_DIR=$(resolve_artifact work work)
+PROPOSALS_DIR=$(resolve_artifact proposals proposals)
+# $WORK_DIR must already exist — the session being finished lives in it.
+# $PROPOSALS_DIR need not, but it must not be empty.
+[ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ] || exit 1
+[ -n "$PROPOSALS_DIR" ] || exit 1
+
+mkdir -p "$PROPOSALS_DIR/{proposal_name}"
+cp "$WORK_DIR/{identifier}/{final_proposal}" "$PROPOSALS_DIR/{proposal_name}/proposal-final.md"
+cp "$WORK_DIR/{identifier}/README.md" "$PROPOSALS_DIR/{proposal_name}/"
+cp -r "$WORK_DIR/{identifier}/notes" "$PROPOSALS_DIR/{proposal_name}/"
+cp -r "$WORK_DIR/{identifier}/src" "$PROPOSALS_DIR/{proposal_name}/"
 ```
 
 3. **Update manifests:**
@@ -209,7 +228,23 @@ Next Steps:
 ```
 
 ```bash
-# Clear auto-context sentinel on completion
+# Clear auto-context sentinel on completion.
+#
+# Re-derived here: shell state does not survive between Bash tool calls, so a
+# value resolved in an earlier block is empty in this one. An empty $WORK_DIR
+# would put the lock and the temp file at `/`, and the `-f` test below would
+# then quietly skip the whole block instead of clearing the sentinel.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+WORK_DIR=$(resolve_artifact work work)
+[ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ] || exit 1
+
 SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
 if [ -n "$SID" ] \
    && [ -f "$WORK_DIR/.active-sessions" ] \

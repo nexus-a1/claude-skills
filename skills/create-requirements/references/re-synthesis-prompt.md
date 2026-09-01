@@ -11,6 +11,20 @@ resumed one. Run the same scan from Stage 4.1 over `{feature_description}` and
 A check that only runs when the pipeline is not interrupted is a check the attacker
 chooses to skip.
 
+**Including 4.1's first step, which does not travel with a reference.** That scan
+begins by `Write`-ing the values it is about to inline to a file of its own, then
+binding and scanning THAT — because a scan whose target and whose consumer are
+different values is a clean result nobody earned, and because a variable bound in
+one Bash call does not exist in the next. Do the same here, to a filename only
+this step writes (`context/ticket-text.4-6.txt`), so skipping the write leaves
+`cat` with nothing and the stage stops rather than reading someone else's copy
+and reporting it clean. **Delete it on the clean branch**, as 4.1 does: nothing
+removes it otherwise, and from the second run of an identifier the previous
+copy would be sitting there — skip the write then and the scan clears last
+run's bytes while this run's are inlined, which is the same false clean one run
+later. 4.1's wording says "the values you are about to inline
+below"; below, here, means this prompt.
+
 **Sub-agent mode** — Use Task tool with `subagent_type: "business-analyst"`.
 
 **Team mode** — Use Task tool with `subagent_type: "business-analyst"`, `team_name: "req-{identifier}"`, `name: "business-analyst"`.

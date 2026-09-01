@@ -91,21 +91,38 @@ else
 fi
 IFS='|' read -r REPO _TYPE <<< "$(resolve_artifact_typed requirements requirements)"
 _BASE="$(dirname "$REPO")"
-```
 
-If the storage location type is `git`, sync before reading:
-```bash
+# The sync runs HERE, in the call that resolved REPO and _TYPE, because shell
+# state does not survive to the next Bash tool call. Split across two calls
+# this reads an empty _TYPE, the `if` never fires, and the pull silently never
+# happens — or, with the guard below, the guard fires and the whole call exits
+# 1 every run. Neither failure says anything on the way past.
 if [[ "$_TYPE" == "git" ]]; then
-  # `cd "$REPO"`, not its parent: git pull operates on the containing
-  # repository from any directory inside it, and dirname is not the location
-  # root when subdir has more than one segment. The emptiness test is the
-  # actual guard — `cd ""` returns 0 and stays put, so an unset REPO would
-  # otherwise pull whatever repository this session is in.
+  # A SUBSHELL, not a bare cd. Bash-tool cwd is the one piece of state that DOES
+  # survive between calls, so a bare `cd "$REPO"` here would leave the whole
+  # session standing in the knowledge-base repo — and the next call writing a
+  # relative path would land inside the KB instead of the user's project.
+  # Folding the sync into this fence is what created that exposure, so scoping
+  # it is part of the fix rather than a detail of it. Same shape as
+  # load-requirements, where cross-block-vars-sweep.test pins it.
+  #
+  # `cd "$REPO"`, not its parent: git pull operates on the containing repository
+  # from any directory inside it, and dirname is not the location root when
+  # subdir has more than one segment. The emptiness test is the actual guard —
+  # `cd ""` returns 0 and stays put, so an unset REPO would otherwise pull
+  # whatever repository this session is in.
+  #
+  # A failed pull — offline, no upstream, a diverged branch — warns rather than
+  # aborting: a stale KB still answers the question, and `|| exit 1` here would
+  # skip every step below. The `&&` is already the guard on the cd.
   [ -n "$REPO" ] || exit 1
-  cd "$REPO" || exit 1
-  git pull
+  ( cd "$REPO" && git pull ) || echo "WARN: could not sync the requirements KB — searching the local copy" >&2
 fi
 ```
+
+`REPO`, `_TYPE` and `_BASE` come from `resolve_artifact_typed` in the block
+above and exist only for the rest of that same block. Any later block that
+needs them re-derives them the same way.
 
 Extract requirements artifact path from storage configuration.
 

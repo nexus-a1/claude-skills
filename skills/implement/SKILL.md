@@ -166,6 +166,10 @@ if [[ ! -f "<WORK_DIR printed above>/{identifier}/state.json" ]] \
   EPIC_TICKET_NO_STATE=true
   echo "✓ Epic ticket detected (<WORK_DIR printed above>/{identifier}/spec.md + $PARENT_DIR/EPIC_PLAN.md) — no per-ticket state.json expected yet"
 fi
+# Printed because three later blocks substitute it as
+# `<EPIC_TICKET_NO_STATE printed above>`, and this is the block that decides it.
+# Without the echo there is nothing for them to substitute.
+echo "EPIC_TICKET_NO_STATE=$EPIC_TICKET_NO_STATE"
 ```
 
 **VALIDATION** (required, skipped when `EPIC_TICKET_NO_STATE == true`):
@@ -856,18 +860,59 @@ For each chunk:
    git add <files>
    ```
 
+   Author the message in this shape:
+
+   ```text
+   [{identifier}] <type>(<scope>): <description>
+
+   Chunk: {chunk_description}
+   ```
+
+   > **The message never passes through shell source.** It summarises the diff
+   > and the ticket text, so by the provenance rule in
+   > [`kb-write-pattern.md`](../../shared/kb-write-pattern.md) it is
+   > third-party content even though you composed the sentence:
+   > "you wrote the words" is not the same as "you made it up".
+   > Use the `Write` tool, not a heredoc, not `echo`, not `printf`, to create
+   > the message file with the message as its exact contents. A quoted heredoc
+   > disables expansion inside the body, but the
+   > body still decides where the heredoc *ends*: a diff hunk or a ticket line
+   > equal to the delimiter closes it early and everything after it is parsed
+   > as commands.
+   >
+   > The file goes in this session's own work directory, which already exists
+   > and already belongs to this session — so there is no `mkdir`/`chmod` step,
+   > and no fixed name in a shared `~/.claude/tmp` that a concurrent worktree
+   > could overwrite between the `Write` and the commit. One worktree per
+   > ticket is this repository's own convention, so concurrent sessions are the
+   > normal case. `Write` does not expand `$WORK_DIR`, so pass the resolved
+   > absolute path: `<WORK_DIR printed above>/{identifier}/.commit-msg.txt`.
+   >
    > The verb below leads its own call: the mutation guard anchors on
    > `^git commit` / `^git push`, so anything ahead of it in the same call
-   > skips the credential scan and the push gate.
+   > skips the credential scan and the push gate. That is also why the `Write`
+   > happens before this fence rather than as a step inside it.
+
+   Guard the file in its own call — the commit verb cannot share a block with
+   anything ahead of it, and a shell variable would not survive between the two
+   calls anyway, so the path is written out in both:
 
    ```bash
-   git commit -m "$(cat <<'EOF'
-[TICKET-123] type(scope): description
-
-Chunk: {chunk_description}
-EOF
-)"
+   [ -s "<WORK_DIR printed above>/{identifier}/.commit-msg.txt" ] \
+     || { echo "ERROR: commit message file missing or empty" >&2; exit 1; }
    ```
+
+   ```bash
+   git commit -F "<WORK_DIR printed above>/{identifier}/.commit-msg.txt" \
+     && rm -f "<WORK_DIR printed above>/{identifier}/.commit-msg.txt"
+   ```
+
+   The guard matters because the heredoc could not fail this way: the message
+   was inline, so it was always there. Reading it from a file introduces a path
+   where the `Write` was skipped or failed and `git commit` would otherwise be
+   handed an empty message. The delete is gated on the commit succeeding — a
+   hook block or a pre-commit failure keeps the message so the retry does not
+   have to re-author it.
 
    No push here — push happens once at the end of the implementation (Phase 5), after security-auditor confirms the full delta.
 
@@ -1040,7 +1085,10 @@ if [[ -z "$FRONTEND_CHANGED" ]]; then
   # The file list goes to a file, not onto a command line: a path can legally
   # contain a quote, a backtick or $( ), and echo "{implemented_files}" would
   # execute it. The delimiter is QUOTED so nothing in the body expands.
-  mkdir -p -m 700 "$HOME/.claude/tmp"
+  # `-m 700` applies only to a directory mkdir actually CREATES, so an existing
+  # ~/.claude/tmp at 755 keeps its mode and leaves this list world-readable.
+  # The chmod is what closes that, and it runs before anything is written.
+  mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
   cat > "$HOME/.claude/tmp/implemented-files.txt" <<'IMPLEMENTED_FILES_EOF'
 {implemented_files}
 IMPLEMENTED_FILES_EOF
@@ -1222,7 +1270,12 @@ After the parallel QA tasks return, verify every expected output file exists and
 FRONTEND_CHANGED=<FRONTEND_CHANGED printed above>
 qa_agents=(test-writer code-reviewer security-auditor)
 [[ "$FRONTEND_CHANGED" == "true" ]] && qa_agents+=(playwright-engineer)
-[[ "$INCLUDE_ARCHITECT" == "true" ]] && qa_agents+=(architect)
+# `architect` is added here too when the Phase 4 gate above decided to include
+# it. That decision is yours, made by reading the diff — it is not a shell value
+# and no block computes it, so there is nothing to carry and nothing to
+# substitute. Add the element when the gate said INCLUDED, and leave this line
+# out when it did not. Reading `$INCLUDE_ARCHITECT` here, as this block used to,
+# read an unset variable and never added the agent at all.
 
 for agent in "${qa_agents[@]}"; do
   f="<WORK_DIR printed above>/{identifier}/context/qa-${agent}.md"
@@ -1819,12 +1872,23 @@ git fetch -q origin {target_branch} 2>/dev/null || true
 
 For a short commit range (≤ 10 commits, a handful of files), author the PR inline with `gh pr create`:
 
-```bash
-gh pr create \
-  --base {target_branch} \
-  --head feature/{identifier} \
-  --title "[{identifier}] <type>(<scope>): <description>" \
-  --body "$(cat <<'EOF'
+The title and the body are both assembled from the diff, the ticket and the QA
+findings, so both are third-party content by the provenance rule in
+[`kb-write-pattern.md`](../../shared/kb-write-pattern.md) — neither goes through
+a heredoc. `Write` them to this session's own work directory, each the exact
+value and nothing else; `Write` does not expand `$WORK_DIR`, so pass resolved
+absolute paths.
+
+Author the title in this shape — the ticket prefix is not optional, and it is
+the only place the convention is stated for the PR:
+
+```text
+[{identifier}] <type>(<scope>): <description>
+```
+
+Author the body in this shape:
+
+```text
 ## Summary
 {feature_summary}
 
@@ -1848,9 +1912,38 @@ gh pr create \
 ## Remaining Review Findings
 🟡 Important: {important_issues}
 🔵 Minor: {minor_issues}
-EOF
-)"
 ```
+
+Then:
+
+```bash
+[ -s "<WORK_DIR printed above>/{identifier}/.pr-title.txt" ] \
+  && [ -s "<WORK_DIR printed above>/{identifier}/.pr-body.md" ] \
+  || { echo "ERROR: PR title or body file missing or empty" >&2; exit 1; }
+```
+
+```bash
+gh pr create \
+  --base {target_branch} \
+  --head feature/{identifier} \
+  --title "$(cat "<WORK_DIR printed above>/{identifier}/.pr-title.txt")" \
+  --body-file "<WORK_DIR printed above>/{identifier}/.pr-body.md" \
+  && rm -f "<WORK_DIR printed above>/{identifier}/.pr-title.txt" \
+           "<WORK_DIR printed above>/{identifier}/.pr-body.md"
+```
+
+> `--body-file` rather than `--body "$(cat …)"`: the body never becomes a shell
+> word at all, so its size is not bounded by `ARG_MAX` and no quoting question
+> arises. The title still goes through `"$(cat …)"` because `gh pr create` has
+> no `--title-file` — that is safe, because command substitution makes the
+> content an argument *value* rather than shell source. What is not safe is the
+> shape this replaced: a `--title "[{identifier}] <type>(<scope>): <description>"`
+> built by interpolation, where a `"` or `$(…)` in the description breaks out of
+> the quoted string as this command is constructed, before `gh` ever sees it.
+>
+> Both deletes are gated on `gh` succeeding, so a failed create keeps the files
+> and the retry does not have to re-author the body.
+
 
 For a **large commit range** (10+ commits or wide file changes), delegate PR body authoring only (not the `gh pr create` call itself):
 

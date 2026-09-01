@@ -254,6 +254,22 @@ See: ${CLAUDE_PLUGIN_ROOT}/templates/requirements-repo/README.md (or ~/.claude/t
 **If user selects the default path or enters a custom path via "Other"**, validate it exists:
 
 ```bash
+# The path is typed by the user, so it is free text: it reaches the shell
+# through a QUOTED heredoc and is read back into a variable, never substituted
+# onto a command line where a quote or $( ) in it would break out. This also
+# binds USER_PATH in the call that tests it — before, it was bound in no call,
+# so every test below ran against an empty path and reported "not found"
+# whatever the user typed.
+umask 077
+mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
+set -C   # refuse to write through a pre-planted symlink
+cat > "$HOME/.claude/tmp/config-init-user-path.$$.txt" <<'USER_PATH_EOF' || exit 1
+{user_path}
+USER_PATH_EOF
+set +C
+USER_PATH="$(cat "$HOME/.claude/tmp/config-init-user-path.$$.txt")"
+rm -f "$HOME/.claude/tmp/config-init-user-path.$$.txt"
+
 if [[ -d "$USER_PATH" ]]; then
   echo "Found: $USER_PATH"
   if [[ -d "$USER_PATH/.git" ]]; then
@@ -902,6 +918,13 @@ fi
 
 **config-json-to-yml** (uses `yq` to convert JSON to YAML):
 ```bash
+# artifact_backup_once lives in config/artifacts.sh, and a shell FUNCTION does
+# not survive a Bash tool-call boundary any better than a variable does. Sourced
+# here, in the call that uses it, or the call dies with "command not found".
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+source "$NEXUS_SHARED/config/artifacts.sh"
 # The literal already printed in the plan — NOT a fresh `date`. A new value
 # would put backups at a suffix the user never saw.
 TIMESTAMP=<the literal timestamp printed in the plan>
@@ -915,17 +938,43 @@ fi
 
 **state-rename** (add `type` field, rename file). Plan entries are `state-rename:<path-to-old-file>:<type>`, so bind all three variables first — with the backup now checked, leaving `old_path` unset aborts the migration rather than silently doing nothing:
 ```bash
+# artifact_backup_once lives in config/artifacts.sh, and a shell FUNCTION does
+# not survive a Bash tool-call boundary any better than a variable does. Sourced
+# here, in the call that uses it, or the call dies with "command not found".
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+source "$NEXUS_SHARED/config/artifacts.sh"
+umask 077
+mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
+set -C   # refuse to write through a pre-planted symlink
 # The literal already printed in the plan — NOT a fresh `date`. A new value
 # would put backups at a suffix the user never saw.
 TIMESTAMP=<the literal timestamp printed in the plan>
-entry="${plan_entry}"                 # e.g. state-rename:.claude/work/X/requirements-state.json:requirements
+# The plan entry is text this skill printed and you substitute back. It goes
+# through a QUOTED heredoc, not straight onto a command line: the entry holds
+# user-configured paths, and a quote or $( ) in one would break out. This also
+# binds `entry` in the call that reads it — the previous `${plan_entry}` was
+# never bound anywhere, so every expansion below it was empty.
+cat > "$HOME/.claude/tmp/config-init-entry.$$.txt" <<'PLAN_ENTRY_EOF' || exit 1
+{plan_entry}
+PLAN_ENTRY_EOF
+set +C
+entry="$(cat "$HOME/.claude/tmp/config-init-entry.$$.txt")"
+rm -f "$HOME/.claude/tmp/config-init-entry.$$.txt"
+[ -n "$entry" ] || exit 1
+# e.g. state-rename:.claude/work/X/requirements-state.json:requirements
 type_field="${entry##*:}"
 old_path="${entry#state-rename:}"; old_path="${old_path%:*}"
 dir="$(dirname "$old_path")/"
 
 if [[ -s "${dir}state.json" ]]; then
   echo "⚠ Skipping ${old_path} — ${dir}state.json already written by an earlier migration in this directory."
-  continue
+  # `exit 0`, not `continue`: each plan entry is its own Bash tool call, so
+  # there is no loop to continue. Bash warned and fell through, and the jq
+  # write and `rm` below then ran against the very file this branch had just
+  # said it would not touch.
+  exit 0
 fi
 artifact_backup_once "${old_path}" "${TIMESTAMP}" || exit 1
 jq --arg t "${type_field}" '. + {type: $t}' "${old_path}" > "${dir}state.json"
@@ -936,19 +985,60 @@ fi
 
 **rename-key** (update a top-level YAML key, preserve structure):
 ```bash
+# artifact_backup_once lives in config/artifacts.sh, and a shell FUNCTION does
+# not survive a Bash tool-call boundary any better than a variable does. Sourced
+# here, in the call that uses it, or the call dies with "command not found".
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+source "$NEXUS_SHARED/config/artifacts.sh"
 # The literal already printed in the plan — NOT a fresh `date`. A new value
 # would put backups at a suffix the user never saw.
 TIMESTAMP=<the literal timestamp printed in the plan>
-artifact_backup_once "${file}" "${TIMESTAMP}" || exit 1
-yq -i '.product_knowledge = .domain_knowledge | del(.domain_knowledge)' "${file}"
+# Same as the plan entry above: a path this skill printed, bound here through a
+# quoted heredoc rather than substituted onto the command line. `${file}` was
+# bound in no call, so both commands below ran against an empty path.
+umask 077
+mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
+set -C   # refuse to write through a pre-planted symlink
+cat > "$HOME/.claude/tmp/config-init-file.$$.txt" <<'PLAN_FILE_EOF' || exit 1
+{plan_file}
+PLAN_FILE_EOF
+set +C
+file="$(cat "$HOME/.claude/tmp/config-init-file.$$.txt")"
+rm -f "$HOME/.claude/tmp/config-init-file.$$.txt"
+[ -n "$file" ] || exit 1
+artifact_backup_once "$file" "${TIMESTAMP}" || exit 1
+yq -i '.product_knowledge = .domain_knowledge | del(.domain_knowledge)' "$file"
 ```
 
 **location-rename** (rename a storage location and repoint every artifact that used it). Plan entries have the form `location-rename:<config-path>:<old>:<new>`. **Apply every one of these before any `artifact-backfill` entry** — a backfill whose location has not been renamed yet is skipped, and the run would report success while leaving the config exactly as drifted as it found it:
 ```bash
+# artifact_backup_once lives in config/artifacts.sh, and a shell FUNCTION does
+# not survive a Bash tool-call boundary any better than a variable does. Sourced
+# here, in the call that uses it, or the call dies with "command not found".
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+source "$NEXUS_SHARED/config/artifacts.sh"
 # The literal already printed in the plan — NOT a fresh `date`. A new value
 # would put backups at a suffix the user never saw.
 TIMESTAMP=<the literal timestamp printed in the plan>
-entry="${plan_entry}"                  # e.g. location-rename:.claude/configuration.yml:team-repo:team-knowledge
+# The plan entry is text this skill printed and you substitute back — a
+# quoted heredoc, not a command line, because the entry holds
+# user-configured paths. It also BINDS `entry` in the call that reads it;
+# `${plan_entry}` was bound in no call, so every expansion below was empty.
+umask 077
+mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
+set -C   # refuse to write through a pre-planted symlink
+cat > "$HOME/.claude/tmp/config-init-entry.$$.txt" <<'PLAN_ENTRY_EOF' || exit 1
+{plan_entry}
+PLAN_ENTRY_EOF
+set +C
+entry="$(cat "$HOME/.claude/tmp/config-init-entry.$$.txt")"
+rm -f "$HOME/.claude/tmp/config-init-entry.$$.txt"
+[ -n "$entry" ] || exit 1
+# e.g. location-rename:.claude/configuration.yml:team-repo:team-knowledge
 new="${entry##*:}"
 rest="${entry%:*}"; old="${rest##*:}"
 file="${rest%:*}"; file="${file#location-rename:}"
@@ -964,6 +1054,11 @@ The rename and the artifact repointing are one write inside the library, so ther
 
 **artifact-backfill** (add one missing artifact using the template's mapping). Plan entries have the form `artifact-backfill:<config-path>:<artifact-name>`, so split on the last colon — an artifact name never contains one:
 ```bash
+# artifact_backup_once lives in config/artifacts.sh — sourcing resolve-config.sh
+# alone leaves it undefined in this call.
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+source "$NEXUS_SHARED/config/artifacts.sh"
 # Re-derived here: shell state does not survive between Bash tool calls.
 if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
   source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
@@ -977,7 +1072,21 @@ TEMPLATE=$(artifact_template_path) || TEMPLATE=""
 # The literal already printed in the plan — NOT a fresh `date`. A new value
 # would put backups at a suffix the user never saw.
 TIMESTAMP=<the literal timestamp printed in the plan>
-entry="${plan_entry}"                  # e.g. artifact-backfill:.claude/configuration.yml:meetings
+# The plan entry is text this skill printed and you substitute back — a
+# quoted heredoc, not a command line, because the entry holds
+# user-configured paths. It also BINDS `entry` in the call that reads it;
+# `${plan_entry}` was bound in no call, so every expansion below was empty.
+umask 077
+mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
+set -C   # refuse to write through a pre-planted symlink
+cat > "$HOME/.claude/tmp/config-init-entry.$$.txt" <<'PLAN_ENTRY_EOF' || exit 1
+{plan_entry}
+PLAN_ENTRY_EOF
+set +C
+entry="$(cat "$HOME/.claude/tmp/config-init-entry.$$.txt")"
+rm -f "$HOME/.claude/tmp/config-init-entry.$$.txt"
+[ -n "$entry" ] || exit 1
+# e.g. artifact-backfill:.claude/configuration.yml:meetings
 name="${entry##*:}"
 file="${entry#artifact-backfill:}"; file="${file%:*}"
 

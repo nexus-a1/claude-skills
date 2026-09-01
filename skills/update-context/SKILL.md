@@ -129,9 +129,9 @@ Use AskUserQuestion to have the user pick an identifier (or, if the manifest is 
 
 ### Step 2: Synthesize the note (skip if an explicit note was supplied)
 
-If the user supplied explicit note text in `$ARGUMENTS` (Priority 1 / any remaining text after the identifier), use it **verbatim** and skip synthesis. Set `NOTE_SOURCE="explicit"`.
+If the user supplied explicit note text in `$ARGUMENTS` (Priority 1 / any remaining text after the identifier), use it **verbatim** and skip synthesis. The note source is `explicit`.
 
-Otherwise, compose the note yourself by reasoning over **this conversation** (the current context window). Set `NOTE_SOURCE="synthesis"`. Group the salient points under these headings, **omitting any group that has nothing**:
+Otherwise, compose the note yourself by reasoning over **this conversation** (the current context window). The note source is `synthesis`. Group the salient points under these headings, **omitting any group that has nothing**:
 
 - **Decisions** — choices made and the reason, if stated
 - **Q&A** — questions raised and their resolved answers
@@ -142,7 +142,7 @@ Keep it concise prose, not a transcript dump. This is inline reasoning — do **
 
 **Empty-synthesis guard:** if the conversation has nothing substantive to record (e.g. a fresh context window with no decisions/Q&A/scope/blockers), do **not** fabricate or write an empty note. Instead, tell the user there's nothing to synthesize and ask them to supply an explicit note (or cancel). Never write a blank `{note}`.
 
-Hold the composed text as `{note}` and the origin as `NOTE_SOURCE` for the confirmation preview and the write.
+Hold the composed text as `{note}` and the origin as `{note_source}` for the confirmation preview and the write. Both are values YOU substitute into Step 5's fence — this step is prose, so an assignment written here would set nothing, and a shell variable would not survive to that call in any case.
 
 ### Step 3: Load state
 
@@ -219,10 +219,36 @@ This note mentions {candidate-ticket}. Reconcile draft session
   `$CANDIDATE`. Declining never blocks or alters the note-only behavior
   (AC-3.5's second half) — this offer is purely additive.
 - **Yes:** ask for a base branch (same picker as `/create-requirements`'s
-  §1.5), then, all in one fence — re-source config and the library (a value
-  set in one `Bash` call does not survive into the next tool call), extract
-  the candidate ticket from `{note}` through a **quoted heredoc** rather
-  than templating it into the command line, validate, and call:
+  §1.5), then **write `{note}` to a file with the `Write` tool** and, in one
+  fence, re-source config and the library (a value set in one `Bash` call does
+  not survive into the next tool call), read the note back from that file,
+  validate, and call:
+
+  > **The note never passes through shell source, in any form.** Use the
+  > `Write` tool — not a heredoc, not `echo`, not `printf` — to create the note
+  > file (path below) with `{note}` as its exact contents.
+  > `Write` puts no shell in the path at all: there is no delimiter to collide
+  > with, nothing to quote, and no expansion to disable, so the question of
+  > what the note contains stops being a shell question. A quoted heredoc is
+  > weaker than this and was what stood here before: quoting disables
+  > expansion inside the body, but the BODY still decides where the heredoc
+  > ends, so a note line equal to the delimiter closes it early and every line
+  > after it is parsed as a command. Making the delimiter unguessable narrows
+  > that; removing the delimiter closes it.
+  >
+  > **The file goes in the session's own directory, not a shared one:**
+  > `<WORK_DIR printed above>/{identifier}/.update-note.txt`. That directory
+  > already exists, already belongs to this session, and inherits its
+  > permissions — so there is no `mkdir`/`chmod` step and no fixed name in a
+  > shared `~/.claude/tmp` for a second session to overwrite between this
+  > `Write` and the `cat` below. This repository's own convention is one
+  > worktree per ticket, so concurrent sessions are the normal case, not an
+  > edge one. `Write` does not expand `$WORK_DIR`, so pass the resolved
+  > absolute path.
+  >
+  > **The fence below does not delete it** — Step 5 reads the same note. If
+  > reconciliation succeeds the directory is renamed, and the file moves with
+  > it, so Step 5 finds it under the new identifier.
   ```bash
   if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
     source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
@@ -241,18 +267,31 @@ This note mentions {candidate-ticket}. Reconcile draft session
   # picker's "[Other]" option) through quoted heredocs rather than
   # re-running Step 1's whole resolution chain again here. A quoted heredoc
   # delimiter disables ALL shell expansion inside the body -- no $(...), no
-  # $VAR, no backticks are interpreted -- so untrusted content (the note,
-  # see above) reaches its variable as inert bytes no matter what it
-  # contains. This is the actual safety mechanism here, not the prose
-  # instruction above it.
+  # $VAR, no backticks are interpreted -- so those values reach their
+  # variables as inert bytes no matter what they contain.
+  #
+  # The NOTE is different, and that is deliberate. Quoting decides how a body
+  # is interpreted; the body decides where the heredoc ENDS -- a line equal to
+  # the delimiter closes it early and everything after it is parsed as
+  # commands, quoted or not. The note is the one value here derived from
+  # third-party text (Jira, meetings), so it does not go through a heredoc at
+  # all: it was written to a file by the `Write` tool, with no shell in the
+  # path, and is only read back.
+  #
+  # `ID_EOF` and `BRANCH_EOF` keep heredocs, for two different reasons.
+  # {identifier} is a work-directory name and therefore SINGLE-LINE by
+  # construction — a delimiter collision needs the body to contain a line
+  # equal to the delimiter, and a value that cannot contain a newline cannot
+  # contain such a line at all. That is a stronger guarantee than provenance.
+  # {base_branch} rests on provenance: the user types it through the picker,
+  # so a "[Other]" value ending the heredoc is the user attacking themselves.
   CANDIDATE=$(cat <<'ID_EOF'
 {identifier}
 ID_EOF
   )
-  NOTE=$(cat <<'NOTE_EOF'
-{note}
-NOTE_EOF
-  )
+  NOTE_FILE="$WORK_DIR/{identifier}/.update-note.txt"
+  [ -s "$NOTE_FILE" ] || { echo "ERROR: note file missing or empty at $NOTE_FILE" >&2; exit 1; }
+  NOTE="$(cat "$NOTE_FILE")"
   BASE_BRANCH=$(cat <<'BRANCH_EOF'
 {base_branch}
 BRANCH_EOF
@@ -284,24 +323,70 @@ For a **synthesized** note, tag the entry `"source":"synthesis"`. For an **expli
 The note is free text — and, as the untrusted-input warning above says, it may
 have been synthesized from Jira or meeting content. So it reaches the shell
 through a file, never a command line: written straight into `--arg note "…"`, a
-note containing `$( )` or backticks is executed before jq ever sees it. The
-delimiter is QUOTED, which is what stops the body expanding as it is written,
-and `$(cat …)` afterwards is safe because the content becomes an argument value
-rather than shell source.
+note containing `$( )` or backticks is executed before jq ever sees it. `$(cat
+…)` is safe because the content becomes an argument value rather than shell
+source.
+
+**The file is written by the `Write` tool, not by a heredoc.** That is the whole
+mechanism, and it is stronger than the quoted heredoc that used to stand here.
+A quoted delimiter disables expansion inside the body, but the *body* decides
+where the heredoc ends: a note line equal to the delimiter closes it early and
+every line after it is parsed as a command, quoted or not. `Write` puts no shell
+in the path at all — no delimiter to collide with, nothing to quote, no
+expansion to disable — so a note that happens to contain any of that is just
+bytes in a file.
+
+`Write` `{note}` — its exact contents, nothing added — to
+`<WORK_DIR printed above>/{identifier}/.update-note.txt`, unless Step 4 already
+put it there, in which case it is already correct (and already under the
+reconciled identifier, since the rename moved it). The file lives in the
+session's own directory rather than a shared `~/.claude/tmp`: a fixed name in a
+shared directory is a second concurrent session's note, and one worktree per
+ticket is this repository's normal case. `Write` does not expand `$WORK_DIR`, so
+pass the resolved absolute path. Then run the fence:
 
 ```bash
 [ -n "<WORK_DIR printed above>" ] && [ -d "<WORK_DIR printed above>" ] || exit 1
 STATE_FILE="<WORK_DIR printed above>/{identifier}/state.json"
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 STATE_LOCK="${STATE_FILE}.lock"
-NOTE_FILE="${STATE_FILE}.note.$$"
 
-cat > "$NOTE_FILE" <<'UPDATE_NOTE_EOF'
-{note}
-UPDATE_NOTE_EOF
+# Step 2 chose this: "explicit" when the user supplied note text in $ARGUMENTS,
+# "synthesis" when you composed it. It is bound HERE because Step 2 is prose, not
+# a Bash call — `NOTE_SOURCE="explicit"` written there sets nothing, and shell
+# state would not survive to this call even if it did. The branch below then
+# always took the else, so every explicit note was written with
+# `"source":"synthesis"`: wrong metadata, silently, on the one field that records
+# whether a human wrote the words.
+#
+# What the case does and does not do. It catches a WRONG value — a third word,
+# a typo, an empty substitution — and stops the write rather than falling
+# through to a default, which is what let the mis-tagging above stay invisible.
+# It does NOT protect its own assignment: substitution happens when the line is
+# parsed, so a hostile value could break out of the quotes before `case` ever
+# runs. Nothing checks it at that point. What makes that acceptable here is
+# provenance, not the check: you are choosing between two literal words you
+# already hold, not passing through text from a ticket, a comment or a file. If
+# this value ever came from outside the session it would have to reach the shell
+# through a file, like the note itself does.
+#
+# It also runs BEFORE the read below, because the read is destructive: `rm -f`
+# removes the only copy of the note. A bad substitution caught after that point
+# has already thrown away the thing the run was recording. Validate first, then
+# consume.
+NOTE_SOURCE="{note_source}"
+case "$NOTE_SOURCE" in
+  explicit|synthesis) ;;
+  *) echo "ERROR: note_source must be explicit or synthesis, got: $NOTE_SOURCE" >&2; exit 1 ;;
+esac
+
+NOTE_FILE="<WORK_DIR printed above>/{identifier}/.update-note.txt"
+[ -s "$NOTE_FILE" ] || { echo "ERROR: note file missing or empty at $NOTE_FILE" >&2; exit 1; }
 NOTE="$(cat "$NOTE_FILE")"
-rm -f "$NOTE_FILE"
 touch "$STATE_LOCK"
+# The note file is deleted AFTER the write below succeeds, not here. A flock
+# timeout or a jq failure between the two destroyed the only copy of a note the
+# user may have typed, and the run had nothing left to retry from.
 
 if [ "$NOTE_SOURCE" = "explicit" ]; then
   # Explicit user-supplied note — no source tag (plain manual entry per schema)
@@ -324,6 +409,19 @@ else
       || { rm -f "${STATE_FILE}.tmp.$$"; exit 1; }
   ) 200>"$STATE_LOCK" || { echo "state.json write failed"; exit 1; }
 fi
+
+# The note file goes LAST, after the write it feeds has succeeded. Deleting it
+# up front — where it used to be — meant a flock timeout or a jq failure below
+# destroyed the only copy of a note the user may have typed, leaving the run
+# nothing to retry from. Both branches above exit non-zero on failure, so this
+# line is reached only when the note is safely in state.json.
+rm -f "$NOTE_FILE"
+
+# Printed because Step 6 stamps the manifest with the SAME instant, and shell
+# state does not survive a tool-call boundary. Without this line there is no
+# value for Step 6's `<TIMESTAMP printed above>` to stand for, and the fresh
+# `date` its comment warns against is the only thing left to reach for.
+echo "TIMESTAMP=$TIMESTAMP"
 ```
 
 ### Step 6: Update manifest

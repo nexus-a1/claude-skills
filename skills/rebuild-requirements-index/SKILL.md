@@ -87,10 +87,16 @@ echo "TYPE=$_TYPE"
 ```
 
 **Also resolve `TICKET` here**, from the caller's context — the current branch
-name, the active work session, or whatever the host project uses. It is only
+name, the active work session, or whatever the host project uses. **Check its
+shape before carrying it: it must match `[A-Z][A-Z0-9]*-[0-9]+` or be the
+literal `none`.** A branch name can contain `$(`, a backtick or a quote, and
+this value is substituted into a `git commit -m "[...]"` line, so an unchecked
+one is a command-injection surface in the user's own repository. If it does not
+match, treat it as `none` and use a subject with no bracketed prefix rather than
+passing it through — the prefix is a convenience, and no prefix is always safe. It is only
 needed for a `directory`-type commit subject, which lands in the user's own
 history. If there is no ticket in context, it is the literal string `none` and
-the commit subject carries no bracketed prefix. Never leave `${TICKET}`
+the commit subject carries no bracketed prefix. Never leave `{TICKET}`
 unsubstituted: it would appear verbatim in their log.
 
 **Carry `REPO` and `TYPE` forward as literal values, not as shell variables.**
@@ -124,10 +130,33 @@ no step may re-resolve or guess it. `directory` is the DEFAULT — it is what an
 install with no explicit `type:` resolves to — so it is the common case, not the
 exotic one.
 
-> **`${repo_path}` below is a placeholder, not a shell variable.** It stands for
+> **`<REPO printed above>` is a placeholder, not a shell variable.** It stands for
 > the literal `REPO` value Step 1 printed, substituted directly into the command
 > before it runs. Nothing in this skill sets a `repo_path` shell variable, and
 > nothing may rely on one surviving between Bash tool calls.
+>
+> **It is spelled `<… printed above>` rather than `${…}` on purpose.** A
+> placeholder written in shell-variable syntax is indistinguishable from a real
+> shell read — to a reader skimming a fence, and to any scanner checking that
+> nothing relies on state surviving between Bash calls. This file used to spell
+> the same value both ways, and the `${…}` half read as fifteen unbound variable
+> reads. `<TYPE printed above>` follows the same rule — Step 1's fence echoes it.
+>
+> **`{TICKET}` is spelled differently on purpose, because its provenance is
+> different, and it is spelled with that exact name because the name is
+> already on the checked-shape allowlist in
+> `tests/validators/placeholder-quoting.test` — `[A-Z]+-[0-9]+`, constrained by
+> `plugin/CLAUDE.md`. A new spelling would have been a new allowlist entry for a
+> value whose shape nothing checks.** Step 1 echoes `REPO` and `TYPE`; it does not echo `TICKET`,
+> which you resolve from the caller's context — a branch name, an active work
+> session. A value produced by an earlier fence is `<X printed above>` and is
+> guarded with `-n`/`-d` at every use; a value you substitute from context is
+> `{name}` whose SHAPE is checked somewhere, with the allowlist in
+> `tests/validators/placeholder-quoting.test` recording where. Quoting is not
+> what makes the second kind safe — a value of `a";id;"` closes the quote
+> whatever wraps it — so a name with no shape check does not belong on a command
+> line at all, quoted or not. The two kinds look identical in the source, and
+> only the provenance tells them apart.
 >
 > **Every `cd` on it is preceded by an emptiness test, and that test is the
 > guard — `cd … || exit 1` is not one.** `cd ""` returns 0 and stays put, so an
@@ -159,7 +188,7 @@ Use AskUserQuestion:
 ```
 Rebuild requirements index?
 
-Repository: ${repo_path}
+Repository: <REPO printed above>
 Current index: ${index_status}
 
 This will:
@@ -172,10 +201,10 @@ Existing index will be backed up to:
   index.json.backup.${timestamp}
   (kept locally, never committed; older backups pruned to the last 3)
 
-On first run this also adds one line to ${repo_path}/.gitignore
+On first run this also adds one line to <REPO printed above>/.gitignore
 so backups stay untracked. Committed with the index.
 
-Storage type: ${TYPE}
+Storage type: <TYPE printed above>
 On success the rebuilt index will be:
   - git      → committed to the KB repo and pushed
   - directory → committed to THIS project's repo, not pushed
@@ -206,8 +235,8 @@ nothing history does not already provide.
 
 ```bash
 # Call 1 — create the backup.
-[ -n "${repo_path}" ] || exit 1
-cd "${repo_path}" || exit 1
+[ -n "<REPO printed above>" ] || exit 1
+cd "<REPO printed above>" || exit 1
 cp index.json "index.json.backup.$(date +%Y%m%d_%H%M%S)"
 ```
 
@@ -216,13 +245,13 @@ cp index.json "index.json.backup.$(date +%Y%m%d_%H%M%S)"
 # as untracked files in `git status` and can be swept into an unrelated
 # `git add -A`, which under directory storage is the user's OWN repository.
 #
-# This is the KB's OWN .gitignore (${repo_path}/.gitignore), never the host
+# This is the KB's OWN .gitignore (<REPO printed above>/.gitignore), never the host
 # project's root one — hence the `cd` and `|| exit 1`, which is load-bearing:
 # `cd ""` succeeds and stays put, and appending this line to a user's project
 # root .gitignore would be a surprising edit to a file this command has no
 # business touching.
-[ -n "${repo_path}" ] || exit 1
-cd "${repo_path}" || exit 1
+[ -n "<REPO printed above>" ] || exit 1
+cd "<REPO printed above>" || exit 1
 # Append a newline first if the file exists and does not end in one. Without
 # this, `printf >>` concatenates onto the last entry — turning `node_modules`
 # into `node_modulesindex.json.backup.*` and silently un-ignoring it.
@@ -241,8 +270,8 @@ grep -qxF 'index.json.backup.*' .gitignore 2>/dev/null \
 # unrelated file. That is not hypothetical here: on a git-backed KB, Step 1
 # pulls before this runs, so any filename in the shared KB is content someone
 # else can author. This deletes user files — it gets the strict form.
-[ -n "${repo_path}" ] || exit 1
-cd "${repo_path}" || exit 1
+[ -n "<REPO printed above>" ] || exit 1
+cd "<REPO printed above>" || exit 1
 find . -maxdepth 1 -name 'index.json.backup.*' -printf '%T@ %p\0' 2>/dev/null \
   | sort -zrn | tail -zn +4 | cut -zd' ' -f2- | xargs -0r rm --
 ```
@@ -264,8 +293,8 @@ travels with the index commit in Step 4 — but only if the caller has no staged
 changes of their own to that same file. Check before including it:
 
 ```bash
-[ -n "${repo_path}" ] || exit 1
-cd "${repo_path}" || exit 1
+[ -n "<REPO printed above>" ] || exit 1
+cd "<REPO printed above>" || exit 1
 git diff --cached --name-only -- .gitignore
 ```
 
@@ -283,10 +312,10 @@ Use Task tool with `subagent_type: "archivist"`:
 ```
 Task(archivist, "Rebuild requirements index
 
-Repository: ${repo_path}
-Storage type: ${TYPE}
-Commit .gitignore alongside index.json: ${GITIGNORE_DECISION}
-Host project ticket: ${TICKET}   (or "none" — then use a subject with no prefix)
+Repository: <REPO printed above>
+Storage type: <TYPE printed above>
+Commit .gitignore alongside index.json: {gitignore_decision}   (`include` or `omit` — the trackability check above decides)
+Host project ticket: {TICKET}   (or "none" — then use a subject with no prefix)
 
 Substitute all four as LITERALS before dispatching. The
 archivist runs in its own context and cannot see this skill's shell state, its
@@ -329,8 +358,8 @@ Process:
    change what happened. It is read-only, so it may share a call with its `cd`:
 
    ```bash
-   [ -n "${repo_path}" ] || exit 1
-   cd "${repo_path}" || exit 1
+   [ -n "<REPO printed above>" ] || exit 1
+   cd "<REPO printed above>" || exit 1
    git check-ignore -q -- index.json \
      && echo "IGNORED — the KB path is gitignored; the rebuilt index cannot be committed"
    ```
@@ -350,8 +379,8 @@ Process:
    branches — this is the call that establishes the working directory for the
    commit that follows:
    ```bash
-   [ -n "${repo_path}" ] || exit 1
-   cd "${repo_path}" || exit 1
+   [ -n "<REPO printed above>" ] || exit 1
+   cd "<REPO printed above>" || exit 1
    git add -- index.json .gitignore   # include .gitignore only if this prompt's decision says yes
    ```
    Never `git add -A` or `git add .`: the backups are gitignored but any other
@@ -374,9 +403,9 @@ Process:
       The commit LEADS its own Bash call — no `cd`, no `&&`, nothing before it.
       The working directory is already the KB from the staging call above:
       ```bash
-      git commit -m "[${TICKET}] chore(requirements): rebuild the requirements index" -- index.json .gitignore
+      git commit -m "[{TICKET}] chore(requirements): rebuild the requirements index" -- index.json .gitignore
       ```
-      `${TICKET}` is the `Host project ticket` value from the top of this
+      `{TICKET}` is the `Host project ticket` value from the top of this
       prompt — this commit lands in the user's own history alongside their
       code, so it follows their convention, not this plugin's. If that value is
       `none`, drop the bracketed prefix entirely. Include `.gitignore` in the
@@ -391,8 +420,8 @@ Process:
       paths staged means the caller's next commit silently absorbs them,
       reintroducing exactly the contamination `--` prevents:
       ```bash
-      [ -n "${repo_path}" ] || exit 1
-      cd "${repo_path}" || exit 1
+      [ -n "<REPO printed above>" ] || exit 1
+      cd "<REPO printed above>" || exit 1
       git restore --staged -- index.json .gitignore
       ```
       (`git restore` is not a guarded mutation verb, so it may share a call
@@ -406,7 +435,7 @@ Process:
 
    **If the repository is a git-backed KB location**: commit and push using the
    sanctioned KB-write pattern (see
-   ${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md) — `cd` into ${repo_path}
+   ${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md) — `cd` into `<REPO printed above>`
    (never `git -C`). The commit is scoped with `--` here too, for consistency
    with the directory branch and because a separate KB repo can still hold
    unrelated staged work. It LEADS its own Bash tool call so the credential
@@ -422,8 +451,8 @@ Process:
    double-bypass push anywhere:
 
    ```bash
-   [ -n "${repo_path}" ] || exit 1
-   cd "${repo_path}" || exit 1
+   [ -n "<REPO printed above>" ] || exit 1
+   cd "<REPO printed above>" || exit 1
    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 1
    [ -f index.json ] || exit 1
    ```
@@ -442,7 +471,7 @@ Process:
    > at all, and an `index.json` exists here. That is a location check, not a
    > freshness one — `[ -f index.json ]` does not prove the file is the one this
    > run rebuilt, and nothing here should be read as claiming it does. It is
-   > enough for the hazard it guards: if `${repo_path}` were empty, `cd ""`
+   > enough for the hazard it guards: if `<REPO printed above>` were empty, `cd ""`
    > would succeed and leave cwd in the host project, which has no `index.json`
    > at its root.
 
@@ -477,7 +506,7 @@ Return:
 ✓ Index Rebuilt Successfully
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Repository: ${repo_path}
+Repository: <REPO printed above>
 Execution time: 2.3 seconds
 
 SCAN RESULTS
@@ -662,13 +691,13 @@ Removes archived requirements from index.
 
 ### Restore from Backup
 
-If rebuild caused issues. `${repo_path}` and `${TYPE}` are the literal values
+If rebuild caused issues. `<REPO printed above>` and `<TYPE printed above>` are the literal values
 Step 1 printed — this path branches on the storage type exactly as Step 4 does,
 and is not exempt from any of its rules:
 
 ```bash
-[ -n "${repo_path}" ] || exit 1
-cd "${repo_path}" || exit 1
+[ -n "<REPO printed above>" ] || exit 1
+cd "<REPO printed above>" || exit 1
 
 # Find backups (the last 3 are kept; older ones are pruned on each rebuild)
 ls -lt index.json.backup.*
@@ -680,11 +709,11 @@ cp index.json.backup.20260203_143022 index.json
 
 **If no backup survives the retention window**, version history is the fallback
 and works on both storage types — `git show HEAD~1:index.json > index.json` in
-`${repo_path}`, or a further-back revision. Backups are a convenience for the
+`<REPO printed above>`, or a further-back revision. Backups are a convenience for the
 operator who just ran the rebuild; history is the durable record. That is why
 they are gitignored rather than committed.
 
-Then commit — **and push only if the KB is git-backed**. Branch on `${TYPE}`
+Then commit — **and push only if the KB is git-backed**. Branch on `<TYPE printed above>`
 as printed by Step 1, exactly as archivist STORE step 7 does; the restore path
 is not exempt from that rule, and it must not re-derive the type either.
 
@@ -693,8 +722,8 @@ is not exempt from that rule, and it must not re-derive the type either.
 a guarded verb, so it may share this call.
 
 ```bash
-[ -n "${repo_path}" ] || exit 1
-cd "${repo_path}" || exit 1
+[ -n "<REPO printed above>" ] || exit 1
+cd "<REPO printed above>" || exit 1
 git add -- index.json
 ```
 
@@ -713,7 +742,7 @@ a bare commit would sweep up whatever they had already staged.
 git commit -m "Restore index from backup" -- index.json
 ```
 
-**If `${TYPE}` is `directory`: stop here.** Do not push, and do not use
+**If `<TYPE printed above>` is `directory`: stop here.** Do not push, and do not use
 `NEXUS_KB_WRITE=1` or `SECURITY_AUDITOR_BYPASS=1`. Under directory storage the KB
 lives inside the host project's own repository, so those variables would disable
 that project's branch protection and audit gate against its own trunk — and this
@@ -725,11 +754,11 @@ with the operator's normal review-and-merge flow.
 push must lead its own call, so it cannot carry a `cd` — which means it inherits
 whatever cwd is current, and on this path that `cd` may be many steps and a user
 pause earlier. A drifted cwd sends a double-bypass push at the host project's own
-trunk. Verify first, and only push if the root matches `${repo_path}`:
+trunk. Verify first, and only push if the root matches `<REPO printed above>`:
 
 ```bash
-[ -n "${repo_path}" ] || exit 1
-cd "${repo_path}" || exit 1
+[ -n "<REPO printed above>" ] || exit 1
+cd "<REPO printed above>" || exit 1
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 1
 [ -f index.json ] || exit 1
 ```
@@ -738,7 +767,7 @@ Each line exits non-zero rather than printing for a human to check. Not a
 toplevel/cwd comparison — the KB is normally a subdirectory of its repository,
 so that would fail on a correct setup; see Step 4's note.
 
-**If `${TYPE}` is `git`**, push with the sanctioned KB-write pattern
+**If `<TYPE printed above>` is `git`**, push with the sanctioned KB-write pattern
 (`${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md`): the push leads its own Bash
 call and resolves the branch inline (shell variables do not persist across Bash
 tool calls).
@@ -816,7 +845,7 @@ go through that project's normal flow.
 Another developer may have rebuilt simultaneously.
 
 To resolve:
-1. cd ${repo_path}
+1. cd <REPO printed above>
 2. git pull --rebase
 3. Retry: /rebuild-requirements-index
 ```

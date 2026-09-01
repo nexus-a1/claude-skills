@@ -138,12 +138,13 @@ This will be used for:
 
 Identify the project's technology stack to tailor Phase 5 implementation guidance.
 
-**Check configuration first** (skip interactive question if set):
-```bash
-ECOSYSTEM=$(yq -r '.project.ecosystem // ""' "$CONFIG" 2>/dev/null)
-```
+**Read it from `configuration.yml` first, and auto-detect from project files only
+if it is not set there.** Both happen in the same block on purpose: `$CONFIG` is
+set by `resolve-config.sh`, sourced at the top of it. Reading the configuration
+in a block of its own — which is how this was written — left `"$CONFIG"` empty,
+so `yq` read nothing, `ECOSYSTEM` came back blank, and a project that *had*
+declared its ecosystem was auto-detected anyway.
 
-**If not configured, auto-detect from project files:**
 ```bash
 # Re-derived here: shell state does not survive between Bash tool calls, so a
 # value resolved in an earlier block is empty in this one.

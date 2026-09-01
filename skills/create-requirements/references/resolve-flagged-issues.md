@@ -79,12 +79,44 @@ Collect responses from agents. Save each to `$WORK_DIR/{identifier}/context/{age
 
 **VERIFICATION** (required):
 ```bash
+# WORK_DIR is RESOLVED here, not carried as `<WORK_DIR printed above>`. This
+# reference file is read into a fence of its own, and the fence that printed
+# the value belongs to another document — so there is nothing in view for the
+# substitution to draw on. Unbound either way, the glob became
+# `/{identifier}/context/*-reanalysis.md`, matched nothing, and the loop
+# reported no files: a verification step that verified nothing and said so by
+# staying quiet. `resolve_artifact` is the resolver the parent skill itself
+# calls, and create-requirements already re-derives WORK_DIR this way in four
+# separate fences, so the two agree by construction rather than by carrying.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+WORK_DIR=$(resolve_artifact work work)
+[ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ] || {
+  echo "ERROR: WORK_DIR did not resolve to a directory — nothing was verified" >&2
+  exit 1
+}
 # List re-analysis files
-for file in $WORK_DIR/{identifier}/context/*-reanalysis.md; do
+_found=0
+for file in "$WORK_DIR"/{identifier}/context/*-reanalysis.md; do
   if [[ -f "$file" ]] && [[ -s "$file" ]]; then
-    echo "  ✓ $(basename $file)"
+    # basename's argument is quoted: a work directory containing a space would
+    # otherwise be split into two arguments, and basename reads the second as a
+    # suffix to strip — printing a name that is not the file's.
+    echo "  ✓ $(basename "$file")"
+    _found=$((_found + 1))
   fi
 done
+# Nullglob is off, so an empty context/ leaves the pattern itself, `-f` is false,
+# and the loop prints nothing. Without this counter the success line below fired
+# anyway — a verification step that verified nothing and reported success by
+# staying quiet, which is the defect this block exists to prevent.
+[ "$_found" -gt 0 ] || { echo "ERROR: no re-analysis outputs found — nothing was verified" >&2; exit 1; }
 
 echo "✓ Targeted re-analysis outputs saved"
 ```

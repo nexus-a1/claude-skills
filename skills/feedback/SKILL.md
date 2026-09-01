@@ -5,7 +5,7 @@ category: analysis
 userInvocable: true
 description: Generate a retrospective report analyzing agent pipeline execution, duplication, scope adherence, and output quality from a completed work session.
 argument-hint: "[work-identifier] [--issue]"
-allowed-tools: "Read, Write, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(cat:*), Bash(grep:*), Bash(git log:*), Bash(git diff:*), Bash(git branch:*), Bash(wc:*), Bash(jq:*), Bash(yq:*), Bash(mkdir:*), Bash(gh issue create:*), Task, AskUserQuestion"
+allowed-tools: "Read, Write, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(cat:*), Bash(grep:*), Bash(git log:*), Bash(git diff:*), Bash(git branch:*), Bash(wc:*), Bash(jq:*), Bash(yq:*), Bash(mkdir:*), Bash(rm:*), Bash(gh issue create:*), Task, AskUserQuestion"
 ---
 
 # Feedback
@@ -91,6 +91,7 @@ else
   # Call: Glob("*/", path="<WORK_DIR printed above>/")
   # Glob results are sorted by mtime ascending — reverse the order and take the first 3 as the most recent sessions.
   # If Glob returns no results, set identifier="" and proceed to the error path below.
+  :  # the Glob call above is a tool call, not a shell command — this branch runs nothing
 fi
 ```
 
@@ -140,7 +141,9 @@ Read the state file to extract:
 
 Collect the list of available artifacts for analysis:
 
-```bash
+Tool calls — these are Glob invocations, not shell:
+
+```text
 # State files
 Glob("state.json", path="<WORK_DIR printed above>/${identifier}/")
 
@@ -149,9 +152,12 @@ Glob("context/*.md", path="<WORK_DIR printed above>/${identifier}/")
 
 # Output documents
 Glob("*.md", path="<WORK_DIR printed above>/${identifier}/")
+```
 
-# Check for feature branch
-git branch -a --list "*${identifier}*"
+Then check for a feature branch:
+
+```bash
+git branch -a --list "*{identifier}*"
 ```
 
 Report what was found:
@@ -283,14 +289,21 @@ Output a structured analysis in ~2000 tokens. Use this exact format:
 
 Check for a feature branch:
 ```bash
-git branch -a --list "*${identifier}*"
+git branch -a --list "*{identifier}*"
 ```
 
 If a branch exists with commits beyond the base branch:
 
 ```bash
-# Get the base branch from state file or default to master/main
-git diff --stat ${base_branch}...${feature_branch}
+# Both branches are derived HERE. They were read from an earlier block before,
+# where they are empty, so the diff compared "..." and reported nothing. Derived
+# rather than substituted because a branch name may legally contain characters
+# an unquoted expansion would act on.
+base_branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+base_branch="${base_branch:-master}"
+feature_branch=$(git branch --list "*{identifier}*" --format='%(refname:short)' | head -1)
+[ -n "$feature_branch" ] || exit 1
+git diff --stat "$base_branch...$feature_branch"
 
 # Get the requirements document
 # Read <WORK_DIR printed above>/${identifier}/*-TECHNICAL_REQUIREMENTS.md or similar
@@ -440,7 +453,7 @@ Save the synthesized report to `${WORK_DIR}/feedback/${identifier}-feedback.md`.
 After saving, verify:
 ```bash
 # Confirm file exists and is non-empty
-wc -l <WORK_DIR printed above>/feedback/${identifier}-feedback.md
+wc -l <WORK_DIR printed above>/feedback/{identifier}-feedback.md
 ```
 
 **No manifest update** — feedback reports are ephemeral analysis artifacts, not tracked in manifests.
@@ -549,15 +562,30 @@ PLUGIN_REPO=""
 if [[ -f "$CONFIG" ]]; then
   PLUGIN_REPO=$(yq -r '.feedback.plugin_repo // ""' "$CONFIG")
 fi
+# The title carries values this skill generated — a score, a grade, a date —
+# and nothing constrains their shape, so they do not go on a command line. They
+# are written through a QUOTED heredoc, which disables every expansion inside
+# it, and the title is read back from the file. Same pattern as pr-review and
+# kb-write-pattern.md; `"$(cat …)"` is safe because command-substitution output
+# is not re-parsed as shell.
+umask 077
+mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
+set -C   # refuse to write through a pre-planted symlink
+cat > "$HOME/.claude/tmp/feedback-issue-title.$$.txt" <<'FEEDBACK_TITLE_EOF' || exit 1
+[Feedback] {identifier}: {score}/100 (Grade: {grade}) — {date}
+FEEDBACK_TITLE_EOF
+set +C
+
 gh issue create \
   --repo "${PLUGIN_REPO}" \
-  --title "[Feedback] ${identifier}: ${score}/100 (Grade: ${grade}) — ${date}" \
-  --body "$(cat <WORK_DIR printed above>/feedback/${identifier}-feedback.md)" \
+  --title "$(cat "$HOME/.claude/tmp/feedback-issue-title.$$.txt")" \
+  --body-file "<WORK_DIR printed above>/feedback/{identifier}-feedback.md" \
   --label "feedback" 2>/dev/null || \
 gh issue create \
   --repo "${PLUGIN_REPO}" \
-  --title "[Feedback] ${identifier}: ${score}/100 (Grade: ${grade}) — ${date}" \
-  --body "$(cat <WORK_DIR printed above>/feedback/${identifier}-feedback.md)"
+  --title "$(cat "$HOME/.claude/tmp/feedback-issue-title.$$.txt")" \
+  --body-file "<WORK_DIR printed above>/feedback/{identifier}-feedback.md"
+rm -f "$HOME/.claude/tmp/feedback-issue-title.$$.txt"
 ```
 
 > The first attempt includes `--label feedback`. If the label doesn't exist in the repo, the command falls back without it.

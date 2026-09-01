@@ -74,8 +74,8 @@ from the block above.
 
 **If identifier provided:**
 ```bash
-if [ ! -d "<WORK_DIR printed above>/${identifier}" ]; then
-  echo "❌ Work directory not found: <WORK_DIR printed above>/${identifier}"
+if [ ! -d "<WORK_DIR printed above>/{identifier}" ]; then
+  echo "❌ Work directory not found: <WORK_DIR printed above>/{identifier}"
   echo ""
   echo "Available work:"
   ls -1 <WORK_DIR printed above>/

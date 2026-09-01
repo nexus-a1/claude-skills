@@ -51,27 +51,43 @@ Three properties make them mechanical rather than decorative:
 - **Paired and named.** An unclosed marker bounds nothing, and an unnamed one loses the provenance
   that rule 7 is about.
 
-Who uses them today: `archivist` emits `ARCHIVED-CONTENT` in its SEARCH output,
-`/create-requirements` emits `UNTRUSTED-CONTENT` around the ticket-derived text it inlines at
-Stage 4.1 **and again at Stage 4.6** (the re-synthesis pass, which re-inlines the same text
-after targeted re-analysis), and `business-analyst` reads both. The `{source}` names the
-actual origin — `ticket`, `meeting`, `brainstorm`, `user-input` — because a marker that says
-`ticket` for text a meeting produced is a false provenance claim.
+Who uses them today: `archivist` emits `ARCHIVED-CONTENT` in its SEARCH output, and
+`/create-requirements` emits `UNTRUSTED-CONTENT` around the ticket-derived text **at the
+point it enters** — Stage 2.2, the first prompt that inlines `{feature_description}` —
+then carries the same boundary through all eight Stage 3 deep-dive prompts and on to
+Stage 4.1 and Stage 4.6 (the re-synthesis pass, which re-inlines the same text after
+targeted re-analysis). `business-analyst` reads both markers, and every Stage 2/3 agent is
+told the block is data. The `{source}` names the actual origin — `ticket`, `meeting`,
+`brainstorm`, `user-input` — because a marker that says `ticket` for text a meeting
+produced is a false provenance claim, and the same value is carried unchanged through
+every hop so the boundary names one source, not a different one per stage.
+
+Stage 2.2 also **scans the text for a forged boundary before inlining it**, and records the
+result in `state.json`. The record is what makes "scanned once, where it entered" hold
+across sessions: a resumed run finds the text already in state with no memory of whether it
+was ever checked, and a missing or non-clean record means unscanned, never clean.
+
+Marking a rewrite is a separate question from marking an inlined block. The Stage 3
+distillation writes `{agent}-summary.md`, and the two summaries whose sources carry
+external material — `archivist.md` and `product-expert.md` — are **re-marked on output**,
+naming the file they were distilled from. The original markers are deliberately not carried
+through: the marker's contract is that the bytes inside are the external content
+*unmodified*, and a ≤10-line distillation is a paraphrase, so preserving an
+`ARCHIVED-CONTENT` marker around rewritten text would assert a provenance that is false.
 
 Not yet marked, listed so the gap is a decision rather than an oversight:
 
 - `/load-requirements`, `/search-requirements` and `/load-context` render KB content to a
   person rather than into another component's prompt. They carry untrusted-input notices
   already; wrapping human-facing output is a display change with different trade-offs.
-- `/meeting` probes, and the Stage 3 distillation step, both pass external text onward.
-- `product-expert` output is read back as a labelled file rather than a marked block.
-- The Stage 2 and Stage 3 prompts inline `{feature_description}` unmarked — the same text
-  Stage 4.1 marks, one stage earlier.
-
-That last one is the load-bearing entry: the marker is applied where the text is
-consolidated, not where it first enters, so an agent reading it before Stage 4 sees no
-boundary at all. Closing it is a larger change than this one, and pretending otherwise by
-leaving it unlisted would be worse than the gap.
+- `/meeting` probes pass external text onward unmarked.
+- `product-expert`'s own output file is read back as a labelled file rather than a marked
+  block. Its Stage 3 *summary* is now marked; the full file is not.
+- `context-builder`'s `discovery.json` is inlined into every Stage 3 prompt unmarked. It
+  is the pipeline's own inventory of the codebase — but it was built by an agent that read
+  the ticket, so it can quote the description back, which puts ticket bytes inside those
+  prompts outside the boundary. Marking an agent's structured output is a different
+  problem from marking text at the point it enters, and is listed rather than assumed away.
 
 What they are not: a sandbox. Marking a boundary does not make what is inside safe, and content
 can arrive carrying its own fake markers — a marker is evidence about where content came from, not

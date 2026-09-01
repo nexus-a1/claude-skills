@@ -228,10 +228,29 @@ hook_declares() {
 #
 # hook_git_segments prints one line per gated occurrence:
 #
-#     <verb> <TAB> <segment>
+#     <verb> <TAB> <workdir> <TAB> <segment>
 #
 # so a caller can gate each one on its own terms — `git commit -m x && git push`
 # yields a commit segment AND a push segment, and both get their own checks.
+#
+# `workdir` is the directory that segment's git will actually run in, and it is
+# the reason this field exists (NX-61). A hook runs in the session's working
+# directory, so a command that changes directory first was gated against the
+# ORIGINAL one: `git branch --show-current` in the hook read the main
+# checkout's branch, and every push from a linked worktree was refused as a
+# direct push to a protected branch. The audit-state check had the same fault
+# one level down -- it compared the recorded sha against the main checkout's
+# HEAD, so a genuine confirmation for the real branch could never match.
+#
+# `.` means "wherever the hook is", which is correct when the command does not
+# move -- and it is a literal dot rather than an empty field because callers
+# read these lines with `IFS=$'\t' read`, where tab is IFS whitespace and an
+# empty field silently collapses, shifting every field after it. A literal `?`
+# means a directory change was present but unreadable
+# -- a quoted path, a variable, `--git-dir=` -- and callers must refuse rather
+# than fall back to their own cwd. Falling back is what produced the bug: it
+# does not merely block good pushes, it also gates a push against a repository
+# that is not the one being pushed.
 
 # Remove heredoc BODIES. Text a command writes to a file is not a command; a
 # pattern doc containing `git push` in a heredoc must not be read as a push.
@@ -310,15 +329,33 @@ HOOK_PATH_PREFIX='(/[^[:space:]]*/)?'
 # one and eats the text between them.
 #
 # A `#` only starts a comment when it is outside quotes AND begins a word.
+#
+# Quote state carries ACROSS lines (NX-64). It used to reset on every line,
+# which is wrong for the same reason the blanking below was: a quoted argument
+# can span lines, and `--body "…\n… # not a comment …\n…"` had its interior
+# lines read as unquoted, so an ordinary `#` inside prose truncated the line.
+# Worse, truncating there could remove the run's own closing quote and leave
+# the string looking unbalanced to the pass that follows.
+#
+# `\` escapes the next character outside single quotes, so `don\'t` does not
+# open a run. Inside single quotes nothing escapes, which is bash's rule.
 hook_strip_comments() {
     printf '%s\n' "$1" | awk '
       {
-        line = $0; out = ""; sq = 0; dq = 0; n = length(line)
+        line = $0; out = ""; n = length(line)
         for (i = 1; i <= n; i++) {
           c = substr(line, i, 1)
-          if (c == "\047" && !dq) { sq = !sq }
-          else if (c == "\"" && !sq) { dq = !dq }
-          else if (c == "#" && !sq && !dq) {
+          if (esc) { esc = 0; out = out c; continue }
+          if (sq) { if (c == "\047") sq = 0; out = out c; continue }
+          if (dq) {
+            if (c == "\\") { esc = 1; out = out c; continue }
+            if (c == "\"") dq = 0
+            out = out c; continue
+          }
+          if (c == "\\") { esc = 1; out = out c; continue }
+          if (c == "\047") { sq = 1; out = out c; continue }
+          if (c == "\"") { dq = 1; out = out c; continue }
+          if (c == "#") {
             p = (i == 1) ? " " : substr(line, i - 1, 1)
             if (p == " " || p == "\t") break
           }
@@ -328,17 +365,124 @@ hook_strip_comments() {
       }'
 }
 
+# hook_blank_quoted -- quoted runs neutralised, the way the segmenter needs.
+#
+# Double-quoted runs become `""` and single-quoted runs vanish entirely, which
+# is exactly what the two seds this replaces did:
+#
+#     sed 's/"[^"]*"/""/g'   and   sed "s/'[^']*'//g"
+#
+# sed is LINE-BASED, and that was the bug (NX-64). A quoted argument that spans
+# lines has its opening quote on one line and its closing quote on another, so
+# neither expression ever matched and every interior line was preprocessed as
+# if it were bare command text. A line of prose reading like a git command --
+# in a `gh pr create --body "…"`, a Jira comment, any multi-line message that
+# documents git usage -- was then segmented as a real mutation and refused.
+# Writing about git is ordinary work, and a hook that blocks ordinary work gets
+# uninstalled, at which point it protects nothing at all.
+#
+# Newlines are preserved rather than collapsed: the segmenter splits on line
+# boundaries afterwards, so a blanked multi-line run must stay the same number
+# of (now empty) lines.
+#
+# Returns non-zero when a run is still open at the end of the input. That is
+# not valid shell -- bash would refuse it too -- and the caller reports it as
+# unreadable rather than segmenting text whose quoting it could not follow.
+hook_blank_quoted() {
+    printf '%s\n' "$1" | awk '
+      {
+        line = $0; out = ""; n = length(line)
+        for (i = 1; i <= n; i++) {
+          c = substr(line, i, 1)
+          # Inside a run the content is dropped; only the terminator matters.
+          if (esc) { esc = 0; continue }
+          if (sq) { if (c == "\047") sq = 0; continue }
+          if (dq) {
+            if (c == "\\") { esc = 1; continue }
+            if (c == "\"") dq = 0
+            continue
+          }
+          if (escf) { escf = 0; out = out c; continue }
+          if (c == "\\") { escf = 1; out = out c; continue }
+          if (c == "\047") { sq = 1; continue }
+          # The pair is emitted at the OPENING quote, so a run that spans lines
+          # leaves its marker on the line it started on and nothing after.
+          if (c == "\"") { dq = 1; out = out "\"\""; continue }
+          out = out c
+        }
+        print out
+      }
+      END { if (sq || dq || esc) exit 3 }'
+}
+
 hook_preprocess() {
     local c
     c="$(hook_strip_heredoc_bodies "$1")"
     c="$(hook_strip_comments "$c")"
-    c="$(printf '%s' "$c" | sed 's/"[^"]*"/""/g')"
-    c="$(printf '%s' "$c" | sed "s/'[^']*'//g")"
+    c="$(hook_blank_quoted "$c")"
     printf '%s' "$c"
+}
+
+# hook_cd_target -- the directory a segment changes to, or empty when it is not
+# a `cd`, or `?` when it is a `cd` whose target cannot be read.
+#
+# `?` rather than a guess. The argument arrives after quoted runs have been
+# blanked -- that blanking is what makes the segmentation correct, so it is not
+# optional -- which turns a quoted target into an empty one: a directory change
+# the guard can see happening but cannot follow. Reporting that honestly lets
+# the caller refuse; inventing a fallback is how a push ends up gated against
+# the wrong repository.
+#
+# `$1` is the segment with leading assignments already stripped.
+hook_cd_target() {
+    local rest="$1" target
+    case "$rest" in
+        cd|cd[[:space:]]*) : ;;
+        *) return 0 ;;
+    esac
+    rest="${rest#cd}"
+    rest="${rest#"${rest%%[![:space:]]*}"}"
+    rest="${rest#-- }"
+    rest="${rest#"${rest%%[![:space:]]*}"}"
+    # One word. `cd /a /b` is an error in bash anyway.
+    target="${rest%%[[:space:]]*}"
+    # Bare `cd` is $HOME and `cd -` is the previous directory -- both are
+    # movements the guard cannot resolve to a repository from the text alone.
+    [ -z "$target" ] && { printf '?'; return 0; }
+    [ "$target" = "-" ] && { printf '?'; return 0; }
+    # A blanked quoted run, a variable, or a substitution: seen, not readable.
+    case "$target" in
+        *'"'*|*"'"*|*'$'*|*'`'*) printf '?'; return 0 ;;
+    esac
+    case "$target" in
+        '~')   target="$HOME" ;;
+        '~/'*) target="$HOME/${target#'~/'}" ;;
+        '~'*)  printf '?'; return 0 ;;   # ~someoneelse
+    esac
+    printf '%s' "$target"
+}
+
+# hook_join_dir -- `$2` resolved against `$1`, the way the shell would.
+hook_join_dir() {
+    local base="$1" next="$2"
+    case "$next" in
+        /*) printf '%s' "$next" ;;
+        # A relative cd with no base is still relative to where the hook runs,
+        # which is where the shell would have started too -- so it is passed
+        # through unchanged rather than made absolute against a guess.
+        *)  if [ -z "$base" ]; then printf '%s' "$next"
+            elif [ "$base" = "?" ]; then printf '?'
+            else printf '%s/%s' "$base" "$next"
+            fi ;;
+    esac
 }
 
 hook_git_segments() {
     local cmd="$1" seg verb rest
+    # The directory in effect at this point in the command, carried forward
+    # across segments: `cd X && cd Y && git push` runs in Y, and a later
+    # absolute `cd` recovers from an earlier unreadable one.
+    local wd="" seg_wd cd_target opt_dir
 
     # Non-empty in, empty out means the preprocessing failed — `sed` or `awk`
     # missing or shadowed. Every caller reads "no segments" as "nothing to
@@ -352,7 +496,7 @@ hook_git_segments() {
     # preprocessing does not.
     if [ -n "$cmd" ] && [ -z "$(hook_preprocess "$cmd")" ] \
        && [ "$(hook_preprocess 'git push')" != "git push" ]; then
-        printf 'unreadable\t%s\n' "$cmd"
+        printf 'unreadable\t?\t%s\n' "$cmd"
         return 0
     fi
 
@@ -363,8 +507,13 @@ hook_git_segments() {
     cmd="$(hook_strip_comments "$cmd")"
     # Quoted runs become empty. Done AFTER the shell-in-a-string check above, so
     # a hidden verb is refused rather than silently dropped here.
-    cmd="$(printf '%s' "$cmd" | sed 's/"[^"]*"/""/g')"
-    cmd="$(printf '%s' "$cmd" | sed "s/'[^']*'//g")"
+    if ! cmd="$(hook_blank_quoted "$cmd")"; then
+        # A quoted run that never closes. Not valid shell, so nothing legitimate
+        # arrives this way — and guessing where the quoting ends is how text
+        # gets read as a command, or a command as text.
+        printf 'unreadable\t?\t%s\n' "$1"
+        return 0
+    fi
     # Separators — and `(`, `)`, `\$(`, newline — all start a new command.
     # awk, not `sed 's/…/\n/'`: BSD sed (macOS) inserts a literal `n` for that
     # escape, which would join every segment into one line and make every
@@ -384,12 +533,35 @@ hook_git_segments() {
         rest="$(printf '%s' "$rest" | sed -E 's/^(then|do|else)[[:space:]]+//')"
         rest="$(hook_strip_env_assignments "$rest")"
 
+        # Follow the command's own directory changes. Tracked over EVERY
+        # segment, not just git ones, because the `cd` is a separate segment
+        # from the push it sets up -- which is precisely why reading the branch
+        # from the hook's own cwd was wrong (NX-61).
+        cd_target="$(hook_cd_target "$rest")"
+        [ -n "$cd_target" ] && wd="$(hook_join_dir "$wd" "$cd_target")"
+
+        # git's own -C, applied on top: it is relative to wherever the shell
+        # already is, so the two compose rather than compete.
+        seg_wd="$wd"
+        if [[ "$rest" =~ (^|[[:space:]])(--git-dir|--work-tree)(=|[[:space:]]) ]]; then
+            # These repoint git at a repository the guard would have to
+            # reconstruct from two half-specified paths. Rare enough to refuse
+            # and say so; `-C` expresses the same thing readably.
+            seg_wd="?"
+        elif [[ "$rest" =~ (^|[[:space:]])-C[[:space:]]+([^[:space:]]+) ]]; then
+            opt_dir="${BASH_REMATCH[2]}"
+            case "$opt_dir" in
+                *'"'*|*"'"*|*'$'*|*'`'*) seg_wd="?" ;;
+                *) seg_wd="$(hook_join_dir "$wd" "$opt_dir")" ;;
+            esac
+        fi
+
         # --help is documentation, not a mutation. Emitted as `exempt` rather
         # than skipped silently, so the residue check below can tell "we looked
         # at this and it is fine" from "we could not see it at all".
         if [[ "$rest" =~ (^|[[:space:]])(--help|-h)([[:space:]]|$) ]] \
            && [[ "$rest" =~ ^git([[:space:]]|$) ]]; then
-            printf 'exempt\t%s\n' "$seg"; continue
+            printf 'exempt\t%s\t%s\n' "${seg_wd:-.}" "$seg"; continue
         fi
 
         # The option forms that never matched an anchored regex either.
@@ -407,9 +579,9 @@ hook_git_segments() {
             if [ "$verb" = "push" ] \
                && [[ "$rest" =~ (^|[[:space:]])--dry-run([[:space:]]|$) ]] \
                && ! [[ "$rest" =~ (^|[[:space:]])(-o|--push-option|--receive-pack|--exec|--repo)[[:space:]]+--dry-run ]]; then
-                printf 'exempt\t%s\n' "$seg"; continue
+                printf 'exempt\t%s\t%s\n' "${seg_wd:-.}" "$seg"; continue
             fi
-            printf '%s\t%s\n' "$verb" "$seg"
+            printf '%s\t%s\t%s\n' "$verb" "${seg_wd:-.}" "$seg"
         elif [[ "$rest" =~ (^|[^A-Za-z0-9_-])${HOOK_PATH_PREFIX}git${HOOK_GIT_OPTS}[[:space:]]+(commit|push)([[:space:]]|$) ]]; then
             # A mutation IS in this segment, but not where a command starts —
             # `nice git push`, `timeout 5 git push`, and whatever wrapper comes
@@ -419,7 +591,7 @@ hook_git_segments() {
             # the command as a whole had any recognised verb let one vouch for
             # another, so `git commit -m x && nice git push` passed on the
             # strength of its commit.
-            printf 'unreadable\t%s\n' "$seg"
+            printf 'unreadable\t%s\t%s\n' "${seg_wd:-.}" "$seg"
         fi
     done <<< "$cmd"
 }

@@ -69,13 +69,47 @@ The user's response via the text input becomes `PLAN_TEXT`. If they enter nothin
 1. `SECURITY_OPT_IN=1` (user passed `--security`)
 2. `PLAN_TEXT` matches security heuristic — check with grep, case-insensitive, for any of: `auth`, `authn`, `authz`, `authentic`, `authoriz`, `password`, `credential`, `token`, `secret`, `permission`, `role`, `session`, `cookie`, `encrypt`, `decrypt`, `PII`, `sensitive`, `personal data`, `payment`, `card number`, `social security`, `SSN`
 
+Both inputs are derived inside the block that uses them. Nothing here is
+carried from an earlier Bash call, because nothing survives one.
+
 ```bash
-if [ "$SECURITY_OPT_IN" = "1" ] || echo "$PLAN_TEXT" | grep -qiE "auth(n|z|entic|oriz)|password|credential|token|secret|permission|role|session|cookie|encrypt|decrypt|pii|sensitive|personal data|payment|card number|social security|ssn"; then
+# $ARGUMENTS is free text the user typed, so it does NOT go on a command line —
+# not even to be inspected. `case "$ARGUMENTS" in` would put it there, and
+# substituting a value in order to CHECK it is the same defect as using it (see
+# shared/kb-write-pattern.md). It goes to a file and is grepped as one.
+umask 077
+mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
+set -C   # refuse to write through a pre-planted symlink
+cat > "$HOME/.claude/tmp/review-plan-args.$$.txt" <<'REVIEW_PLAN_ARGS_EOF' || exit 1
+$ARGUMENTS
+REVIEW_PLAN_ARGS_EOF
+if grep -qF -- '--security' "$HOME/.claude/tmp/review-plan-args.$$.txt"; then
+  SECURITY_OPT_IN=1
+else
+  SECURITY_OPT_IN=0
+fi
+rm -f "$HOME/.claude/tmp/review-plan-args.$$.txt"
+
+# The plan is free text the user typed, so it never goes on a command line: a
+# value containing a quote or $( ) would close the argument and run. It is
+# written through a QUOTED heredoc — which disables every expansion inside it —
+# and grepped as a file.
+cat > "$HOME/.claude/tmp/review-plan-text.$$.txt" <<'REVIEW_PLAN_TEXT_EOF' || exit 1
+{PLAN_TEXT}
+REVIEW_PLAN_TEXT_EOF
+set +C
+
+if [ "$SECURITY_OPT_IN" = "1" ] || grep -qiE "auth(n|z|entic|oriz)|password|credential|token|secret|permission|role|session|cookie|encrypt|decrypt|pii|sensitive|personal data|payment|card number|social security|ssn" "$HOME/.claude/tmp/review-plan-text.$$.txt"; then
   INCLUDE_SECURITY=1
 else
   INCLUDE_SECURITY=0
 fi
+rm -f "$HOME/.claude/tmp/review-plan-text.$$.txt"
+echo "INCLUDE_SECURITY=$INCLUDE_SECURITY"
 ```
+
+`INCLUDE_SECURITY` does not survive this block either. Read the value it
+printed and substitute it wherever the steps below say `INCLUDE_SECURITY=1`.
 
 Report the decision to the user:
 
@@ -292,12 +326,21 @@ backticks would be executed outright. The delimiter is QUOTED, which is what
 stops the body being expanded as it is written.
 
 ```bash
-mkdir -p .claude/session-state
-cat > .claude/session-state/.plan-title <<'PLAN_TITLE_EOF'
+# Same hardening as the two temp writes above, for the same reasons: the name
+# carries the PID so a second session in this worktree cannot overwrite it
+# between the write and the read, noclobber refuses to follow a pre-planted
+# symlink, and the write ABORTS if it fails — with noclobber a failed write
+# leaves whatever was already there, and reading it anyway would turn a
+# refused write into a silent read of someone else's content.
+umask 077
+mkdir -p -m 700 .claude/session-state && chmod 700 .claude/session-state
+set -C
+cat > ".claude/session-state/.plan-title.$$" <<'PLAN_TITLE_EOF' || exit 1
 {first heading or first line of the revised plan}
 PLAN_TITLE_EOF
-SLUG=$(tr '[:upper:]' '[:lower:]' < .claude/session-state/.plan-title | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -d'-' -f1-6)
-rm -f .claude/session-state/.plan-title
+set +C
+SLUG=$(tr '[:upper:]' '[:lower:]' < ".claude/session-state/.plan-title.$$" | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -d'-' -f1-6)
+rm -f ".claude/session-state/.plan-title.$$"
 REVISED_PLAN_PATH=".claude/session-state/review-plan-${SLUG}.md"
 ```
 

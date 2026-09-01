@@ -202,8 +202,15 @@ cat > "$HOME/.claude/tmp/pk-title.txt" <<'PK_TITLE_EOF'
 {title}
 PK_TITLE_EOF
 SLUG=$(tr '[:upper:]' '[:lower:]' < "$HOME/.claude/tmp/pk-title.txt" | tr '\n' '-' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//')
+rm -f "$HOME/.claude/tmp/pk-title.txt"
 echo "SLUG=$SLUG"
 ```
+
+> The `rm -f` matches what the category block below already does. The file
+> lives at a fixed name in a shared `$HOME/.claude/tmp`, so one left behind is
+> the title the *next* run slugifies should that run's write fail — a silent
+> wrong answer rather than an error. It is deleted after the slugify reads it,
+> not before.
 
 > `SLUG=$(echo "{title}" | …)` was the shape this replaces. Substituted into a
 > double-quoted string, a title of `a";id;"` closes the quote and runs `id`; one
@@ -288,6 +295,9 @@ Tags are inferred from the title and content — use 3–6 short lowercase terms
 Create the category directory if it doesn't exist:
 
 ```bash
+# A wrong or missing substitution must fail here: an empty KB_PATH makes
+# this create a category directory next to `/`, which succeeds silently.
+[ -n "<KB_PATH printed above>" ] && [ -d "<KB_PATH printed above>" ] || exit 1
 mkdir -p "<KB_PATH printed above>/<CATEGORY printed above>"
 ```
 

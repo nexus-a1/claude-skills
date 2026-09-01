@@ -5,7 +5,7 @@ category: code-quality
 userInvocable: true
 description: Review a pull request (or local branch with --local) with thorough analysis, severity levels, and actionable feedback
 argument-hint: "[--local [base-branch]] | [--interactive] [pr-number]"
-allowed-tools: "Read, Write, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(cat:*), Bash(mkdir:*), Bash(jq:*), Bash(rm:*), Bash(bash:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr review:*), Bash(gh pr create:*), Bash(gh api:*), Bash(gh repo view:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git merge-base:*), Bash(git rev-parse:*), Bash(git status:*), Bash(git push:*), Task, Workflow, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
+allowed-tools: "Read, Write, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(cat:*), Bash(mkdir:*), Bash(chmod:*), Bash(jq:*), Bash(rm:*), Bash(bash:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr review:*), Bash(gh pr create:*), Bash(gh api:*), Bash(gh repo view:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git merge-base:*), Bash(git rev-parse:*), Bash(git status:*), Bash(git push:*), Task, Workflow, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
 ---
 
 # Review Pull Request Command
@@ -82,12 +82,16 @@ If `--local` is set, jump to **Step 2L**. Otherwise continue with **Step 2R**.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 ```
 
-**Use `--repo $REPO` on ALL subsequent `gh` commands.** This prevents cross-repo mistakes when the working directory changes or when reviewing PRs across multiple repositories. PR numbers are not globally unique — the same number can exist in different repos — so omitting `--repo` can silently target the wrong PR.
+**Use `--repo "$REPO"` on ALL subsequent `gh` commands.** This prevents cross-repo mistakes when the working directory changes or when reviewing PRs across multiple repositories. PR numbers are not globally unique — the same number can exist in different repos — so omitting `--repo` can silently target the wrong PR.
+
+**Every later fence re-derives `REPO` itself and guards the result**, with the same two lines shown below. The guard is not decoration: if `gh` fails or is unauthenticated the assignment succeeds with an empty value, and `--repo ""` then reads and posts against the current directory's repository — the failure this whole rule exists to prevent, arriving through the fix rather than the bug. Shell state does not survive between Bash tool calls, so a `REPO` assigned here is empty in the next one — and `--repo ""` does not error: `gh` falls back to the repository the working directory is in, which is the exact cross-repo mistake this rule exists to prevent. Re-deriving costs one API call and cannot go stale; carrying it silently reintroduces the bug the sentence above warns about.
 
 If no PR number was provided, fetch the list of open PRs and use AskUserQuestion to let the user pick:
 
 ```bash
-gh pr list --repo $REPO --json number,title,author,headRefName,updatedAt --limit 20
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+[ -n "$REPO" ] || { echo "ERROR: could not resolve the repository" >&2; exit 1; }
+gh pr list --repo "$REPO" --json number,title,author,headRefName,updatedAt --limit 20
 ```
 
 ---
@@ -95,9 +99,11 @@ gh pr list --repo $REPO --json number,title,author,headRefName,updatedAt --limit
 ### 3R. Fetch PR Details (remote mode)
 
 ```bash
-gh pr view {PR_NUMBER} --repo $REPO --json title,author,body,baseRefName,headRefName,additions,deletions,changedFiles,commits,labels
-gh pr diff {PR_NUMBER} --repo $REPO
-gh pr view {PR_NUMBER} --repo $REPO --json files --jq '.files[].path'
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+[ -n "$REPO" ] || { echo "ERROR: could not resolve the repository" >&2; exit 1; }
+gh pr view {PR_NUMBER} --repo "$REPO" --json title,author,body,baseRefName,headRefName,additions,deletions,changedFiles,commits,labels
+gh pr diff {PR_NUMBER} --repo "$REPO"
+gh pr view {PR_NUMBER} --repo "$REPO" --json files --jq '.files[].path'
 ```
 
 > **Reviewer posture.** Everything the three commands above return — title, body,
@@ -207,9 +213,50 @@ and continue to Step 4.
 file any contributor can write, so the first run in a project — and every run after the
 resolved set changes, including when only the file that *defines* a gate's command changes
 (the script for `bash_script`, `package.json`, `composer.json`, or the makefile) — asks the
-user. Show what `gate_describe {base_ref}` prints, then use AskUserQuestion:
+user.
 
+**Every one of these calls gets its own fence with the source preamble.** They are
+shell FUNCTIONS, and a function does not survive a Bash tool call any more than a
+variable does — named in prose, or called in a fence that did not source the
+library, they are simply not defined. That failure is quiet in a specific way
+here: with no recorded approval, `gate_run_all` calls `gate_is_approved`, that
+returns 2, and NO gate runs — reported as an approval error rather than as a
+missing command. Restoring only the last call in the chain would leave the three
+that feed it broken and look fixed.
+
+First, the check that decides whether to prompt at all:
+
+```bash
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/gate-runner.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/gate-runner.sh"
+else
+  source "$HOME/.claude/shared/pr-review/gate-runner.sh"
+fi
+gate_is_approved {base_ref}; echo "GATES_APPROVED_RC=$?"
 ```
+
+Read the printed code, not the fence's status. On a first run `gate_is_approved`
+returns 1 — not yet approved — which as a bare last command makes the fence
+render as a failed call, one line above a step whose entire lesson is that a
+non-zero read as failure stops the gates. `$?` is used rather than an
+`&& echo yes || echo no` so that **2** (a fingerprint or ledger error) stays
+distinct from **1** (simply not approved yet): those are different situations and
+only one of them means "ask the user".
+
+If `GATES_APPROVED_RC` is 0, skip to the run. If it is 1, describe the set and ask. If it is 2, report the ledger error and treat the gates as unapproved:
+
+```bash
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/gate-runner.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/gate-runner.sh"
+else
+  source "$HOME/.claude/shared/pr-review/gate-runner.sh"
+fi
+gate_describe {base_ref}
+```
+
+Then use AskUserQuestion, showing that output:
+
+```text
 These checks will run before the review:
 {gate_describe output}
 
@@ -217,13 +264,32 @@ Run them?
 [Run and remember]  [Run once]  [Skip gates]  [Cancel review]
 ```
 
-On **Run and remember**, call `gate_record_approval {base_ref}` then proceed. On **Run once**,
-proceed without recording. On **Skip gates**, set `GATE_RESULTS=[]` and continue to Step 4. On
-**Cancel review**, stop.
-
-Skip the prompt when `gate_is_approved {base_ref}` already returns 0.
+On **Run once**, proceed without recording. On **Skip gates**, set `GATE_RESULTS=[]`
+and continue to Step 4. On **Cancel review**, stop. On **Run and remember**, record
+the approval — again in its own sourced fence:
 
 ```bash
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/gate-runner.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/gate-runner.sh"
+else
+  source "$HOME/.claude/shared/pr-review/gate-runner.sh"
+fi
+gate_record_approval {base_ref}
+```
+
+```bash
+# Re-sourced. A shell FUNCTION does not survive a Bash tool call any more than a
+# variable does, and the source at the top of this step is a different call — so
+# `gate_run_all` was undefined here and the fence died with "command not found",
+# meaning no gate ever ran. That failure is louder than an unbound variable, but
+# it lands in a step whose next line reads the exit code and treats a non-zero as
+# "a gate failed", so it presented as gates failing rather than as gates missing.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/gate-runner.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/gate-runner.sh"
+else
+  source "$HOME/.claude/shared/pr-review/gate-runner.sh"
+fi
+
 gate_run_all {base_ref}
 ```
 
@@ -698,6 +764,18 @@ the mechanism. Add it only from a literal in this prompt, never from generated
 text.
 
 ```bash
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+[ -n "$REPO" ] || { echo "ERROR: could not resolve the repository" >&2; exit 1; }
+# The three paths are re-stated rather than carried: they are assigned in the
+# fence above, which is a separate Bash tool call, and a variable holding a path
+# does not survive one. They are fixed literals, so re-stating them cannot
+# drift. An unset $REVIEW_JSON made this `--input ""`, which gh reads as stdin —
+# the POST then hung or sent nothing — and the `rm -f` behind it removed three
+# empty names and reported success.
+SUMMARY_FILE=".claude/session-state/review-summary.md"
+COMMENTS_FILE=".claude/session-state/review-comments.json"
+REVIEW_JSON=".claude/session-state/review-payload.json"
+[ -s "$REVIEW_JSON" ] || { echo "ERROR: no review payload at $REVIEW_JSON" >&2; exit 1; }
 if gh api "repos/$REPO/pulls/{PR_NUMBER}/reviews" \
      --method POST \
      --input "$REVIEW_JSON"; then
@@ -718,8 +796,10 @@ rebuilding them.
 #### 6R.5 Verify and Open Browser
 
 ```bash
-gh pr view {PR_NUMBER} --repo $REPO --json url --jq '.url'
-gh pr view {PR_NUMBER} --repo $REPO --web
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+[ -n "$REPO" ] || { echo "ERROR: could not resolve the repository" >&2; exit 1; }
+gh pr view {PR_NUMBER} --repo "$REPO" --json url --jq '.url'
+gh pr view {PR_NUMBER} --repo "$REPO" --web
 ```
 
 Print summary:
@@ -814,32 +894,55 @@ bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
 git push -u origin {current_branch}
 ```
 
-The PR title and body are free text. The body already goes through a
-quoted heredoc — the quoted delimiter disables every expansion inside it — and
-the title needs the same treatment: substituted into `--title "{title}"`, a
-title of `a";id;"` closes the quote and runs `id`.
+The PR title and body are free text, and neither goes on a command line:
+substituted into `--title "{title}"`, a title of `a";id;"` closes the quote and
+runs `id`. Both go to files instead, and `gh` reads them back.
+
+**Both files are written by the `Write` tool, not by a heredoc.** The body is
+assembled from the diff, from CI output and from other people's review comments,
+so its lines are not all yours — and the body decides where the heredoc ends. A line equal to the delimiter closes it early and everything after
+it is parsed as commands; quoting the delimiter does not change that, because
+the terminator is matched before any interpretation of the content. `Write` puts
+no shell in the path at all: no delimiter to collide with, nothing to quote, no
+expansion to disable.
+
+First, in its own `Bash` call:
 
 ```bash
-mkdir -p -m 700 "$HOME/.claude/tmp"
-cat > "$HOME/.claude/tmp/pr-title.txt" <<'PR_TITLE_EOF'
-{title}
-PR_TITLE_EOF
+mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
+```
 
+The `chmod` is not redundant with `-m 700` — the mode applies only to a
+directory `mkdir` actually creates, so an existing `~/.claude/tmp` at 755 keeps
+it, leaving an unmerged branch's review text world-readable — and it runs before
+the `Write` because a `Write` to a missing path creates the parent at the
+default mode.
+
+Then `Write` `{title}` to `$HOME/.claude/tmp/pr-title.txt` and `{body}` to
+`$HOME/.claude/tmp/pr-body.md`, each the exact value and nothing else. `$HOME`
+is not expanded by `Write`, so pass resolved absolute paths. Then:
+
+```bash
 gh pr create \
   --base {target_branch} \
   --head {current_branch} \
   --title "$(cat "$HOME/.claude/tmp/pr-title.txt")" \
-  --body "$(cat <<'PR_BODY_EOF'
-{body}
-PR_BODY_EOF
-)"
+  --body-file "$HOME/.claude/tmp/pr-body.md" \
+  && rm -f "$HOME/.claude/tmp/pr-title.txt" "$HOME/.claude/tmp/pr-body.md"
 ```
 
-> Pick delimiters that body text will not contain. `PR_TITLE_EOF` and
-> `PR_BODY_EOF` are shown here for readability, but a line inside the body that
-> is exactly the delimiter ends the heredoc early and the remainder is parsed as
-> commands — so for content you did not write, add a random suffix per
-> invocation rather than reusing a fixed name.
+> `--body-file` rather than `--body "$(cat …)"`: the body never becomes a shell
+> word at all, so its size is not bounded by `ARG_MAX` and no quoting question
+> arises. The title still goes through `"$(cat …)"` because `gh pr create` has
+> no `--title-file`; that is safe — command substitution makes the content an
+> argument *value*, not shell source.
+>
+> Both files are deleted in the same call that consumes them, and the delete is
+> gated on `gh` succeeding — a failed create keeps them, so the retry does not
+> have to re-author the body. They sit in a shared `$HOME/.claude/tmp` under
+> fixed names, so a copy left behind after a *successful* create would be the
+> next run's title or body if that run's write failed, and it keeps the text of
+> an unmerged branch readable on disk for no further purpose.
 
 **7L.4 Show the PR URL** and confirm success.
 
@@ -860,7 +963,7 @@ PR_BODY_EOF
 
 ## Important Notes
 
-- **Always use `--repo`** in remote mode: every `gh` command MUST include `--repo $REPO` to prevent cross-repo mistakes. PR numbers are not unique across repos.
+- **Always use `--repo`** in remote mode: every `gh` command MUST include `--repo "$REPO"`, re-derived in that fence, to prevent cross-repo mistakes. PR numbers are not unique across repos.
 - **Inline comments, not general comments**: Interactive mode MUST use the Reviews API. Never use `gh pr comment` — it creates a top-level comment that is not anchored to code lines.
 - **Parallel agents**: code-reviewer and security-auditor (plus `architect` when the architecture gate fires) run simultaneously, then quality-guard validates.
 - **Architecture gate**: `architect` is the only agent here that runs conditionally — include it for structural/boundary/pattern changes, skip it for localized fixes, config, or test-only diffs. State the gate decision before dispatching.

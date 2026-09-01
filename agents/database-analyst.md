@@ -39,19 +39,70 @@ If credentials are found, use them. If not, ask the user for connection details.
 
 ### Option 1: CLI Tools (Preferred for simplicity)
 
+Each block below binds its connection details **in the block that uses them**.
+That is not tidiness: shell state does not survive between `Bash` tool calls, so
+anything the discovery step above exported is already gone here, and an empty
+`-h` or `-u` does not fail — the client falls back to its own defaults and
+queries the wrong database, or the local socket, and reports the results as if
+they were the project's. Change `ENV_FILE` and the key names to what the
+discovery step actually found; they differ by framework.
+
 **MySQL:**
 ```bash
-mysql -h $HOST -u $USER -p$PASSWORD $DATABASE -e "SELECT * FROM users LIMIT 10;"
+ENV_FILE=".env"
+[ -f "$ENV_FILE" ] || { echo "ERROR: no database config at $ENV_FILE" >&2; exit 1; }
+# Reads one key from the config file: last assignment wins, surrounding quotes
+# stripped, a quote INSIDE the value left alone — stripping those too would
+# hand the client a silently wrong password.
+env_val() { sed -n "s/^[[:space:]]*$1=//p" "$ENV_FILE" | tail -n 1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"; }
+DB_HOST=$(env_val DB_HOST)
+DB_USER=$(env_val DB_USERNAME)
+DB_NAME=$(env_val DB_DATABASE)
+[ -n "$DB_HOST" ] && [ -n "$DB_USER" ] && [ -n "$DB_NAME" ] \
+  || { echo "ERROR: $ENV_FILE has no DB_HOST/DB_USERNAME/DB_DATABASE" >&2; exit 1; }
+
+# MYSQL_PWD, never `-p<password>`: an argument is visible in `ps` to every user
+# on the machine, and the argument here is the password.
+MYSQL_PWD=$(env_val DB_PASSWORD)
+export MYSQL_PWD
+mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" -e "SELECT * FROM users LIMIT 10;"
+unset MYSQL_PWD
 ```
 
 **PostgreSQL:**
 ```bash
-PGPASSWORD=$PASSWORD psql -h $HOST -U $USER -d $DATABASE -c "SELECT * FROM users LIMIT 10;"
+ENV_FILE=".env"
+[ -f "$ENV_FILE" ] || { echo "ERROR: no database config at $ENV_FILE" >&2; exit 1; }
+# Reads one key from the config file: last assignment wins, surrounding quotes
+# stripped, a quote INSIDE the value left alone — stripping those too would
+# hand the client a silently wrong password.
+env_val() { sed -n "s/^[[:space:]]*$1=//p" "$ENV_FILE" | tail -n 1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"; }
+DB_HOST=$(env_val DB_HOST)
+DB_USER=$(env_val DB_USERNAME)
+DB_NAME=$(env_val DB_DATABASE)
+[ -n "$DB_HOST" ] && [ -n "$DB_USER" ] && [ -n "$DB_NAME" ] \
+  || { echo "ERROR: $ENV_FILE has no DB_HOST/DB_USERNAME/DB_DATABASE" >&2; exit 1; }
+
+PGPASSWORD=$(env_val DB_PASSWORD)
+export PGPASSWORD
+psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -c "SELECT * FROM users LIMIT 10;"
+unset PGPASSWORD
 ```
 
 **SQLite:**
 ```bash
-sqlite3 $DB_FILE "SELECT * FROM users LIMIT 10;"
+ENV_FILE=".env"
+[ -f "$ENV_FILE" ] || { echo "ERROR: no database config at $ENV_FILE" >&2; exit 1; }
+# Reads one key from the config file: last assignment wins, surrounding quotes
+# stripped, a quote INSIDE the value left alone.
+env_val() { sed -n "s/^[[:space:]]*$1=//p" "$ENV_FILE" | tail -n 1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"; }
+DB_FILE=$(env_val DB_DATABASE)
+# `-f`, not just `-n`: sqlite3 CREATES a missing file rather than refusing, so
+# a wrong path fails as `no such table: users` — which reads like a schema
+# problem and sends you looking in the wrong place.
+[ -n "$DB_FILE" ] && [ -f "$DB_FILE" ] \
+  || { echo "ERROR: no SQLite file at '$DB_FILE'" >&2; exit 1; }
+sqlite3 "$DB_FILE" "SELECT * FROM users LIMIT 10;"
 ```
 
 ### Option 2: Python Script (For complex analysis)
@@ -59,10 +110,18 @@ sqlite3 $DB_FILE "SELECT * FROM users LIMIT 10;"
 Use when you need data processing, aggregations, or multiple queries:
 
 ```python
+import os
 import pymysql  # or psycopg2, sqlite3
 
-# Connect (use credentials from .env or user input)
-conn = pymysql.connect(host=HOST, user=USER, password=PASSWORD, database=DATABASE)
+# Read the credentials here, in the script that uses them — HOST/USER/PASSWORD
+# as bare names is a NameError, and nothing in this process set them. Export
+# them from the config file in the same Bash call that runs this script.
+conn = pymysql.connect(
+    host=os.environ["DB_HOST"],
+    user=os.environ["DB_USERNAME"],
+    password=os.environ["DB_PASSWORD"],
+    database=os.environ["DB_DATABASE"],
+)
 cursor = conn.cursor()
 
 # Execute query

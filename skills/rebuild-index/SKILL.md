@@ -95,6 +95,24 @@ For any artifact directory whose storage type is `git`, sync before scanning
 `product-knowledge` are synced by their own delegated skill/agent):
 
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls, so the
+# paths and types the Configuration block resolved are empty in this one. Empty
+# is not loud — "$_type" would never equal "git", every location would be
+# skipped as if none were git-backed, and the rebuild below would then scan
+# whatever was last pulled.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+IFS='|' read -r WORK_DIR WORK_TYPE         <<< "$(resolve_artifact_typed work work)"
+IFS='|' read -r BRAINSTORM_DIR BRAIN_TYPE  <<< "$(resolve_artifact_typed brainstorms brainstorm)"
+IFS='|' read -r PROPOSALS_DIR PROP_TYPE    <<< "$(resolve_artifact_typed proposals proposals)"
+IFS='|' read -r REFACTOR_DIR REFAC_TYPE    <<< "$(resolve_artifact_typed refactoring work/refactoring-sessions)"
+
 for pair in "work:$WORK_TYPE:$WORK_DIR" "brainstorms:$BRAIN_TYPE:$BRAINSTORM_DIR" \
             "proposals:$PROP_TYPE:$PROPOSALS_DIR" "refactoring:$REFAC_TYPE:$REFACTOR_DIR"; do
   IFS=':' read -r _artifact _type _dir <<< "$pair"
@@ -251,6 +269,35 @@ sanctioned KB-write pattern
 `cd` in, push with the two logged bypasses, no `record-audit.sh`:
 
 ```bash
+# Re-derived here: shell state does not survive between Bash tool calls, so the
+# pair the Configuration block resolved is empty in this one — and an empty
+# "$PROD_TYPE" fails the `git` test, leaving the manifest this step just wrote
+# uncommitted, which is the exact conflict the paragraph above describes.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+# STRICT, not the advisory resolver, because what this gates is a WRITE — and
+# not an ordinary one: the push below drops branch protection and the audit gate
+# together. The advisory resolver answers "where would this live", and for an
+# artifact nobody configured it answers `$WORKSPACE_ROOT/.claude`, inheriting the
+# TYPE of whatever location it fell back to. Point `local` at a git location and
+# `product-knowledge` at nothing, and the advisory pair comes back
+# `<project>/.claude|git` — the test below passes and the bypassed push lands in
+# the project's own repository. Strict refuses instead of fabricating (rc 3 here)
+# and returns the same PATH|TYPE pair, so this is a swap, not a redesign.
+# See docs/decisions/014-artifact-resolution-strictness.md.
+if _RESOLVED=$(resolve_artifact_strict product-knowledge .); then
+  IFS='|' read -r PRODUCT_DIR PROD_TYPE <<< "$_RESOLVED"
+else
+  echo "product-knowledge is not configured for storage — the rebuilt manifest stays local, uncommitted" >&2
+  PRODUCT_DIR=""; PROD_TYPE=""
+fi
+
 if [[ "$PROD_TYPE" == "git" && -d "$PRODUCT_DIR" ]]; then
   (
     cd "$PRODUCT_DIR"
@@ -306,8 +353,37 @@ sanctioned KB-write pattern
 mechanical `record-audit.sh` rubber-stamp.
 
 ```bash
-for pair in "work:$WORK_TYPE:$WORK_DIR" "brainstorms:$BRAIN_TYPE:$BRAINSTORM_DIR" \
-            "proposals:$PROP_TYPE:$PROPOSALS_DIR" "refactoring:$REFAC_TYPE:$REFACTOR_DIR"; do
+# Re-derived here, for the same reason Step 2 re-derives them: shell state does
+# not survive between Bash tool calls. Empty values would make "$_type" never
+# equal "git", so a rebuilt manifest in a git-backed location would silently go
+# uncommitted — which is precisely the state this step exists to prevent.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+# STRICT here, unlike Step 2. Step 2 pulls; this pushes, with branch protection
+# and the audit gate both dropped. For an artifact nobody configured, the
+# advisory resolver fabricates a path under the project and inherits the fallback
+# location's type — so `local: {type: git}` plus an unconfigured `brainstorms`
+# makes the loop below push the project's own repository. Strict refuses rather
+# than guessing; an artifact it refuses is skipped, not written to.
+# See docs/decisions/014-artifact-resolution-strictness.md.
+_pairs=()
+for _art in work:work brainstorms:brainstorm proposals:proposals refactoring:work/refactoring-sessions; do
+  IFS=':' read -r _name _subdir <<< "$_art"
+  if _RESOLVED=$(resolve_artifact_strict "$_name" "$_subdir"); then
+    IFS='|' read -r _p _t <<< "$_RESOLVED"
+    _pairs+=("$_name:$_t:$_p")
+  else
+    echo "$_name is not configured for storage — its rebuilt manifest stays local, uncommitted" >&2
+  fi
+done
+
+for pair in "${_pairs[@]}"; do
   IFS=':' read -r _artifact _type _dir <<< "$pair"
   if [[ "$_type" == "git" && -d "$_dir" ]]; then
     (

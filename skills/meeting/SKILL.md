@@ -249,6 +249,8 @@ heredoc delimiter disables all of that — the content reaches jq as inert
 bytes no matter what it contains:
 
 ```bash
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<MDIR printed above>" ] && [ -d "<MDIR printed above>" ] || exit 1
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 SUBJECT=$(cat <<'SUBJECT_EOF'
 {subject}
@@ -401,6 +403,8 @@ Set `Status: Draft`.
 **Step W4 — Mark wrapped:**
 
 ```bash
+# A wrong or missing substitution must fail here, not write next to `/`.
+[ -n "<MDIR printed above>" ] && [ -d "<MDIR printed above>" ] || exit 1
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 tmp="<MDIR printed above>/.state.json.tmp.$$"
 jq --arg t "$NOW" '.status="wrapped" | .wrapped_at=$t | .updated_at=$t' \
@@ -545,6 +549,8 @@ required. Do this for `summary.md` always, and `changes.md` unless `--lite`.
 ```bash
 RENDER="${CLAUDE_PLUGIN_ROOT}/shared/render-doc-html.sh"
 [ -f "$RENDER" ] || RENDER="$HOME/.claude/shared/render-doc-html.sh"
+# A wrong or missing substitution must fail here, not write `/.doc-title`.
+[ -n "<MDIR printed above>" ] && [ -d "<MDIR printed above>" ] || exit 1
 
 # The title is free text the user wrote, so it goes to a file through a QUOTED
 # heredoc and never onto a command line. Substituted directly into --title "…",

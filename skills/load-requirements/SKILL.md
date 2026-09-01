@@ -41,7 +41,7 @@ View complete requirements, decisions, implementation notes, and lessons learned
 
 ## Arguments
 
-```bash
+```text
 /load-requirements <identifier>
 ```
 
@@ -65,22 +65,51 @@ else
   exit 1
 fi
 IFS='|' read -r REPO _TYPE <<< "$(resolve_artifact_typed requirements requirements)"
-_BASE="$(dirname "$REPO")"
-```
+[ -n "$REPO" ] || { echo "ERROR: requirements storage resolved to an empty path" >&2; exit 1; }
 
-If the storage location type is `git`, sync before reading:
-```bash
+# The sync runs HERE, in the same call that resolved $REPO — not in a fence of
+# its own. Shell variables do not survive between Bash tool calls: split across
+# two calls, $_TYPE arrives empty, the `if` never fires and the pull silently
+# never happens, while $REPO arrives empty too and the guard below exits 1. Both
+# failures are quiet, and the second one makes the block look like it ran.
+#
+# `cd "$REPO"` and not its parent, inside a subshell: git pull operates on the
+# containing repository
+# from any directory inside it, and dirname is not the location root when subdir
+# has more than one segment. The emptiness test above is the actual guard —
+# `cd ""` returns 0 and STAYS PUT, so an empty $REPO would otherwise pull
+# whatever repository this session is sitting in, which is the user's own
+# project. `cd … || exit 1` does not catch that: the `||` fires only for a path
+# that exists nowhere, and "" is not such a path.
+# Echo BEFORE the sync, not after. Every later step substitutes these two
+# values, so they must be printed on a path that a sync failure cannot skip.
+echo "REPO=$REPO TYPE=$_TYPE"
+
 if [[ "$_TYPE" == "git" ]]; then
-  # `cd "$REPO"`, not its parent: git pull operates on the containing
-  # repository from any directory inside it, and dirname is not the location
-  # root when subdir has more than one segment. The emptiness test is the
-  # actual guard — `cd ""` returns 0 and stays put, so an unset REPO would
-  # otherwise pull whatever repository this session is in.
-  [ -n "$REPO" ] || exit 1
-  cd "$REPO" || exit 1
-  git pull
+  # SUBSHELL. Bash-tool *cwd* does persist between calls even though variables
+  # do not, so a bare `cd` here would leave every later step standing in the
+  # knowledge-base repo — and Step 4's export writes relative paths
+  # (`docs/reference/...`), which would then land inside the KB instead of the
+  # user's project. The parentheses scope the move to the pull.
+  #
+  # WARN, not exit. The `&&` is already the guard on the `cd`: a failed cd never
+  # reaches the pull. What `|| exit 1` would add is death on a failed PULL —
+  # offline, no upstream, a diverged branch — none of which is a reason to
+  # abandon the read. A stale knowledge base still answers the question; an
+  # aborted fence answers nothing and strands the run.
+  ( cd "$REPO" && git pull ) || echo "WARN: could not sync $REPO; reading it as-is" >&2
 fi
 ```
+
+`$_BASE` is gone with it: it existed only to hold `dirname "$REPO"` for a later
+call, and nothing reads it — a value carried across a boundary that no longer
+exists.
+
+**Everything after this point takes `REPO` and `TYPE` as the literal values this
+block printed**, substituted into the command, never as shell variables. That is
+the same rule `/rebuild-requirements-index` states for the same two values, and
+it is why the block echoes them: a later `cd "$REPO"` in a fresh call would `cd`
+to nothing and stay where it is.
 
 Extract requirements artifact path from storage configuration.
 
@@ -347,9 +376,13 @@ Switch to another section without reloading.
 
 ### Option 2: Search Related
 
-```bash
+```text
 /search-requirements "tag:${tags[0]}"
 ```
+
+Tagged `text`, not `bash`: a slash command is typed by a person into Claude Code
+and no shell parses it, so `${tags[0]}` stands for the words they will write
+rather than for a value this prompt substitutes into a command.
 
 Finds other work with similar tags.
 
@@ -367,23 +400,45 @@ Shows side-by-side comparison:
 
 ### Option 4: Export
 
+This one is meant to be run, so it stays tagged `bash` and keeps its G1-G3
+coverage. Two things changed to make that true rather than nominal:
+`/path/to/requirements-repo/` was a stand-in for a path Step 1 already resolved
+and printed, and `${identifier}` was a placeholder written in shell-variable
+syntax — indistinguishable from a real read, and unbound, so every path built
+from it started at the filesystem root.
+
+`{identifier}` is the value the user selected in Step 2; `<REPO printed above>`
+is the requirements-repo path Step 1 resolved and echoed. Both are substituted
+into the command before it runs — neither is a shell variable, and nothing here
+relies on state surviving from an earlier Bash call.
+
 ```bash
 # Copy the Spec-Driven triad to a local reference directory
-mkdir -p docs/reference/${identifier}
-for f in spec.md plan.md tasks.md ${identifier}-JIRA_TICKET.md; do
-  if [ -f "/path/to/requirements-repo/${identifier}/$f" ]; then
-    cp "/path/to/requirements-repo/${identifier}/$f" "docs/reference/${identifier}/$f"
+[ -n "<REPO printed above>" ] && [ -d "<REPO printed above>" ] || exit 1
+mkdir -p "docs/reference/{identifier}"
+for f in spec.md plan.md tasks.md "{identifier}-JIRA_TICKET.md"; do
+  if [ -f "<REPO printed above>/{identifier}/$f" ]; then
+    cp "<REPO printed above>/{identifier}/$f" "docs/reference/{identifier}/$f"
   fi
 done
 
 # Legacy fallback if triad absent
-if [ ! -f "docs/reference/${identifier}/spec.md" ] \
-   && [ -f "/path/to/requirements-repo/${identifier}/requirements.md" ]; then
-  cp "/path/to/requirements-repo/${identifier}/requirements.md" \
-     "docs/reference/${identifier}/requirements.md"
+if [ ! -f "docs/reference/{identifier}/spec.md" ] \
+   && [ -f "<REPO printed above>/{identifier}/requirements.md" ]; then
+  cp "<REPO printed above>/{identifier}/requirements.md" \
+     "docs/reference/{identifier}/requirements.md"
 fi
+```
 
-✓ Exported to: docs/reference/${identifier}/
+The `-n`/`-d` pair is the guard, not the `mkdir`: an empty substitution makes
+every path here relative to the session's own project, and the copies would
+succeed against the wrong tree. `$f` is the loop's own variable, bound two lines
+up in the same fence, and is the one real shell read in the block.
+
+Then report:
+
+```text
+✓ Exported to: docs/reference/{identifier}/
 ```
 
 ## Error Handling

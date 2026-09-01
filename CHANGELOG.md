@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.31.0] - 2026-09-01
+
+## What's Changed
+
+139 commits across 24 merged PRs since v1.30.0: 3 feat, 68 fix, 6 docs, 10 test, 52 other (merges and chore). No breaking changes.
+
+### Features
+
+- **ci**: Claude Code Review is now opt-in via the `claude-review` label instead of running on every push — cheaper, and closes a real prompt-injection surface in the review workflow (#354, #359)
+- **validators**: new G7 check — catches shell state (a `$VAR`, a shared-library function, a `$$` temp path, a printed placeholder) read in a Bash fence that never bound it, which cannot survive between Claude Code tool calls. Shipped fail-closed behind an owned gap list while the tree was swept, then the gap list was retired once clean (#357, #358, #360, #361, #362, #364, #366-#370)
+
+### Bug Fixes
+
+- **validators**: closed multiple scanner-precision gaps the G7 sweep surfaced — placeholder quoting (bare/single-quoted), heredoc delimiter collisions, `bash -n` parse coverage on every tagged fence, read-guard failures on `find`/`grep`/`awk` rc-2, and a new structure-tree check (H1-H3) that the `CLAUDE.md` repo tree matches the filesystem (#348, #349, #350, #351, #352, #353, #360, #362, #371, #372)
+- **ci**: dropped a `--max-turns` flag on the review workflow that never actually bounded anything — a successful run could still exceed it and fail the check on its own assertion (#370)
+- **skills**: third-party text (Jira comment bodies, issue titles) now goes to files instead of shell heredocs, closing an injection surface; one unicode-aware forged-content-marker scanner replaces several ad-hoc ones (#356, #366)
+- **hooks**: worktree/branch resolution and multiline-quoted-argument parsing fixes (#363, #365)
+
+### Other Changes
+
+- Local gawk-parity tooling (`scripts/install-local-gawk.sh`) so a dev can reproduce CI's exact awk locally instead of discovering a gawk/mawk divergence only after CI turns red; the G7 fence-scanner's internal text views are now named explicitly with a test pinning that its two coupled read sites stay in sync (#372)
+- Docs and internal cleanup across the G-series validator write-up in `CLAUDE.md` and `docs/decisions/`
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.30.0...v1.31.0
+
 ## [1.30.0] - 2026-08-27
 
 ## What's Changed

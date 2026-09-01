@@ -676,6 +676,7 @@ MANIFEST="${BRAINSTORM_ROOT}/manifest.json"
 # with artifact_type "work" — never rewrite that envelope.
 if [[ ! -f "$MANIFEST" ]]; then
   # Create empty manifest with artifact_type: "brainstorms"
+  :  # written with the Write tool, not from this block
 fi
 ```
 
