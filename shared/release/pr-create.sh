@@ -188,7 +188,7 @@ emit_plan() {
       --arg     target               "$target_local" \
       --arg     release_branch       "$release_branch" \
       --arg     title                "$title" \
-      --arg     label                "$label" \
+      --arg     pr_label             "$label" \
       --arg     existing_state       "$existing_pr_state" \
       --arg     existing_number      "$existing_pr_number" \
       --arg     existing_url         "$existing_pr_url" \
@@ -202,7 +202,7 @@ emit_plan() {
         target:         $target,
         release_branch: $release_branch,
         title:          $title,
-        label:          $label,
+        label:          $pr_label,
         commit_count:   $commit_count,
         existing_pr: {
           state:  (if $existing_state  == "" then null else $existing_state  end),

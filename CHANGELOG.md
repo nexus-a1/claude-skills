@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.32.0] - 2026-09-02
+
+## What's Changed
+
+33 commits across 9 merged PRs since v1.31.0: 2 feat, 10 fix, 5 docs, 1 chore, 1 ci, 14 other (merges). No breaking changes.
+
+### Features
+
+- **models**: seven components re-tiered per ADR-015 — `bug-stub`, `jira`, `load-requirements`, `search-requirements` to Haiku; `architect`, `epic`, `feedback` to Opus. Cheaper on the commands that only fetch and format, better on the ones that make judgment calls. Distribution is now 12 Haiku / 29 Sonnet / 13 Opus (#376, #377)
+- **validators**: new F4 check — ADR-015's per-component tier ledger is verified against frontmatter on every `validate.sh` and CI run, so a tier change can no longer leave its recorded reasoning silently stale. Third in the series after F2 (plugin/) and F3 (presentation/) (#378)
+
+### Bug Fixes
+
+- **hooks**: the push gate's blocked-push message told the reader to run an agent that cannot write the file the gate reads, and never named `record-audit.sh`, which can. It now names both steps, anchored to the repository being pushed so it works from a linked worktree (#375)
+- **monitor-pr**: a CI failure matching none of the inline patterns is handed to `/troubleshoot` with a banner and a `handed_off` exit, instead of being diagnosed in the loop on a smaller model (#379)
+- **monitor-pr**: replied-to comment ids are carried across runs in a ledger that survives cleanup, so the re-run the handoff instructs cannot answer the same reviewer twice. Only `acted` ids are carried; skipped and flagged items resurface for a human. Also fixed: both dedupe filters matched comment ids by substring, and now match exactly (#380)
+- **ci**: `claude.yml`'s allowed tools scoped to read-only (#374)
+
+### Other Changes
+
+- **docs**: ADR-015 — a six-axis rubric and 54-component ledger for tier assignment, with the enactment order (frontmatter, validators, then regenerate) that surfaced four stale presentation files on first use (#355)
+- **ci**: workflows switched to a self-hosted runner (#373)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.31.0...v1.32.0
+
 ## [1.31.0] - 2026-09-01
 
 ## What's Changed

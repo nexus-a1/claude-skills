@@ -1,7 +1,7 @@
 ---
 name: bug-stub
 category: planning
-model: claude-sonnet-5
+model: claude-haiku-4-5
 userInvocable: true
 description: Turn a free-text bug description into a paste-ready ticket stub — a short title and a one-paragraph summary — with no code discovery, no fix, and no commit. Use right after finding a bug, before any tracker ticket exists, to get text you can file yourself and then feed into no-ticket requirements gathering.
 argument-hint: "<bug description>"

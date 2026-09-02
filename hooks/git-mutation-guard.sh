@@ -215,19 +215,60 @@ for push_segment in ${push_segments[@]+"${push_segments[@]}"}; do
     if ! hook_declares "$push_segment" SECURITY_AUDITOR_BYPASS; then
         state_file="$repo_root/.claude/session-state/git-audit.json"
         head_sha=$(git -C "$push_dir" rev-parse HEAD 2>/dev/null || true)
+        # Resolved from this script's own location rather than named as
+        # ${CLAUDE_PLUGIN_ROOT}: the variable may be unset in the shell reading
+        # this message, and a path that prints empty is worse than no path.
+        # Same reasoning as the hook-input.sh source at the top of this file.
+        audit_script="${BASH_SOURCE[0]%/*}/record-audit.sh"
+        # ...and anchored to the repository being PUSHED, not the one the reader
+        # happens to be standing in. record-audit.sh resolves its target with a
+        # bare `git rev-parse --show-toplevel` (no -C), so a reader pushing a
+        # linked worktree from the main checkout would stamp the main checkout
+        # while the gate reads "$repo_root" -- the push stays blocked after doing
+        # exactly what the message said, AND a passing record is written for a
+        # HEAD nobody audited, which can clear a later push from there. Found by
+        # review of this ticket's own change: naming the command is what made
+        # that reachable, since before it no command was named at all. The
+        # worktree-per-ticket shape it breaks is this repo's house convention
+        # (CLAUDE.md, "Jira Ticket Workflow") and a supported guard path (NX-61).
+        if [ -n "$repo_root" ]; then
+            audit_cmd="(cd \"$repo_root\" && bash \"$audit_script\")"
+        else
+            # repo_root is set with `|| true` above, so it can be empty. `cd ""`
+            # succeeds and stays put, which would silently reintroduce the very
+            # wrong-directory bug this branch exists to avoid.
+            audit_cmd="bash \"$audit_script\""
+        fi
         if [[ ! -f "$state_file" ]]; then
-            echo "BLOCKED: push requires a security-auditor confirmation." >&2
-            echo "Run the security-auditor agent on the staged/committed changes first." >&2
+            # CL-78: name the script that actually writes the file. This message
+            # used to say only "run the security-auditor agent", which does not
+            # and cannot produce it -- that agent is declared Read/Grep/Glob, so
+            # it has no way to write anything. An agent following the old text
+            # literally ran the audit, saw no file appear, and was left to
+            # improvise; at least one improvised by forging the state file by
+            # hand. Both halves have to be named, and the second is the one that
+            # clears the gate.
+            echo "BLOCKED: push requires a recorded security audit for this HEAD." >&2
+            echo "Two steps -- the second is the one that unblocks the push:" >&2
+            echo "  1. Run the security-auditor agent on the committed changes." >&2
+            echo "  2. Record the result:  $audit_cmd" >&2
+            echo "Step 1 alone writes nothing (the agent has no Write tool); step 2 writes the file." >&2
             echo "State file expected at: $state_file" >&2
             exit 2
         fi
         recorded_sha=$(grep -o '"head_sha": *"[^"]*"' "$state_file" | grep -o '[^"]*"$' | tr -d '"' 2>/dev/null || true)
         recorded_branch=$(grep -o '"branch": *"[^"]*"' "$state_file" | grep -o '[^"]*"$' | tr -d '"' 2>/dev/null || true)
         if [[ "$recorded_sha" != "$head_sha" || "$recorded_branch" != "$current_branch" ]]; then
-            echo "BLOCKED: security-auditor confirmation is stale." >&2
+            echo "BLOCKED: the recorded security audit is stale — it does not match this HEAD." >&2
             echo "  Audited: ${recorded_branch:-<unknown>} @ ${recorded_sha:-<unknown>}" >&2
             echo "  Current: $current_branch @ $head_sha" >&2
-            echo "Re-run security-auditor on the current HEAD before pushing." >&2
+            # Same CL-78 fix as above: re-running the agent alone leaves the
+            # stale record in place, so the push stays blocked. Naming the
+            # HEAD-keying here too, because this is the branch that fires after
+            # an amend or an added commit, and that is exactly when it reads as
+            # a bug rather than as the intended invalidation.
+            echo "Re-audit the current HEAD, then re-record it:  $audit_cmd" >&2
+            echo "The record is keyed to HEAD, so any amend, rebase or new commit invalidates it." >&2
             exit 2
         fi
     else

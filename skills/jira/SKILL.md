@@ -1,7 +1,7 @@
 ---
 name: jira
 category: project-setup
-model: claude-sonnet-5
+model: claude-haiku-4-5
 userInvocable: true
 description: Read a Jira work item and its recent comments from the terminal via the Atlassian CLI (acli). The key is optional — with no arguments, proposes one from the session and asks you to confirm before reading. Can also add a comment, transition a status, assign/unassign, or create a new work item — each requires an explicit confirmation and is independently re-verified before success is reported; off by default per project (jira.write.enabled). Requires acli installed and authenticated.
 argument-hint: "[KEY-123] [comments [N] | comment TEXT | transition STATUS | assign VALUE | unassign] | create PROJ TYPE SUMMARY"
