@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.33.0] - 2026-09-03
+
+## What's Changed
+
+14 commits across 4 merged PRs since v1.32.0: 3 feat, 6 fix, 5 merges. No breaking changes. One new skill; the rest is validators and CI.
+
+### Features
+
+- **skills**: new `/second-opinion` — hands a conclusion the session has already reached to a *different* model and reports what it says. Builds a neutral brief (the claim, the alternatives rejected and why, primary-source pointers, and the inverse question "what would have to be true for this to be wrong?"), dispatches one agent with a per-call `Task` model override (`fable` by default; `--model fable|opus|sonnet|haiku`), and reports the model the reviewer says it is, the verdict as given, the strongest objection unsoftened, then the session's own response. Changes nothing. Pinned to Opus under ADR-015 (score 9). Verified before building that the per-call override is honoured: probes came back Haiku 4.5, Opus 5 and Fable 5.1 for the three aliases (#384, CL-86)
+- **validators**: F5 — CLAUDE.md's hand-written By Category tier list is checked against frontmatter on every `validate.sh` and CI run; the drift #376 caused and #377 fixed by hand now fails (#381, CL-83)
+- **validators**: F6 — the 54 hand-written `**Model:**` lines in `docs/skills.md` and `docs/agents.md` are checked the same way, each doc standing alone. With F5 this closes every hand-written tier claim found outside the generated tables (#382, CL-84)
+
+### Bug Fixes
+
+- **ci**: on the self-hosted runner, the review job's sparse checkout of `.github/actions` into the shared workspace outlived the job, and under Debian 12's git 2.39 the next job's `actions/checkout` re-applied it — master validate after #381 failed with `scripts/validate.sh: No such file`. The review job now restores a full checkout on every exit, and every workflow with a root checkout resets sparse state before checking out; a workflow-syntax test pins both (#383, CL-85)
+- **validators**: F5 skips a whole parenthesised note (a skill named inside another entry's note was scored as its own entry — a false PASS in one shape, a false FAIL in another), tolerates blank lines and tab indents, and knows `~~~` fences (#381)
+- **validators**: F6 closes a component section at the next `##` chapter (a Model line under later prose was credited to the previous component), refuses an empty component map instead of certifying it, and reports an unsearchable `plugin/` as an enumeration failure (#382)
+- **validators**: C7 recognises `general-purpose` as a built-in subagent type, alongside `Explore` and `Plan` (#384)
+
+### Other Changes
+
+- **ci**: `tests.yml` runs on changes to `validate.yml` and `claude.yml`, so the workflow-syntax pins on those files are enforced (#383)
+- **docs**: ADR-015 census 54 → 55; the F-series bullet in CLAUDE.md now describes F2 as the prohibition it is and F3–F6 as checked-not-generated claims; README project-local skill count corrected to 9
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.32.0...v1.33.0
+
 ## [1.32.0] - 2026-09-02
 
 ## What's Changed
