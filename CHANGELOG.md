@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.34.0] - 2026-09-04
+
+## What's Changed
+
+9 commits across 3 merged PRs since v1.33.0: 1 feat, 4 fix, 1 docs, 3 merges. No breaking changes. One skill changes behaviour; one new agent.
+
+### Features
+
+- **pr-review**: severities are now backed by measured reach, and every serious finding gets a second opinion. Each panel finding above minor must count the call sites that reach the defect and name the command; the severity lens refutes an asserted blast radius, and no caller caps a finding at minor. Every finding that survives the panel at critical or important is then handed, in one call, to the new read-only `second-reader` agent as a neutral brief that assumes the finding is wrong. **Opus by default** — the panel's own tier, buying a fresh context and the inverse question; **`--ultra`** (alias `--ultrareview`) runs it on **Fable** for different priors at a higher price. The reader reports the model it actually is. A `does-not-hold` verdict is reported as contested, with the objection, not dropped; a failed dispatch (Fable under Zero Data Retention) is reported as unavailable, never silently re-run elsewhere. The stage reviewed its own PR twice and both runs found defects that shipped fixed (#387, CL-89)
+- **agents**: new `second-reader` — a read-only reviewer (Read, Grep, Glob; Opus) whose prompt is the second-opinion discipline: report your model, assume the conclusion is wrong, verify against the sources, count reach before endorsing a severity. Used by `/pr-review`'s new stage and by `/second-opinion`, which no longer dispatches a full-tool `general-purpose` agent restrained only by a prompt line. Agent count 21 (#387)
+
+### Bug Fixes
+
+- **pr-review**: the second-opinion dispatch goes through `parallel()`, so a refused model becomes an `unavailable` report instead of a thrown script and a silent fallback to the classic path (#387)
+- **validators**: F4 and F5 report an unsearchable `plugin/` as an enumeration failure instead of judging the ledger and the By Category list against an empty map — the guard F6 already had (#386, CL-88)
+- **agents**: `code-reviewer` and `quality-guard` state the reach rule: count callers before claiming impact; an unmeasured blast radius is not a severity (#387)
+
+### Other Changes
+
+- **docs**: ADR-011 distinguishes the frontmatter ban on Fable from a runtime per-call override, naming `/second-opinion` as the first case; the agent-file examples in `docs/components.md` and `docs/agents.md` pin `claude-sonnet-5` instead of a bare alias (#385, CL-87)
+- **docs**: ADR-015 census 55 → 56; table headers corrected to 35 skills and 21 agents; presentation Opus sets include `second-reader`
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.33.0...v1.34.0
+
 ## [1.33.0] - 2026-09-03
 
 ## What's Changed

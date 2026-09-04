@@ -3,8 +3,8 @@ name: pr-review
 model: claude-sonnet-5
 category: code-quality
 userInvocable: true
-description: Review a pull request (or local branch with --local) with thorough analysis, severity levels, and actionable feedback
-argument-hint: "[--local [base-branch]] | [--interactive] [pr-number]"
+description: Review a pull request (or local branch with --local) with thorough analysis, measured severity, a read-only second opinion on every serious finding (Opus by default, Fable with --ultra), and actionable feedback
+argument-hint: "[--local [base-branch]] | [--interactive] [pr-number] [--ultra]"
 allowed-tools: "Read, Write, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(cat:*), Bash(mkdir:*), Bash(chmod:*), Bash(jq:*), Bash(rm:*), Bash(bash:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr review:*), Bash(gh pr create:*), Bash(gh api:*), Bash(gh repo view:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git merge-base:*), Bash(git rev-parse:*), Bash(git status:*), Bash(git push:*), Task, Workflow, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
 ---
 
@@ -52,6 +52,16 @@ This command performs a thorough code review by orchestrating specialized agents
 
 `--local` and `--interactive` are mutually exclusive.
 
+**Second opinion** (orchestrated path only): every finding that survives the panel at `critical`
+or `important` is handed, as a neutral brief, to the read-only `second-reader` agent and asked
+what would have to be true for it to be wrong. **Opus by default** — the same tier the four
+panel agents pin, so the default buys a fresh context, no reviewer persona, and a brief that
+assumes the finding is wrong and demands the reach be counted; it does not buy different
+priors. **`--ultra`** (alias `--ultrareview`) runs it on **Fable** — a different model family,
+different priors, and a higher price; use it when Opus concurs and doubt remains, or when the
+stakes justify it. This flag belongs to `/nexus:pr-review`; Claude Code's own `/ultrareview`
+is an unrelated alias of `/code-review ultra`.
+
 ---
 
 ### 1. Parse Arguments
@@ -59,6 +69,7 @@ This command performs a thorough code review by orchestrating specialized agents
 **Extract from $ARGUMENTS:**
 - `--local` flag: switch to local branch mode. May be followed by an optional base branch name.
 - `--interactive` flag: enable interactive posting to GitHub (remote mode only).
+- `--ultra` flag (alias `--ultrareview`): run the second-opinion stage on Fable instead of Opus. Valid in both modes, independent of the other flags.
 - PR number: numeric PR identifier (remote mode).
 
 **Examples:**
@@ -67,6 +78,8 @@ This command performs a thorough code review by orchestrating specialized agents
 - `/pr-review` → prompt user to select PR.
 - `/pr-review --local` → review current branch vs auto-detected base.
 - `/pr-review --local main` → review current branch vs `main`.
+- `/pr-review --ultra 123` → review PR 123 with the second opinion on Fable.
+- `/pr-review --local --ultrareview` → local review, second opinion on Fable.
 
 **Validation:**
 - If both `--local` and `--interactive` present, stop: "`--local` and `--interactive` are mutually exclusive — `--interactive` posts to a remote PR; `--local` runs before one exists."
@@ -310,7 +323,7 @@ LLM finding, at any severity, can mark a run failed — that asymmetry is delibe
 reproducible and agent panels are not.
 
 **Diff size check.** Before Step 4, measure the diff. A large diff is not a capacity problem —
-it passes through intact — but it is sent to five or six agents, so cost scales with it. Above
+it passes through intact — but it is sent to six or seven agents (the second reader receives it too), so cost scales with it. Above
 roughly 200KB, tell the user the size and ask whether to proceed. Never silently abandon the
 review, and never silently run it at unbounded cost.
 
@@ -330,9 +343,9 @@ classic one is everything below it and remains fully supported.
 - the `Workflow` tool is available in this session.
 
 **If so, read `references/workflow-review.md` and follow it.** It replaces the rest of Step 4
-and changes what Step 5 receives. Pass the raw diff, `GATE_RESULTS`, `INCLUDE_ARCHITECT`, and
-a timestamp as `args` — the script cannot read files or shell out, so anything it needs must
-arrive that way.
+and changes what Step 5 receives. Pass the raw diff, `GATE_RESULTS`, `INCLUDE_ARCHITECT`,
+`ultra` (true when `--ultra`/`--ultrareview` was given), and a timestamp as `args` — the
+script cannot read files or shell out, so anything it needs must arrive that way.
 
 **Fall back to the classic path below — silently, it is not an error — when:**
 - the config disables it, or
@@ -525,6 +538,20 @@ Rules that are not stylistic:
   received/dispatched counts, and mark every finding `[UNVERIFIED]`. Nothing was tallied.
 - **Name the dimensions that produced nothing**, from `coverage`. Silence from a dimension is
   not the same as a clean bill from it.
+- **Render the second opinion on every finding that carries one.** Lead with the model the
+  reviewer *reported* (`secondOpinion.model`), not the alias that was requested. Without
+  `--ultra` say plainly that it is a second read on the panel's own tier (Opus); with
+  `--ultra`, if the reported model is not Fable, say the override was not honoured and the
+  check is the weaker one. Then the verdict as given and the strongest objection unsoftened. Findings in `contested` get their own section after the
+  survivors: the panel kept them, the second opinion said `does-not-hold`, and the reader
+  decides — do not drop them and do not defend them by reflex.
+- **When `secondOpinion.status` is `unavailable`, say so at the top of the review** and name
+  the model that was requested. If that model was Fable, suggest rerunning without `--ultra`;
+  if it was Opus, there is no cheaper fallback to suggest — say the second opinion did not run.
+  Never present a review whose second opinion did not run as one that had it, and never re-run
+  it on another model without the user asking.
+- **Show reach.** Each finding's `reach` (callers and how they were counted) goes on the line
+  under its severity, so the reader can see what the severity rests on.
 
 Then continue to the shared body below.
 
@@ -668,9 +695,17 @@ Report structure:
 
 ## Findings
 {severity} {file}:{line} — {claim}
+  Reach: {callers} caller(s) — {how counted}                  (orchestrated only)
   Evidence: {verbatim cited line}
   Fix: {fix}
   Verdicts: reproduces={y/n} evidence={y/n} severity={y/n}    (orchestrated only)
+  Second opinion ({model as reported}): {verdict}             (critical/important only)
+    Strongest objection: {unsoftened}
+
+## Contested by the second opinion (orchestrated only)
+{file}:{line} — {claim}
+  {model as reported} says does-not-hold: {why}
+  Panel kept it because: {non-refuting reasons}
 
 ## Dropped in verification        (orchestrated only)
 {file}:{line} — {claim}
@@ -678,6 +713,7 @@ Report structure:
 
 ## Panel integrity                (orchestrated only)
 {received}/{dispatched} challengers returned verdicts.
+Second opinion: {model requested} — {ran | unavailable}
 ```
 
 **On the classic path, render the verification sections as `not-performed`** rather than
