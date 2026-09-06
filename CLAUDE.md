@@ -66,7 +66,9 @@ The following operations **MUST** always use their designated agents:
 **Bypass** (logged to stderr, use only with an explicit reason):
 - `SECURITY_AUDITOR_BYPASS=1 git push …` — skip only the audit state check. Branch protection and credential scan still run.
 - `NEXUS_KB_WRITE=1 git push …` — skip only branch protection, for the sanctioned direct-to-trunk push to a **git-backed KB repo** (requirements/product-knowledge remote, not this project). Credential scan and audit gate still run. See [`plugin/shared/kb-write-pattern.md`](shared/kb-write-pattern.md) for the full pattern (cd-not-`git -C`, separate Bash calls per command, combine with `SECURITY_AUDITOR_BYPASS=1`).
-- `GIT_AUTHORIZED=1 git …` — legacy full bypass; kept for backward compatibility with existing skills still using the old flow. New code should not use it.
+- `CREDENTIAL_SCAN_BYPASS=1 git commit …` — skip **only** the credential scan, for a *confirmed* false positive. Branch protection and the audit gate still apply, the skip is announced on stderr, and the reason belongs in the commit body. It is scoped per repository and fails closed: another commit into the same repository without the prefix makes the scan run anyway.
+
+> `GIT_AUTHORIZED=1` was the previous full bypass and **no longer does anything** — the guard ignores it, so a command carrying it is gated normally. It was removed rather than deprecated because it turned off all three checks for callers who wanted to skip one, and because it was mostly used on `fetch`/`checkout`/`pull`, which the guard never gated in the first place.
 
 ##### When to delegate to `git-operator` (narrow)
 

@@ -111,7 +111,9 @@ URL:    {html_url}
 
 ## Step 2: Checkout PR Branch
 
-Align the working tree with the PR using direct Bash. This is a read-heavy operation (fetch + checkout + pull with no divergent local history) where a `git-operator` subagent spin-up costs ~17k tokens for ~3 commands; the `GIT_AUTHORIZED=1` prefix satisfies the `git-mutation-guard.sh` hook and matches the exception pattern already used by the release skills.
+Align the working tree with the PR using direct Bash. This is a read-heavy operation (fetch + checkout + pull with no divergent local history) where a `git-operator` subagent spin-up costs ~17k tokens for ~3 commands.
+
+These commands carried a `GIT_AUTHORIZED=1` prefix until CL-92, on the stated grounds that it "satisfies the `git-mutation-guard.sh` hook". It did not satisfy anything: the guard classifies only `commit` and `push` segments and gates those, so `fetch`, `checkout` and `pull` were never intercepted in the first place. Verified by feeding the hook each command — both exit 0 unprefixed. The prefix bought nothing and taught the wrong pattern, which matters because it is the *full* bypass: on a command the guard does gate, it skips branch protection, the credential scan and the audit gate together.
 
 ```bash
 PR_NUMBER=<PR_NUMBER printed above>
@@ -123,8 +125,8 @@ REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 BRANCH=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName -q .headRefName)
 HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid -q .headRefOid)
 git fetch origin "$BRANCH"
-GIT_AUTHORIZED=1 git checkout "$BRANCH"
-GIT_AUTHORIZED=1 git pull --ff-only origin "$BRANCH"
+git checkout "$BRANCH"
+git pull --ff-only origin "$BRANCH"
 
 # Confirm HEAD matches origin
 LOCAL_SHA=$(git rev-parse HEAD)
@@ -1293,7 +1295,7 @@ Invoke `/monitor-pr` to shepherd it through CI and review without manually polli
   referenced line is still present.
 - **One loop iteration ≠ one minute.** Iterations advance when state changes (CI finishes, comments arrive, a push lands). Between state changes the loop sleeps briefly (10s) and re-polls.
 - **Iteration cap protects from runaway token spend.** 10 iterations is enough for most PRs; escalate to the user beyond that.
-- **Mutating git operations that are visible to others (commit, push) run inline, hook-guarded.** `git-mutation-guard.sh` enforces branch protection and the credential scan on every commit; `record-audit.sh` records the security-auditor confirmation before each push (Step 3.3). Local-only alignment operations (fetch, checkout, `--ff-only` pull) in Step 2 also run inline with `GIT_AUTHORIZED=1` to avoid the ~17k-token cost of a subagent spin-up for a trivial read-through operation. `git-operator` is not used anywhere in this skill's routine loop.
+- **Mutating git operations that are visible to others (commit, push) run inline, hook-guarded.** `git-mutation-guard.sh` enforces branch protection and the credential scan on every commit; `record-audit.sh` records the security-auditor confirmation before each push (Step 3.3). Local-only alignment operations (fetch, checkout, `--ff-only` pull) in Step 2 also run inline, to avoid the ~17k-token cost of a subagent spin-up for a trivial read-through operation. They carry no bypass prefix and need none: the guard classifies only `commit` and `push` segments, so these were never gated (CL-92). `git-operator` is not used anywhere in this skill's routine loop.
 - **No destructive actions.** The skill never force-pushes, never amends, never resets, never closes the PR.
 - **Conservative comment handling.** When in doubt about a comment, the skill flags it for the user rather than guessing. Silent wrong fixes are worse than skipped comments.
 - **Token discipline.** monitor-pr is the longest-lived skill in the plugin and the only one that polls a remote system. Without care it accumulates far more context than any other skill here. Three rules keep it bounded:

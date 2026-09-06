@@ -8,9 +8,9 @@
 #      (state file at .claude/session-state/git-audit.json).
 #
 # Explicit bypasses (logged to stderr, never silent):
-#   GIT_AUTHORIZED=1             — legacy bypass. Skips ALL checks below.
-#                                  Kept for backward compatibility with existing
-#                                  git-operator callers and release skills.
+#   CREDENTIAL_SCAN_BYPASS=1     — skip only the credential scan, for a CONFIRMED
+#                                  false positive. Branch protection and the
+#                                  security-auditor state check still apply.
 #   SECURITY_AUDITOR_BYPASS=1    — skip only the security-auditor state check
 #                                  (branch protection + credential scan still run).
 #   NEXUS_KB_WRITE=1             — skip only branch protection (credential scan
@@ -99,15 +99,25 @@ case "$input" in
     *) exit 0 ;;
 esac
 
-# Legacy bypass — keep commands issued by existing git-operator callers and
-# the release skills working without rewriting every caller at once.
-# GIT_AUTHORIZED is read PER SEGMENT and skips only that segment.
+# There is no longer a bypass that skips everything at once.
 #
-# It used to set one flag and `exit 0` for the whole command, so
-# `GIT_AUTHORIZED=1 git commit -m x && git push origin master` ran the push with
-# no branch protection, no audit gate and no scan — one segment vouching for
-# another, which is the precise failure this whole change exists to remove. It
-# appeared here, in the fix for it.
+# GIT_AUTHORIZED=1 used to, and it was removed rather than tidied. Two reasons.
+# It was reached for where it did nothing — checkout, pull and fetch are not
+# classified here at all, so a prefix on them was decoration that taught the
+# habit. And where it DID apply it dropped branch protection, the credential
+# scan and the audit gate together, for a caller who almost always wanted to
+# skip exactly one of them.
+#
+# What replaced it is scoped: CREDENTIAL_SCAN_BYPASS=1 below, alongside the
+# existing SECURITY_AUDITOR_BYPASS=1 and NEXUS_KB_WRITE=1. Each names the one
+# check it skips, so a reader of the command can see what was given up.
+#
+# Every bypass here is read PER SEGMENT and skips only that segment. The old one
+# set a flag and `exit 0`-ed the whole command, so a bypassed commit followed by
+# `&& git push origin master` ran the push with no checks at all — one segment
+# vouching for another. That bug appeared in the fix for this very class of bug,
+# which is why the per-segment rule is stated here rather than left to be
+# inferred.
 
 
 # A git mutation the segmenter could not attribute to a command it understands —
@@ -151,10 +161,12 @@ commit_dirs=()
 while IFS=$'\t' read -r _class _wd _seg; do
     case "$_class" in
         push)
-            # A segment carrying the legacy full bypass is skipped, and only it.
-            hook_declares "$_seg" GIT_AUTHORIZED || { push_segments+=("$_seg"); push_dirs+=("$_wd"); } ;;
+            push_segments+=("$_seg"); push_dirs+=("$_wd") ;;
         commit)
-            hook_declares "$_seg" GIT_AUTHORIZED || { commit_segments+=("$_seg"); commit_dirs+=("$_wd"); } ;;
+            # Collected unconditionally. A scoped bypass is applied later, where
+            # the check it scopes actually runs — never here, because a segment
+            # dropped at classification time skips checks it never asked to skip.
+            commit_segments+=("$_seg"); commit_dirs+=("$_wd") ;;
         exempt) ;;      # --help, or a dry-run push: looked at, nothing to gate
         unreadable) ;;  # refused above, before this loop runs
         *)  # A class this loop does not know. Dropping it silently is how a
@@ -202,7 +214,31 @@ for push_segment in ${push_segments[@]+"${push_segments[@]}"}; do
             main|master|release/*)
                 # Allow the initial creating push (remote branch doesn't exist yet).
                 # Subsequent pushes to an existing protected branch must go through a PR.
-                if git -C "$push_dir" ls-remote --exit-code --heads origin "$current_branch" >/dev/null 2>&1; then
+                # Bounded, because this is the one place the guard waits on a
+                # network. The hook's own timeout does NOT save us: a hook
+                # cancelled at its deadline does not block the tool call, so a
+                # stalled remote would turn a protected-branch push into an
+                # allowed one. `timeout` is used when present and the timeout
+                # status is treated as BLOCK — "I could not ask" is not "the
+                # branch does not exist".
+                #
+                # Other failures (no remote configured, auth error) keep the
+                # previous meaning and allow the push: that is what makes the
+                # first creating push to a brand-new repository work, and
+                # changing it is a separate decision from bounding the wait.
+                _lsr_rc=0
+                if command -v timeout >/dev/null 2>&1; then
+                    timeout 10 git -C "$push_dir" ls-remote --exit-code --heads origin "$current_branch" >/dev/null 2>&1 || _lsr_rc=$?
+                else
+                    git -C "$push_dir" ls-remote --exit-code --heads origin "$current_branch" >/dev/null 2>&1 || _lsr_rc=$?
+                fi
+                if [ "$_lsr_rc" -eq 124 ]; then
+                    echo "BLOCKED: could not reach the remote within 10s to check whether '$current_branch' already exists." >&2
+                    echo "Refusing rather than assuming the branch is new — a stalled remote must not become an allowed push to a protected branch." >&2
+                    echo "Retry, or use NEXUS_KB_WRITE=1 if this is the sanctioned knowledge-base push." >&2
+                    exit 2
+                fi
+                if [ "$_lsr_rc" -eq 0 ]; then
                     echo "BLOCKED: direct push to protected branch '$current_branch'." >&2
                     echo "Remote branch already exists — subsequent changes must go through a PR." >&2
                     echo "Pushing to a git-backed knowledge-base repo (not this project)? Prefix with NEXUS_KB_WRITE=1." >&2
@@ -286,12 +322,74 @@ done
 # and collecting once for all of them scanned the wrong tree for the second
 # (NX-61). `_scanned_dirs` keeps both properties: one scan per repository, and
 # no repository skipped.
+#
+# CREDENTIAL_SCAN_BYPASS=1 is applied HERE, and it is decided per REPOSITORY
+# rather than per segment, because the scan is. That distinction has a
+# fail-closed rule attached: a repository's scan is skipped only when EVERY
+# commit segment touching it declares the bypass. One un-prefixed commit in the
+# same command means the scan runs.
+#
+# The alternative — letting the first segment for a directory decide — would let
+# `CREDENTIAL_SCAN_BYPASS=1 git commit … && git commit …` carry the second
+# commit through unscanned on the first one's say-so. That is the same
+# one-segment-vouching-for-another bug the removed GIT_AUTHORIZED had, and
+# rebuilding it in the replacement is the obvious way to get this wrong.
+#
+# The same pre-pass also collects which repositories have an `-a`/`--all` commit
+# anywhere in the command, and for the same reason: the scan is per repository,
+# so a property held by ANY segment has to be known before the first one is
+# scanned. `git commit … && git commit -a …` used to scan on the first segment,
+# record the directory as done, and skip the second — so every modified tracked
+# file that only `-a` stages went in unscanned. A lone `-a` commit was caught;
+# an `-a` commit standing behind a plain one was not.
+_bypassed_dirs=""
+_nonbypassed_dirs=""
+_all_flag_dirs=""
+_j=0
+for commit_segment in ${commit_segments[@]+"${commit_segments[@]}"}; do
+    commit_dir="${commit_dirs[$_j]}"
+    _j=$(( _j + 1 ))
+    if hook_declares "$commit_segment" CREDENTIAL_SCAN_BYPASS; then
+        _bypassed_dirs="$_bypassed_dirs|$commit_dir|"
+    else
+        _nonbypassed_dirs="$_nonbypassed_dirs|$commit_dir|"
+    fi
+    # Two conditions, not one anchored pattern. Requiring the flag to sit
+    # immediately after `commit` reads `git commit -a -F m` and misses
+    # `git commit -F m -a` and `git commit --amend -a` — and a miss here is not
+    # a smaller scan, it is NO scan: with nothing in the index, `targets` ends
+    # up empty and the scanner never runs, so every modified tracked file goes
+    # in unexamined. Verified against the hook before this was widened.
+    #
+    # Over-matching is the safe direction and is chosen deliberately: a `-a`
+    # inside a quoted commit message adds files to the scan, which costs time
+    # and never hides anything.
+    if [[ "$commit_segment" =~ git[[:space:]]+commit([[:space:]]|$) ]] \
+       && [[ "$commit_segment" =~ [[:space:]](-[a-zA-Z]*a[a-zA-Z]*|--all)([[:space:]]|$) ]]; then
+        _all_flag_dirs="$_all_flag_dirs|$commit_dir|"
+    fi
+done
+
 _scanned_dirs=""
 _j=0
 for commit_segment in ${commit_segments[@]+"${commit_segments[@]}"}; do
     commit_dir="${commit_dirs[$_j]}"
     _j=$(( _j + 1 ))
     [ "$commit_dir" = "?" ] && _refuse_unreadable_dir commit
+    # Bypass this repository's scan only when nothing else committing into it
+    # asked for the scan. Announced on stderr: a self-service skip of the check
+    # that stops secrets reaching a remote must never be silent.
+    case "$_bypassed_dirs" in
+        *"|$commit_dir|"*)
+            case "$_nonbypassed_dirs" in
+                *"|$commit_dir|"*) : ;;   # another commit here wants the scan
+                *)
+                    echo "WARN: CREDENTIAL_SCAN_BYPASS=1 — skipping the credential scan for $commit_dir. Branch protection and the security-auditor state check still apply. Record why in the commit body." >&2
+                    continue
+                    ;;
+            esac
+            ;;
+    esac
     case "$_scanned_dirs" in
         *"|$commit_dir|"*) continue ;;   # this repository is already scanned
     esac
@@ -308,10 +406,17 @@ for commit_segment in ${commit_segments[@]+"${commit_segments[@]}"}; do
     # because the hook never got this far.
     extra=()
     # `git commit -a` / `--all` also stages all modified tracked files.
-    if [[ "$commit_segment" =~ git[[:space:]]+commit[[:space:]]+(-[a-zA-Z]*a[a-zA-Z]*|--all)([[:space:]]|$) ]]; then
-        while IFS= read -r _f; do [ -n "$_f" ] && extra+=("$_f"); done \
-            < <(git -C "$commit_dir" diff --name-only --diff-filter=ACM 2>/dev/null)
-    fi
+    #
+    # Asked of the REPOSITORY, not of this segment. This block runs once per
+    # repository (the dedupe below), so testing the segment that happens to
+    # arrive first answers the wrong question whenever another segment in the
+    # same command carries `-a`.
+    case "$_all_flag_dirs" in
+        *"|$commit_dir|"*)
+            while IFS= read -r _f; do [ -n "$_f" ] && extra+=("$_f"); done \
+                < <(git -C "$commit_dir" diff --name-only --diff-filter=ACM 2>/dev/null)
+            ;;
+    esac
     targets=()
     # ${arr[@]+"${arr[@]}"}: bash < 4.4 — macOS /bin/bash 3.2 — treats expansion
     # of an EMPTY array as unbound under `set -u`. A commit without -a leaves
@@ -338,7 +443,7 @@ for commit_segment in ${commit_segments[@]+"${commit_segments[@]}"}; do
         fi
         if ! "$scanner" "${targets[@]}" >&2; then
             echo "BLOCKED: credential-scan findings above. Commit refused." >&2
-            echo "Resolve the finding, or use GIT_AUTHORIZED=1 git commit … to bypass all checks (legacy; document the reason in the commit body)." >&2
+            echo "Resolve the finding. If it is a CONFIRMED false positive, re-run with CREDENTIAL_SCAN_BYPASS=1 and record the reason in the commit body. That prefix skips this scan only — branch protection and the audit gate still apply." >&2
             exit 2
         fi
     fi

@@ -379,7 +379,7 @@ requirements:
 #   execution_mode:
 #     default: team
 #     overrides:
-#       debug: subagent                 # opt out debug (only 2 agents, less benefit)
+#       troubleshoot: subagent          # opt out troubleshoot (only 2 agents, less benefit)
 #
 #
 # --- Full (shared team repo for everything) ---

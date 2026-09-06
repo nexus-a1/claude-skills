@@ -99,7 +99,9 @@ EOF
 )"
 ```
 
-**If the hook blocks the commit due to a credential-scan finding:** surface the finding to the user verbatim (file:line — label, never the secret value). Ask whether it is a true leak or false positive. On confirmed false positive, re-run with `GIT_AUTHORIZED=1 git commit …` and include the reason in the commit body so the override is traceable. Never override silently.
+**If the hook blocks the commit due to a credential-scan finding:** surface the finding to the user verbatim (file:line — label, never the secret value). Ask whether it is a true leak or false positive. On confirmed false positive, re-run with `CREDENTIAL_SCAN_BYPASS=1 git commit …` and include the reason in the commit body so the override is traceable. Never override silently.
+
+That prefix skips **this scan only**. Branch protection and the security-auditor state check still apply, and the skip is announced on stderr. It also applies per repository and fail-closed: if any other commit in the same command targets the same repository without the prefix, the scan runs anyway.
 
 ### 7. Report Results
 

@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.35.0] - 2026-09-06
+
+## What's Changed
+
+10 commits across 1 merged PR since v1.34.0 (#388, CL-92): 2 feat, 7 fix, 1 merge. No breaking changes in the conventional-commit sense, but one **behaviour change** every installer should read first.
+
+### Behaviour change: `GIT_AUTHORIZED=1` no longer exists
+
+The legacy full bypass — which switched off branch protection, the credential scan and the security-auditor push gate all at once — is gone from `git-mutation-guard.sh`, from the permission allowlist, and from every skill that carried it. Most of its uses were no-ops on verbs the guard never gated (`/monitor-pr`'s checkout and pull), teaching a habit rather than using a mechanism. Its replacement is **`CREDENTIAL_SCAN_BYPASS=1 git commit …`**, which skips the credential scan and nothing else, announces the skip on stderr, is decided per repository, and must lead its segment. It is deliberately not permission-allowlisted: skipping the check that stops secrets reaching a remote should prompt. `SECURITY_AUDITOR_BYPASS` and `NEXUS_KB_WRITE` are unchanged. (#388)
+
+### Features
+
+- **security**: scoped `CREDENTIAL_SCAN_BYPASS` replaces the full bypass (above). The credential scan itself was hardened in the same PR: `-a`/`--all` is now detected in every option position and OR-ed across all commit segments for a repository before the first one is scanned, closing two escapes where a planted key in a modified tracked file committed with exit 0 — both reproduced against the live hook and pinned by regression tests. (#388)
+- **validators**: new **C8** — the shipped `configuration.yml` template's copy-paste profiles must use phase names the template itself declares. The per-phase profile said `debug: subagent`; no skill reads a `debug` phase, so the override silently did nothing. POSIX awk on purpose, since gawk's three-argument `match()` exits 2 under mawk. (#388)
+
+### Bug Fixes
+
+- **hooks**: every hook timeout is bounded and the bound is pinned by a test. All seven hooks declared `5000` — seconds, so 83 minutes, worse than the 600 s default. Now 30 s for `git-mutation-guard` and `auto-context`, 15 s for the two Python hooks, 10 s for the rest. The guard's `git ls-remote` is bounded with `timeout` where available, and a timeout **blocks** — "I could not ask the remote" is not "the branch does not exist"; a cancelled hook does not block the tool call, so an unbounded remote turned a protected-branch push into an allowed one. (#388)
+- **create-requirements**: optional agents (`archivist`, `product-expert`) are gated on whether the configured artifact path actually resolves, not on whether its key exists. Two live failure modes in this repository: a `requirements` path pointing at a directory that did not exist, so "no similar past work" was returned for a knowledge base that was never there; and `subdir: .` resolving to `.claude` itself, so `product-expert` was sent to mine `settings.json` and `session-state/`. A location that is, or contains, the configuration directory is refused; being inside it (`.claude/work`) is ordinary. (#388)
+- **configuration-init**: the legacy-format migration handles a project holding both `configuration.json` and `configuration.yml` (previously planned nothing and the orphan stayed forever); this repository's own orphan is retired. `validate` gained four truthfulness checks (4c artifact-path containment, 2b, 6b, 7) so a config is judged by what it does, not by whether it parses. (#388)
+- **validators**: C8 reads through `capture_file` and hands an in-memory string to awk, per the read-guard rule; the G7 single-binding-per-`local` rule and the `${path%/}`-in-a-pattern trap are both documented at the sites that hit them. (#388)
+- **docs**: `docs/skills.md` migration count and validate list, `CLAUDE.md` structure tree (C1–C8), the guard header's description of the new prefix, and a test comment that described a `jq -e` guard that was not there. (#388)
+
+### Known and deliberately left
+
+- `Bash(SECURITY_AUDITOR_BYPASS=1 git push *)` remains auto-approved while the removed `GIT_AUTHORIZED` was de-allowlisted; the release skills use it routinely.
+- `credential-scan.sh` has no internal time bound, so a very large staged set could approach the 30 s hook timeout, which fails open.
+- With several bypassed commits to one repository in a single command the bypass warning prints once per segment rather than once per repository. Cosmetic.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.34.0...v1.35.0
+
 ## [1.34.0] - 2026-09-04
 
 ## What's Changed

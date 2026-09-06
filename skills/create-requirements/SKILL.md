@@ -1284,10 +1284,69 @@ fi
 # command's, so running the two bare left "requirements configured,
 # product-knowledge not" exiting 1 — indistinguishable from the tool failing.
 # Two independent questions need two answers, not one status.
-yq -e '.storage.artifacts.requirements' "$CONFIG" >/dev/null 2>&1 \
-  && echo "ARCHIVIST=enabled" || echo "ARCHIVIST=disabled"
-yq -e '.storage.artifacts.product-knowledge' "$CONFIG" >/dev/null 2>&1 \
-  && echo "PRODUCT_EXPERT=enabled" || echo "PRODUCT_EXPERT=disabled"
+#
+# The gate is RESOLUTION, not key presence. `yq -e
+# '.storage.artifacts.requirements'` only asks whether someone wrote the key; it
+# says nothing about where the key points. Two ways that went wrong in this
+# repository, both with a configuration that parsed perfectly:
+#   - requirements resolved to a directory that does not exist, so archivist was
+#     dispatched to search nothing and its empty result read as "no similar work
+#     found" rather than "there is no knowledge base here".
+#   - product-knowledge used `subdir: .` against the `local` location, resolving
+#     to .claude ITSELF — settings.json, session-state/, worktrees/. product-expert
+#     was dispatched to mine the configuration directory. That is not merely
+#     useless research; it pulls session state into an agent's context.
+# resolve_artifact_strict's own contract says existence "is a separate question
+# the caller asks afterwards (`test -d`)". This is the caller asking.
+# One binding per line, deliberately. `local a="$1" b="$2"` binds both at run
+# time but the G7 fence scanner only credits the first, and G7 is fail-closed by
+# design — the code moves to suit the check, not the other way round.
+_gate_optional_agent() {
+  local artifact="$1"
+  local default_subdir="$2"
+  local label="$3"
+  local resolved=""
+  local path=""
+  local config_dir=""
+  local path_base=""
+  if ! resolved=$(resolve_artifact_strict "$artifact" "$default_subdir" 2>/dev/null); then
+    echo "${label}=disabled reason=not-configured"
+    return 0
+  fi
+  IFS='|' read -r path _ <<< "$resolved"
+  # Must not BE, or CONTAIN, the configuration directory. The trailing-slash
+  # form makes the equality case fall out of the same glob as the ancestor case.
+  config_dir="${CONFIG%/*}"
+  # The trailing slash is stripped, and it is stripped into its OWN VARIABLE
+  # first. Both halves of that matter.
+  #
+  # Why strip: a resolved path of "/" is reachable — `path: /` on a location is
+  # accepted, since an absolute location path is exempt from the traversal
+  # check — and "/" builds the pattern "//*", which matches no real directory.
+  # The gate then reported enabled with path=/ : the filesystem root, the
+  # maximal case of containing the configuration directory, waved through by the
+  # check written to catch exactly that.
+  #
+  # Why a separate variable: `case "$x" in "${path%/}"/*)` does NOT work. Bash
+  # reads the `/` of the suffix-removal operator as part of the pattern, and the
+  # branch silently never matches — the same bug, wearing the fix's clothes.
+  # Verified both ways before this line was written.
+  path_base="${path%/}"
+  case "${config_dir}/" in
+    "$path_base"/*)
+      echo "${label}=disabled reason=resolves-to-or-above-config-dir path=${path}"
+      return 0
+      ;;
+  esac
+  if [ ! -d "$path" ]; then
+    echo "${label}=disabled reason=path-does-not-exist path=${path}"
+    return 0
+  fi
+  echo "${label}=enabled path=${path}"
+}
+
+_gate_optional_agent requirements requirements ARCHIVIST
+_gate_optional_agent product-knowledge . PRODUCT_EXPERT
 ```
 
 The `-n` guard exits 0, not 1: no configuration file is a legitimate state — it
@@ -1296,10 +1355,19 @@ checks ran and both said no". Both reach the same dispatch decision, but only
 one of them is a decision; the other is the absence of one, and the message says
 which happened.
 
+Each `disabled` line carries its `reason=`, and that reason is what goes into
+`deep_dive.agents_skipped` below — verbatim, not paraphrased. The three reasons
+are genuinely different findings and only one of them is a normal state:
+`not-configured` means this project has no such knowledge base;
+`path-does-not-exist` and `resolves-to-or-above-config-dir` both mean the
+project *thinks* it has one and is wrong, which is a configuration defect the
+operator needs to see. Report those two to the user rather than burying them in
+state — `/configuration-init validate` catches the same two before a run starts.
+
 | Condition | Agent | Purpose |
 |-----------|-------|---------|
-| `storage.artifacts.requirements` exists in configuration.yml | `archivist` | Search historical requirements for similar work |
-| `storage.artifacts.product-knowledge` exists in configuration.yml | `product-expert` | Product-specific patterns and context |
+| `storage.artifacts.requirements` resolves to an existing directory | `archivist` | Search historical requirements for similar work |
+| `storage.artifacts.product-knowledge` resolves to an existing directory that is not the config directory | `product-expert` | Product-specific patterns and context |
 
 **Record every agent you skip, and why.** Append it to
 `deep_dive.agents_skipped` in the work-session state as

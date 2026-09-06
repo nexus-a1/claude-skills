@@ -688,6 +688,71 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
      artifact belongs in a shared location.
    → If $TEMPLATE is empty, skip this check with an explanatory line.
 
+4c. storage.artifacts resolution (CL-92)
+   → For each configured artifact, resolve it and ask what the resolved path
+     actually IS. Checks 3 and 4 do not cover this: 3 tests the LOCATION's base
+     path and 4 tests that the location is defined, so an artifact whose base
+     exists and whose location is valid passes both while resolving to nothing.
+     That is precisely how this repository shipped a `requirements` artifact
+     pointing at `.claude/requirements`, a directory that does not exist.
+   → Resolve with:
+       resolve_artifact_strict "{name}" "{default_subdir_for_that_artifact}"
+     and split the "PATH|TYPE" result on `|`. Use the STRICT resolver: the
+     advisory one fabricates a path for an unconfigured artifact, which would
+     turn "not configured" into a fake finding about a directory nobody named.
+   → The default subdir is the artifact's OWN default, read from the template,
+     never assumed to equal the artifact name. They differ for at least one
+     shipped artifact, whose default subdir is `.`; substituting the name there
+     resolves a config that omits `subdir` to a nested path the runtime gate
+     never looks at. A validator reporting on a different path from the one the
+     pipeline actually uses is worse than one reporting nothing.
+   → Resolved path does not exist → WARN ("artifact '{name}' resolves to {path},
+     which does not exist — the agent that reads it will be dispatched to search
+     nothing, and an empty result is indistinguishable from a real one")
+   → Resolved path IS, or CONTAINS, the directory holding configuration.yml →
+     FAIL ("artifact '{name}' resolves to {path}, which is the configuration
+     directory — an agent told to read a knowledge base there gets
+     settings.json, session-state/ and worktrees/ instead"). Compare with the
+     trailing-slash form so the equality case falls out of the same test as the
+     ancestor case — and strip the trailing slash into its OWN variable first:
+
+       path_base="${path%/}"
+       case "${config_dir}/" in "$path_base"/*) … ;; esac
+
+     Both halves are load-bearing, and this is the same code as
+     `_gate_optional_agent` in /create-requirements — keep them identical.
+     Without the strip, a resolved path of "/" builds the pattern "//*", which
+     matches no real directory, so the check never fires for the maximal case.
+     And the strip must not be written inline as `"${path%/}"/*`: bash reads the
+     `/` of the suffix-removal operator as part of the pattern and the branch
+     silently never matches.
+   → This is a FAIL and the missing-directory case is only a WARN, deliberately.
+     A path that does not exist yet is a project that has not created it;
+     a path that swallows the configuration directory is always wrong and puts
+     session state in front of an agent.
+
+2b. execution_mode team runtime (CL-92)
+   → If the resolved mode for any phase is "team", check whether the team
+     runtime is actually switched on:
+       [ -n "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" ]
+   → Unset → WARN ("execution_mode requests team mode, but
+     CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is not set in this environment;
+     skills will run these phases as plain subagents"). Report it, do not fail:
+     a config written for a machine that has it on is not wrong on a machine
+     that does not.
+   → Nothing else reports this. A config asking for team mode on a runtime that
+     cannot provide it degrades silently, so the user believes they are getting
+     cross-pollination they are not.
+
+7. legacy configuration.json alongside configuration.yml (CL-92)
+   → If `.claude/configuration.json` exists next to the `.yml` → WARN
+     ("orphaned .claude/configuration.json — nothing reads it (resolve-config.sh
+     looks only for configuration.yml) and it holds a conflicting older schema;
+     run /configuration-init migrate to back it up and remove it")
+   → It cannot affect behaviour, which is exactly why it survives: every other
+     check passes and the file stays as the thing a human opens to learn how the
+     project is configured.
+
 5. requirements section (if present)
    → auto_archive: must be boolean → else WARN
    → auto_search: must be boolean → else WARN
@@ -701,6 +766,18 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
    → If enabled == false AND write.enabled == true → WARN ("jira.enabled is
      false, so jira.write.enabled: true has no effect — both jira.sh and
      jira-write.sh refuse the master switch before checking write access")
+
+6b. jira flags against reality (CL-92)
+   → If jira.enabled is true (or absent — it is opt-out, so absent means on),
+     check the tool the flag promises is actually usable:
+       command -v acli >/dev/null 2>&1
+     Not installed → WARN ("jira.enabled is on but acli is not installed;
+     every Jira read will fail at the point of use")
+   → If acli IS installed, check authentication the same way the setup wizard
+     does. Not authenticated → WARN ("acli is installed but not authenticated").
+   → Report, never fail: a config shared across a team is legitimately valid on
+     a machine where the current user has not logged in yet. The point is that
+     the failure surfaces here rather than mid-pipeline.
 ```
 
 **Output format:**
@@ -721,9 +798,20 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
   [FAIL] storage.artifacts.proposals: references undefined location "shared"
   [WARN] storage.artifacts: missing artifact "meetings" — defined in the current
          template but absent from this config; run /configuration-init migrate to add it
+  [WARN] storage.artifacts.{name} resolves to {path}, which does not exist — the
+         agent that reads it will be dispatched to search nothing, and an empty
+         result is indistinguishable from a real one
+  [FAIL] storage.artifacts.{name} resolves to {path}, which is the configuration
+         directory — an agent told to read a knowledge base there gets
+         settings.json, session-state/ and worktrees/ instead
+  [WARN] execution_mode requests team mode, but CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS
+         is not set in this environment; these phases will run as plain subagents
+  [WARN] orphaned .claude/configuration.json — nothing reads it; run
+         /configuration-init migrate to back it up and remove it
   [PASS] requirements: all values valid
+  [PASS] jira: enabled, acli installed and authenticated
 
-  Result: 5 passed, 2 warnings, 1 failure
+  Result: 6 passed, 5 warnings, 2 failures
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -775,9 +863,23 @@ TIMESTAMP=$(date -u +%Y%m%d-%H%M%S)
 PROJECT_ROOT=$(pwd)
 PLAN=()
 
-# 1. configuration.json → configuration.yml
-if [[ -f ".claude/configuration.json" && ! -f ".claude/configuration.yml" ]]; then
-  PLAN+=("config-json-to-yml:.claude/configuration.json")
+# 1. configuration.json — convert it, or retire it when a .yml already exists.
+#
+# `! -f .yml` used to be part of the same condition, which left the both-present
+# case unhandled and the .json orphaned permanently (CL-92). That is not an
+# exotic shape: it is what you get whenever someone hand-writes the .yml, which
+# is exactly how this project reached it.
+#
+# An orphan is worse than no file. Nothing reads it — resolve-config.sh looks
+# only for configuration.yml — so it cannot affect behaviour, but it holds a
+# conflicting older schema (`paths`, `product_knowledge.repository`) and it is
+# the file a human opens to find out how the project is configured.
+if [[ -f ".claude/configuration.json" ]]; then
+  if [[ -f ".claude/configuration.yml" ]]; then
+    PLAN+=("config-json-orphan:.claude/configuration.json")
+  else
+    PLAN+=("config-json-to-yml:.claude/configuration.json")
+  fi
 fi
 
 # 2. Per-skill state files → state.json
@@ -848,6 +950,7 @@ fi
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Legacy config file  .claude/configuration.json → .claude/configuration.yml
+  Orphaned config     .claude/configuration.json → removed (a .yml already exists; nothing reads the .json)
   Legacy state file   .claude/work/JIRA-123/requirements-state.json → state.json (type: requirements)
   Legacy config key   .claude/configuration.yml: domain_knowledge → product_knowledge
   Legacy location     .claude/configuration.yml: team-repo → team-knowledge
@@ -934,6 +1037,34 @@ yq -P '.' ".claude/configuration.json" > ".claude/configuration.yml"
 if [[ -s ".claude/configuration.yml" ]]; then
   rm ".claude/configuration.json"
 fi
+```
+
+**config-json-orphan** (a `.yml` already exists; back the `.json` up and remove it). The `.yml` is authoritative because it is the only one anything reads — `resolve-config.sh` walks up looking for `configuration.yml` and never for the `.json`:
+```bash
+# artifact_backup_once lives in config/artifacts.sh, and a shell FUNCTION does
+# not survive a Bash tool-call boundary any better than a variable does. Sourced
+# here, in the call that uses it, or the call dies with "command not found".
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+source "$NEXUS_SHARED/config/artifacts.sh"
+# The literal already printed in the plan — NOT a fresh `date`. A new value
+# would put backups at a suffix the user never saw.
+TIMESTAMP=<the literal timestamp printed in the plan>
+artifact_backup_once ".claude/configuration.json" "${TIMESTAMP}" || exit 1
+# Only after the backup exists. Removing first and failing to back up would
+# destroy the only copy of a file the operator may still want to read.
+if [[ -f ".claude/configuration.json.bak-${TIMESTAMP}" ]]; then
+  rm ".claude/configuration.json"
+fi
+```
+
+Nothing is merged into the `.yml`. Folding stale values from an unread file into a live configuration would change behaviour the operator never asked for, and the two schemas are not comparable field by field anyway — the old form spells it `paths.work` where the current one spells it `storage.artifacts.work`, so a mechanical diff produces noise rather than a finding. Report the backup path instead and let the operator read it:
+
+```
+  Orphaned .claude/configuration.json removed (nothing read it).
+  Backup: .claude/configuration.json.bak-${TIMESTAMP}
+  Its values were NOT merged — .claude/configuration.yml is unchanged.
 ```
 
 **state-rename** (add `type` field, rename file). Plan entries are `state-rename:<path-to-old-file>:<type>`, so bind all three variables first — with the backup now checked, leaving `old_path` unset aborts the migration rather than silently doing nothing:
