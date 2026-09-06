@@ -52,9 +52,11 @@ NEXUS_DISABLED_HOOKS=bash-token-filter claude
 |-----------|-------|:---------:|:-----:|---------|
 | `git-mutation-guard` | **safety** | ✅ active | ❌ off | Branch protection, credential scan, push audit gate |
 | `validate-commit` | **safety** | ✅ active | ❌ off | Enforce ticket-number pattern in commit messages |
+| `redact-output` | **safety** | ✅ active | ❌ off | Rewrite every Bash command so its output streams through `redact-stream.sh`: secrets become stable `<REDACTED:kind:n>` placeholders before the model sees them |
+| `read-guard` | **safety** | ✅ active | ❌ off | Refuse Read, Grep and Glob on files that exist to hold secrets (`.env*`, `*.pem`, `*credentials*`, the redaction map, …) — by path or by filename filter — and redirect to `cat`, whose output is redacted |
 | `audit` | advisory | ❌ off | ❌ off | Write all tool usage to `~/.claude/tool-audit.log` |
 | `auto-context` | advisory | ❌ off | ❌ off | Auto-append entries to active work-session state.json |
-| `bash-token-filter` | advisory | ❌ off | ❌ off | Inject `-q`/`--silent` flags to reduce noisy output |
+| `bash-token-filter` | advisory | ❌ off | ❌ off | Inject `-q`/`--silent` flags to reduce noisy output. Runs *inside* `redact-output` (not registered on its own, so only one hook ever rewrites a command); this name still disables it |
 | `notify` | advisory | ❌ off | ❌ off | Send desktop notification on session end |
 | `output-guard` | advisory | ❌ off | ❌ off | Advisory nudge when Bash output exceeds thresholds |
 
@@ -111,6 +113,33 @@ NEXUS_DISABLED_HOOKS=notify claude
 ```bash
 NEXUS_DISABLED_HOOKS=bash-token-filter claude
 ```
+
+**Reading a secret value on purpose (the model must see it, not a placeholder):**
+```bash
+NEXUS_DISABLED_HOOKS=redact-output,read-guard claude
+```
+Both hooks print a `WARN` line on every call while disabled. Prefer to keep them on
+and paste the one value into the conversation yourself — that is one value, not
+every value in every file the session reads.
+
+**What redaction does and does not cover.** `redact-output` filters what a Bash
+command *prints*; `read-guard` refuses Read, Grep and Glob on files *named* to hold
+secrets. Neither can touch `@file` mentions, pasted text, MCP tool output, or a
+secret the model itself wrote into a command — those reach the model without
+passing through a rewritable input. A Grep that names no path (or a directory)
+returns matching lines from every file under it unhooked; ripgrep skips
+gitignored files, which covers `.env` in most projects and the redaction map
+always, but a sensitive file that is not gitignored is reachable that way.
+Names and other free-text personal data are not redacted; that needs a model, not
+a filter.
+
+The session map (`.claude/session-state/redaction-map.tsv`, or
+`~/.claude/session-state/` outside a repository) holds the redacted values the filter can chase — secret-shaped ones —
+in clear, so later output is redacted consistently. It is created mode 0600 with a
+`.gitignore` of `*` beside it, `read-guard` refuses it (Read, Grep and Glob alike),
+and `cat` on it, or any reformatting of it, comes back as placeholders. Both hooks need `jq`; without it they
+**block** (exit 2) and name the `NEXUS_DISABLED_HOOKS` opt-out, rather than run silently
+unredacted — the same choice as a missing filter.
 
 ---
 

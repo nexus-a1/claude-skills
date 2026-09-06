@@ -42,6 +42,50 @@ NEXUS_CREDENTIAL_PATTERNS=(
     'JWT token|eyJ[A-Za-z0-9_=-]+\.eyJ[A-Za-z0-9_=-]+\.[A-Za-z0-9_.+/=-]{20,}'
 )
 
+# Files whose CONTENT is assumed sensitive by name alone. Consumed by
+# plugin/hooks/read-guard.sh, which refuses the Read tool on them and points
+# the model at `cat`, whose output the redact-output hook filters. Shell
+# globs, matched against the basename with `case`; an entry containing `/`
+# is matched against the full path instead.
+#
+# Name-based, so it is a floor, not the check: the credential scan and the
+# stream redactor match on content and catch a key in an innocently named
+# file. Keep this list to files that exist to hold secrets.
+NEXUS_SENSITIVE_PATH_GLOBS=(
+    '.env'
+    '.env.*'
+    '*.env'
+    '.envrc'
+    '*.pem'
+    '*.key'
+    '*.p12'
+    '*.pfx'
+    '*.jks'
+    '*.keystore'
+    'id_rsa*'
+    'id_dsa*'
+    'id_ecdsa*'
+    'id_ed25519*'
+    '*credentials*'
+    '.netrc'
+    '_netrc'
+    '.npmrc'
+    '.pypirc'
+    '.git-credentials'
+    'dataSources.xml'
+    'secrets.yml'
+    'secrets.yaml'
+    'secrets.json'
+    '*/.aws/config'
+    '*/.docker/config.json'
+    '*/.kube/config'
+    # The redaction session map: every value the redact-output hook replaced,
+    # in clear. Reading it with the Read tool would undo the whole layer.
+    'redaction-map.tsv'
+    '*/.claude/session-state'
+    '*/.claude/session-state/*'
+)
+
 # Emit the ERE patterns this project should redact with.
 #
 # Mirrors the two-tier resolution credential-scan.sh uses at detection time:

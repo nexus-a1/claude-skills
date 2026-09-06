@@ -26,8 +26,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/bash-token-filter.py pre",
-            "timeout": 15
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/redact-output.sh",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/read-guard.sh",
+            "timeout": 10
           }
         ]
       }

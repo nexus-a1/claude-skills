@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.36.0] - 2026-09-06
+
+## What's Changed
+
+7 commits across 1 merged PR since v1.35.0 (#389, CL-90): 1 feat, 5 fix, 1 merge. No breaking changes, but **two new always-on safety hooks** change what every Bash call and every file read does. Read the first section before upgrading.
+
+### New: secrets are redacted before they reach the model
+
+Allowing a read of `.env` used to send its values to the API verbatim; the only protection was a deny rule that also hid the *shape* of the file. Two hooks close that for the two channels a hook can reach.
+
+- **`redact-output.sh`** (PreToolUse on Bash) rewrites every command so its stdout and stderr stream through **`redact-stream.sh`** before the tool captures them. Secrets come back as stable `<REDACTED:kind:n>` placeholders — the same value gets the same placeholder within a session, so "the key on line 3 is the one compose uses" is still readable. Six classes: the shared credential pattern list (a repo `.gitleaks.toml` widens it), secret-bearing assignments in `KEY=value`, `key: value`, `"key": "value"` and `--key=value` form anywhere in a line, URL userinfo passwords, `Authorization` headers, private-key bodies, and any already-known value wherever else it appears. The rewrite uses `exec >` rather than a pipe, so `cd` still persists, `$?` and `exit N` are the command's own, and heredocs and stderr go through.
+- **`read-guard.sh`** (PreToolUse on Read, Grep and Glob) refuses the file tools on names that exist to hold secrets — `.env*`, `*.pem`, `*.key`, `id_*`, `*credentials*`, `.netrc`, `.npmrc`, `dataSources.xml`, `~/.aws/config`, `~/.kube/config`, the redaction map — by path **or** by filename filter, and redirects to `cat`, whose output is redacted. An agent reading `.env` for its shape loses nothing; a value it should not have, it does not get.
+- **One writer.** Claude Code runs a call's PreToolUse hooks in parallel on the original input, and when two return `updatedInput` the last to finish wins. `bash-token-filter.py` now runs *inside* `redact-output.sh` and has no `hooks.json` entry of its own; its `NEXUS_DISABLED_HOOKS` name still works.
+- **Fail closed, and say so.** A missing filter, a missing pattern library, an unreadable payload or a missing `jq` **blocks** the call with the `NEXUS_DISABLED_HOOKS` opt-out named. Note the consequence: on a machine without `jq`, Bash, Read, Grep and Glob are all refused rather than degraded. That is deliberate — a safety hook that is silently absent is the failure this layer exists to prevent — but it is worth knowing before you meet it.
+- **Turning it off:** `NEXUS_DISABLED_HOOKS=redact-output,read-guard`. Both print a WARN on every call while disabled. Both are safety class, so `NEXUS_HOOK_PROFILE=minimal` keeps them on.
+
+**What it does not cover**, stated in `hook-profiles.md` rather than left to be discovered: `@file` mentions, pasted text, MCP tool output, a secret the model itself wrote into a command, a Grep that names no path (ripgrep skips gitignored files, which covers `.env` in most projects and the redaction map always), and names or other free-text personal data — that needs a model, not a filter.
+
+### Features
+
+- **hooks**: `redact-output.sh`, `redact-stream.sh` and `read-guard.sh` as described above; `NEXUS_SENSITIVE_PATH_GLOBS` joins the credential patterns in `plugin/shared/credential-patterns.sh` as the shared name list (#389)
+
+### Bug Fixes
+
+All six of these are defects **in the feature above**, found by three orchestrated review rounds and two CI review passes on its own branch, and fixed before merge. Listed because each is a class worth knowing:
+
+- **leaks**: a private key with BEGIN and END on one line printed verbatim and then swallowed the rest of the output; `redis://:password@host` passed through; JSON and command-line secret assignments were never matched; the session map was readable and, in a user's project, not gitignored (#389)
+- **bypasses**: `# nexus-redact` anywhere in a command switched redaction off; a partial prelude that dropped `2>&1` passed unwrapped; a `Grep` with a `*.pem` filename filter and no path read the key's content (#389)
+- **portability**: mawk reads `X{n,}` as exactly `X{n}` (a JWT was truncated at twenty characters) and flushes to a pipe only under `-W interactive`; gawk *accepts* `(?i)` and matches nothing, so a `.gitleaks.toml` rule could be silently dead; jq 1.6 parses a lone newline as success, so an empty payload was not blocked on the runner (#389)
+- **injection**: the filter and map paths were written into the executed command double-quoted, so a directory named with `$(…)` ran as code on every Bash call. Both are single-quoted now, pinned by a test that installs the hook under a hostile directory name (#389)
+- **false positives**: a TAP `PASS: <path>` line put a file path into the map and every later mention of it came back as a placeholder; `OLDPWD=`, `"passed": 12`, `secret_name=` and `token_count=` were over-redacted; `git diff --numstat` output was mistaken for a map line (#389)
+- **hooks**: `redact-output`'s timeout is 30 s, not 10 s — it does more than the filter it replaced, and a hook that times out fails open (#389)
+
+### Other Changes
+
+- **docs**: hook catalogue, `docs/components.md`, `plugin/CLAUDE.md` and the `CLAUDE.md` tree carry both hooks, what they cover and what they do not (#389)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.35.0...v1.36.0
+
 ## [1.35.0] - 2026-09-06
 
 ## What's Changed
