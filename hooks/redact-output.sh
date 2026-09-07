@@ -129,6 +129,29 @@ esac
 _sq() { local q="'"; printf "%s" "$q${1//$q/$q\\$q$q}$q"; }
 _stream_q="$(_sq "$_stream")"
 
+# Which structured-PII classes this session redacts. Resolved HERE rather than
+# in the filter because the answer depends on the project's configuration.yml
+# and the session's environment, and the filter runs once per Bash call inside
+# a rewritten command that must not do its own config discovery.
+#
+# Fails closed for the same reason a missing filter does: a broken install must
+# not silently downgrade a tier of the redactor. `NEXUS_REDACT_PII=none` is the
+# supported way to turn the tier off, and it is one word.
+_pii_lib="$_hook_dir/../shared/pii-patterns.sh"
+# shellcheck source=../shared/pii-patterns.sh
+if ! . "$_pii_lib" 2>/dev/null || ! type nexus_pii_resolve_classes >/dev/null 2>&1; then
+    echo "BLOCKED: redact-output cannot load the PII class list at $_pii_lib — refusing to run the command with only half the redactor." >&2
+    echo "Reinstall the nexus plugin, or disable this hook explicitly: NEXUS_DISABLED_HOOKS=redact-output" >&2
+    exit 2
+fi
+# Only [a-z0-9,-] ever reaches the command line, and it is single-quoted there
+# on top of that. The resolver already refuses a name that is not one of its
+# own classes; this is the belt to that pair of braces.
+_pii="$(nexus_pii_resolve_classes 2>/dev/null || true)"
+case "$_pii" in *[!a-z0-9,-]*) _pii="" ;; esac
+_pii_q=""
+[ -n "$_pii" ] && _pii_q="$(_sq "$_pii")"
+
 
 # Quiet-flag rewrite first, so this stays the single writer of updatedInput.
 # Advisory: a missing python3 or a filter that says nothing leaves the
@@ -178,6 +201,7 @@ _map_q=""
 # it holds something and otherwise settles for a moment.
 _prelude="exec > >(bash $_stream_q"
 [ -n "$_map_q" ] && _prelude="$_prelude --map $_map_q"
+[ -n "$_pii_q" ] && _prelude="$_prelude --pii $_pii_q"
 _prelude="$_prelude) 2>&1  # nexus-redact
 _nexus_redact_pid=\$!; trap 'exec 1>&- 2>&-; if [ -n \"\$_nexus_redact_pid\" ]; then _i=0; while kill -0 \"\$_nexus_redact_pid\" 2>/dev/null && [ \$_i -lt 50 ]; do sleep 0.1; _i=\$((_i+1)); done; else sleep 0.3; fi' EXIT"
 

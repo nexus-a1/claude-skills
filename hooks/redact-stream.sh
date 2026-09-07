@@ -12,13 +12,25 @@
 # statement the reader can make; a flat *** would destroy that.
 #
 # Usage:
-#   redact-stream.sh [--map FILE] < input > output
+#   redact-stream.sh [--map FILE] [--pii CLASSES] < input > output
 #
 # --map FILE   session map of placeholder assignments, one `kind<TAB>n<TAB>value`
 #              per line. Read at start so earlier assignments are honoured,
 #              appended to as new values are seen. The hook creates it mode 0600
 #              under .claude/session-state/, which is gitignored. Without --map
 #              numbering is stable only within one invocation.
+#
+# --pii CLASSES  comma-separated structured-PII classes to redact on top of the
+#              secrets tier: email, phone, iban, pesel, nip, card, ip. Absent or
+#              empty means none — the secrets tier is unconditional, the PII
+#              tier is opted into. The shapes and validators come from
+#              plugin/shared/pii-patterns.sh; redact-output.sh resolves the
+#              session's set from .claude/configuration.yml and NEXUS_REDACT_PII
+#              and passes it here. A class named here that the library does not
+#              know is dropped with a note on stderr; a library that cannot be
+#              loaded at all withholds output, because a caller that asked for
+#              PII redaction and got none silently is the failure this whole
+#              file exists to prevent.
 #
 # What is redacted, in order:
 #   1. every pattern in plugin/shared/credential-patterns.sh (the same list the
@@ -38,6 +50,14 @@
 #      path or a shell expansion
 #   0. a line of the session map itself comes back as its placeholder, so
 #      `cat` on the map reveals nothing whatever the values are
+#   7. with --pii, every enabled structured-PII class: an email address, a
+#      phone number, an IBAN, a PESEL, a NIP, a payment card, an IPv4 address;
+#      kind = the class name. Applied after 1-5 and before 6, on the text
+#      between placeholders only, so a value the secrets tier already replaced
+#      is not scanned again. Where the format defines a checksum — Luhn for a
+#      card, mod-97 for an IBAN, the PESEL and NIP control digits — a candidate
+#      that fails it is left in clear: redacting every sixteen-digit number is
+#      how a filter gets switched off wholesale.
 #
 # What is NOT redacted, said plainly: names, addresses and free-text personal
 # data (that needs a model, not a filter); a secret split across two lines;
@@ -60,11 +80,14 @@
 set -u
 
 MAP_FILE=""
+PII_ARG=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --map) MAP_FILE="${2:-}"; shift 2 ;;
         --map=*) MAP_FILE="${1#--map=}"; shift ;;
-        -h|--help) sed -n '2,52p' "$0"; exit 0 ;;
+        --pii) PII_ARG="${2:-}"; shift 2 ;;
+        --pii=*) PII_ARG="${1#--pii=}"; shift ;;
+        -h|--help) sed -n '2,65p' "$0"; exit 0 ;;
         *) echo "redact-stream: unknown argument: $1" >&2; while IFS= read -r _; do :; done; exit 2 ;;
     esac
 done
@@ -139,10 +162,50 @@ if [ -n "$_extra" ]; then
 fi
 [ -n "$_patterns" ] || _withhold "no patterns resolved"
 
+# ── Tier 2: structured PII, only when asked for ──────────────────────────────
+# The classes arrive as a comma list. Each name is checked against the library's
+# own list before it selects anything, so a typo cannot quietly turn a class
+# off; only rules whose class is enabled are handed to awk, so a disabled class
+# costs nothing per line.
+_pii_classes=""
+_pii_rules=""
+_pii_email_veto=""
+if [ -n "$PII_ARG" ]; then
+    _pii_lib="${BASH_SOURCE[0]%/*}/../shared/pii-patterns.sh"
+    # shellcheck source=../shared/pii-patterns.sh
+    . "$_pii_lib" 2>/dev/null || _withhold "cannot load $_pii_lib (PII classes were requested)"
+    [ "${#NEXUS_PII_RULES[@]}" -gt 0 ] 2>/dev/null || _withhold "PII rule list is empty (PII classes were requested)"
+    _rest="$PII_ARG"
+    while [ -n "$_rest" ]; do
+        _name="${_rest%%,*}"
+        if [ "$_name" = "$_rest" ]; then _rest=""; else _rest="${_rest#*,}"; fi
+        while [ "${_name# }" != "$_name" ]; do _name="${_name# }"; done
+        while [ "${_name% }" != "$_name" ]; do _name="${_name% }"; done
+        [ -n "$_name" ] || continue
+        if ! nexus_pii_is_class "$_name"; then
+            echo "redact-stream: unknown PII class '$_name' — ignored" >&2
+            continue
+        fi
+        case ",$_pii_classes," in *",$_name,"*) continue ;; esac
+        _pii_classes="${_pii_classes:+$_pii_classes,}$_name"
+    done
+    for _entry in "${NEXUS_PII_RULES[@]}"; do
+        case ",$_pii_classes," in
+            *",${_entry%%|*},"*) _pii_rules="${_pii_rules}${_entry}"$'\n' ;;
+        esac
+    done
+    for _entry in "${NEXUS_PII_EMAIL_LOCAL_VETO[@]}"; do
+        _pii_email_veto="${_pii_email_veto}${_entry}"$'\n'
+    done
+fi
+
 # Everything awk needs goes through ENVIRON: a -v value would have escape
 # processing run on it, and these strings are full of backslashes.
 export NEXUS_REDACT_PATTERNS="$_patterns"
 export NEXUS_REDACT_MAP="$MAP_FILE"
+export NEXUS_REDACT_PII_CLASSES="$_pii_classes"
+export NEXUS_REDACT_PII_RULES="$_pii_rules"
+export NEXUS_REDACT_PII_EMAIL_VETO="$_pii_email_veto"
 # Set by the tests to exercise the interval rewrite even under an awk that
 # does not need it.
 export NEXUS_REDACT_FORCE_INTERVAL_FIX="${NEXUS_REDACT_FORCE_INTERVAL_FIX:-}"
@@ -221,10 +284,13 @@ function place(kind, value,   ph) {
     ph = "<REDACTED:" kind ":" (++C[kind]) ">"
     M[value] = ph
     if (secretish(value)) KNOWN[++nk] = value
-    # Only a value rule 6 can defend goes into the map: a short, plain or
+    # Only a value the filter can defend goes into the map: a short, plain or
     # path-shaped value reformatted out of the map (`cut -f3`) would print
-    # in clear, and it gains nothing from cross-run numbering.
-    if (mapfile != "" && index(value, "\t") == 0 && secretish(value)) {
+    # in clear, and it gains nothing from cross-run numbering. A PII value is
+    # defended by its own rule rather than by rule 6 — a six-character email
+    # address is matched wherever it appears, including in a column cut out of
+    # the map — so the length floor does not apply to it.
+    if (mapfile != "" && index(value, "\t") == 0 && (secretish(value) || (kind in PIICLASS))) {
         printf "%s\t%d\t%s\n", kind, C[kind], value >> mapfile
         close(mapfile)
     }
@@ -286,6 +352,250 @@ function closing_quote(rest, q,   i, n, bs) {
     }
     return 0
 }
+# --- tier 2: structured PII --------------------------------------------------
+# Checksums first. Each returns 1 only when the candidate is a well-formed
+# member of its format, so a number that merely has the right length is left in
+# clear. That asymmetry is deliberate: a missed redaction is a leak the content
+# rules and the name-based read guard still stand behind, while a filter that
+# eats every long number is one the user turns off.
+function luhn(d,   i, sum, dig, alt, n) {
+    n = length(d); sum = 0; alt = 0
+    for (i = n; i >= 1; i--) {
+        dig = substr(d, i, 1) + 0
+        if (alt) { dig *= 2; if (dig > 9) dig -= 9 }
+        sum += dig; alt = 1 - alt
+    }
+    return (sum % 10) == 0
+}
+# PESEL: weights 1,3,7,9 repeating over the first ten digits, control digit
+# eleventh. The checksum alone accepts one eleven-digit number in ten, so the
+# embedded date is checked too — month 1-12 (plus the 20/40/60/80 century
+# offsets) and day 1-31 — which is what keeps an eleven-digit millisecond
+# timestamp out.
+function pesel_ok(d,   w, i, sum, mm, dd, mon) {
+    if (length(d) != 11) return 0
+    split("1,3,7,9,1,3,7,9,1,3", w, ",")
+    sum = 0
+    for (i = 1; i <= 10; i++) sum += w[i] * (substr(d, i, 1) + 0)
+    if (((10 - (sum % 10)) % 10) != substr(d, 11, 1) + 0) return 0
+    mm = substr(d, 3, 2) + 0
+    dd = substr(d, 5, 2) + 0
+    mon = mm % 20
+    if (mm > 92 || mon < 1 || mon > 12) return 0
+    if (dd < 1 || dd > 31) return 0
+    return 1
+}
+# NIP: weights 6,5,7,2,3,4,5,6,7 mod 11; a remainder of 10 is not a valid
+# check digit and marks the number invalid rather than wrapping.
+function nip_ok(d,   w, i, sum, c) {
+    if (length(d) != 10) return 0
+    split("6,5,7,2,3,4,5,6,7", w, ",")
+    sum = 0
+    for (i = 1; i <= 9; i++) sum += w[i] * (substr(d, i, 1) + 0)
+    c = sum % 11
+    if (c == 10) return 0
+    return c == substr(d, 10, 1) + 0
+}
+# IBAN mod-97 (ISO 13616): move the first four characters to the end, map A-Z
+# to 10-35, take the whole thing mod 97 digit by digit — the number is far too
+# long for a double, the running remainder is not.
+function iban_ok(s,   i, c, t, rem, v, n) {
+    n = length(s)
+    if (n < 15 || n > 34) return 0
+    if (s !~ /^[A-Z][A-Z][0-9][0-9]/) return 0
+    t = substr(s, 5) substr(s, 1, 4)
+    rem = 0
+    for (i = 1; i <= n; i++) {
+        c = substr(t, i, 1)
+        if (c ~ /^[0-9]$/) rem = (rem * 10 + (c + 0)) % 97
+        else {
+            v = index("ABCDEFGHIJKLMNOPQRSTUVWXYZ", c)
+            if (v == 0) return 0
+            rem = (rem * 100 + v + 9) % 97
+        }
+    }
+    return rem == 1
+}
+function strip_sep(s,   out, i, c) {
+    out = ""
+    for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (c != " " && c != "-" && c != "(" && c != ")") out = out c
+    }
+    return out
+}
+function count_digits(s,   i, n) {
+    n = 0
+    for (i = 1; i <= length(s); i++) if (substr(s, i, 1) ~ /^[0-9]$/) n++
+    return n
+}
+# Drop the last separator-delimited group of a candidate, or return "" when
+# there is none. Greedy matching over-reaches on the two rules whose shape is
+# open-ended (an IBAN written in groups, a phone number followed by more
+# numbers); trimming the tail and re-validating recovers the real value instead
+# of discarding it.
+function trim_group(s,   i, c) {
+    for (i = length(s); i >= 1; i--) {
+        c = substr(s, i, 1)
+        if (c == " " || c == "-") return substr(s, 1, i - 1)
+    }
+    return ""
+}
+# How many characters of `cand` are a valid instance of `rule`. 0 = no.
+function pii_accept(rule, cand, before, after,   local, dom, dig, t, n, i, PARTS) {
+    if (rule == "email") {
+        if (before ~ /^[A-Za-z0-9_.%+-]$/) return 0
+        local = cand; sub(/@.*/, "", local)
+        dom = cand; sub(/^[^@]*@/, "", dom)
+        if (local in EVETO) return 0
+        # GitHub`s per-user noreply address carries a username, not a contact
+        # address, and it is on every commit trailer.
+        if (dom ~ /(^|\.)noreply\.github\.com$/) return 0
+        return length(cand)
+    }
+    if (rule == "phone-intl") {
+        if (before ~ /^[A-Za-z0-9+]$/) return 0
+        t = cand
+        while (t != "") {
+            dig = count_digits(t)
+            if (dig >= 8 && dig <= 15 && substr(t, length(t), 1) ~ /^[0-9]$/) return length(t)
+            if (dig < 8) return 0
+            t = trim_group(t)
+        }
+        return 0
+    }
+    if (rule == "phone-pl") {
+        if (before ~ /^[0-9A-Za-z_-]$/) return 0
+        if (after ~ /^[0-9A-Za-z_-]$/) return 0
+        return length(cand)
+    }
+    if (rule == "iban") {
+        if (before ~ /^[A-Za-z0-9]$/) return 0
+        if (after ~ /^[A-Za-z0-9]$/) return 0
+        t = cand
+        while (t != "") {
+            if (iban_ok(strip_sep(t))) return length(t)
+            t = trim_group(t)
+        }
+        return 0
+    }
+    if (rule == "card") {
+        if (before ~ /^[0-9A-Za-z_-]$/) return 0
+        if (after ~ /^[0-9A-Za-z_-]$/) return 0
+        t = strip_sep(cand)
+        n = length(t)
+        if (n < 13 || n > 19) return 0
+        if (!luhn(t)) return 0
+        return length(cand)
+    }
+    if (rule == "nip") {
+        if (before ~ /^[0-9A-Za-z_-]$/) return 0
+        if (after ~ /^[0-9A-Za-z_-]$/) return 0
+        if (!nip_ok(strip_sep(cand))) return 0
+        return length(cand)
+    }
+    if (rule == "ipv4") {
+        if (before ~ /^[0-9A-Za-z_.-]$/) return 0
+        if (after ~ /^[0-9A-Za-z_.-]$/) return 0
+        n = split(cand, PARTS, ".")
+        if (n != 4) return 0
+        for (i = 1; i <= 4; i++) if (PARTS[i] + 0 > 255) return 0
+        return length(cand)
+    }
+    return 0
+}
+# One regex rule over placeholder-free text. A rejected candidate advances by a
+# single character rather than by its whole length, so a value that starts one
+# character later is still found.
+function pii_rule(t, i,   out, cand, n, before, after) {
+    # The needle: a character the rule cannot match without. Skipping the regex
+    # on a segment that lacks it is not an optimisation for its own sake —
+    # mawk`s matcher is quadratic when an unbounded class precedes a required
+    # literal, and a build log full of long digit runs took eighteen seconds
+    # through the email rule alone before this line existed.
+    if (PNEEDLE[i] != "" && index(t, PNEEDLE[i]) == 0) return t
+    out = ""
+    while (match(t, PX[i])) {
+        cand = substr(t, RSTART, RLENGTH)
+        # The character before the candidate, which after a rejection is no
+        # longer inside `t` — it has already been moved to `out`. Reading it
+        # from `t` alone made every boundary veto self-defeating: rejecting
+        # `git@github.com` for its service-account local part advanced one
+        # character and then accepted `it@github.com`, whose "preceding
+        # character" had just been chopped off.
+        before = (RSTART > 1) ? substr(t, RSTART - 1, 1) : substr(out, length(out), 1)
+        after = substr(t, RSTART + RLENGTH, 1)
+        n = pii_accept(PRULE[i], cand, before, after)
+        if (n > 0 && n < RLENGTH) {
+            # A trimmed accept: what follows the trim is text again, not the
+            # tail of a match, so re-derive the character after it.
+            after = substr(t, RSTART + n, 1)
+            if (PRULE[i] == "iban" && after ~ /^[A-Za-z0-9]$/) n = 0
+        }
+        if (n > 0) {
+            out = out substr(t, 1, RSTART - 1) place(PC[i], substr(cand, 1, n))
+            t = substr(t, RSTART + n)
+        } else {
+            out = out substr(t, 1, RSTART)
+            t = substr(t, RSTART + 1)
+        }
+    }
+    return out t
+}
+# The unseparated numeric classes. Walking maximal digit runs rather than
+# matching `[0-9]{13,19}` gets the boundary right by construction — a run glued
+# to a letter, a dot, a slash or a dash is part of an identifier, a version, a
+# path or a date, and is not a card — and it sidesteps mawk`s comma-interval
+# defect entirely.
+function pii_digits(t, niplabel,   out, run, L, before, after, after2, kind) {
+    if (!(("card" in PIICLASS) || ("pesel" in PIICLASS) || ("nip" in PIICLASS))) return t
+    out = ""
+    while (match(t, /[0-9]+/)) {
+        run = substr(t, RSTART, RLENGTH); L = length(run)
+        before = (RSTART > 1) ? substr(t, RSTART - 1, 1) : ""
+        after = substr(t, RSTART + RLENGTH, 1)
+        after2 = substr(t, RSTART + RLENGTH + 1, 1)
+        kind = ""
+        # A trailing "." only disqualifies when a digit follows it: that is a
+        # decimal or a version, whereas a full stop ends a sentence.
+        if (before !~ /^[A-Za-z0-9_.\/-]$/ && after !~ /^[A-Za-z0-9_\/-]$/ &&
+            !(after == "." && after2 ~ /^[0-9]$/)) {
+            if (("card" in PIICLASS) && L >= 13 && L <= 19 && luhn(run)) kind = "card"
+            else if (("pesel" in PIICLASS) && L == 11 && pesel_ok(run)) kind = "pesel"
+            else if (("nip" in PIICLASS) && L == 10 && niplabel && nip_ok(run)) kind = "nip"
+        }
+        if (kind != "") out = out substr(t, 1, RSTART - 1) place(kind, run)
+        else out = out substr(t, 1, RSTART + RLENGTH - 1)
+        t = substr(t, RSTART + RLENGTH)
+    }
+    return out t
+}
+function pii_seg(t, niplabel,   i) {
+    for (i = 1; i <= pn; i++) t = pii_rule(t, i)
+    return pii_digits(t, niplabel)
+}
+# Apply the PII rules to a line, copying well-formed placeholders through
+# untouched. Splitting on them is what keeps `postgres://app:<REDACTED:...>@
+# db.example.com/x` from reading as an email address, and what keeps a
+# placeholder from being scanned twice.
+function pii_line(s, niplabel,   out, p) {
+    if (pn == 0 && !(("card" in PIICLASS) || ("pesel" in PIICLASS) || ("nip" in PIICLASS))) return s
+    out = ""
+    while (s != "") {
+        p = index(s, "<REDACTED:")
+        if (p == 0) { out = out pii_seg(s, niplabel); break }
+        out = out pii_seg(substr(s, 1, p - 1), niplabel)
+        s = substr(s, p)
+        if (match(s, /^<REDACTED:[a-z0-9-]+(:[0-9]+)?>/)) {
+            out = out substr(s, 1, RLENGTH)
+            s = substr(s, RLENGTH + 1)
+        } else {
+            out = out substr(s, 1, 10)
+            s = substr(s, 11)
+        }
+    }
+    return out
+}
 BEGIN {
     mapfile = ENVIRON["NEXUS_REDACT_MAP"]
     needfix = (ENVIRON["NEXUS_REDACT_FORCE_INTERVAL_FIX"] != "")
@@ -303,6 +613,37 @@ BEGIN {
     }
     KINDS["env-secret"] = 1; KINDS["url-password"] = 1; KINDS["auth-header"] = 1; KINDS["gitleaks"] = 1
     if (n == 0) { print "redact-stream: no patterns loaded" > "/dev/stderr"; exit 2 }
+
+    # Tier 2. Empty unless --pii named classes; the bash half has already
+    # dropped every name the library does not know, so anything arriving here
+    # selects a real rule.
+    pn = 0
+    npc = split(ENVIRON["NEXUS_REDACT_PII_CLASSES"], PL, ",")
+    for (i = 1; i <= npc; i++) {
+        if (PL[i] == "") continue
+        PIICLASS[PL[i]] = 1
+        KINDS[PL[i]] = 1
+    }
+    np = split(ENVIRON["NEXUS_REDACT_PII_RULES"], L, "\n")
+    for (i = 1; i <= np; i++) {
+        if (L[i] == "") continue
+        p1 = index(L[i], "|"); if (p1 == 0) continue
+        rest = substr(L[i], p1 + 1)
+        p2 = index(rest, "|"); if (p2 == 0) continue
+        k = substr(L[i], 1, p1 - 1)
+        if (!(k in PIICLASS)) continue
+        r = substr(rest, p2 + 1)
+        p3 = index(r, "|"); if (p3 == 0) continue
+        pn++
+        PC[pn] = k
+        PRULE[pn] = substr(rest, 1, p2 - 1)
+        PNEEDLE[pn] = substr(r, 1, p3 - 1)
+        r = substr(r, p3 + 1)
+        if (needfix) r = fix_intervals(r)
+        PX[pn] = r
+    }
+    nev = split(ENVIRON["NEXUS_REDACT_PII_EMAIL_VETO"], L, "\n")
+    for (i = 1; i <= nev; i++) if (L[i] != "") EVETO[L[i]] = 1
     if (mapfile != "") {
         while ((getline line < mapfile) > 0) {
             t1 = index(line, "\t"); if (t1 == 0) continue
@@ -312,6 +653,13 @@ BEGIN {
             if (k == "" || num <= 0 || v == "") continue
             if (!(v in M)) { M[v] = "<REDACTED:" k ":" num ">"; if (secretish(v)) KNOWN[++nk] = v }
             if (num > C[k]) C[k] = num
+            # Rule 0 hides a map line by its KIND, and the kinds registered
+            # below are only the ones this run can produce. A map written when
+            # a PII class was enabled, read back by a run where it is not,
+            # would otherwise print that line in clear. A kind holding at
+            # least one letter is a kind; the letter test is what keeps
+            # `git diff --numstat` (12<TAB>3<TAB>path) out.
+            if (k ~ /[a-z]/) KINDS[k] = 1
         }
         close(mapfile)
     }
@@ -446,6 +794,15 @@ BEGIN {
         low = tolower(s)
     }
     s = out s
+
+    # 7. structured PII, on the text between placeholders. After 1-5 so a
+    #    value the secrets tier owns keeps its kind, and before 6 so a PII
+    #    value seen here is chased through the rest of the stream like any
+    #    other. The NIP label is read off the ORIGINAL line: a bare ten-digit
+    #    number is a unix timestamp far more often than it is a tax id, so it
+    #    is only read as a NIP when the line says so.
+    if (pn > 0 || ("card" in PIICLASS) || ("pesel" in PIICLASS) || ("nip" in PIICLASS))
+        s = pii_line(s, (tolower($0) ~ /(^|[^a-z])nip([^a-z]|$)/))
 
     # 6. a value known to be a secret is a secret wherever else it appears —
     #    outside placeholders, which replace_literal skips.

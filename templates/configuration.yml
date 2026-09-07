@@ -174,6 +174,16 @@ storage:
 #                        offers and at most one archive.
 #                        Neither flag is standing consent: an unattended run
 #                        that cannot obtain an explicit answer archives nothing.
+#
+#   workflow.enabled     Whether /create-requirements may take the orchestrated
+#                        (workflow) path for its deep dive and synthesis:
+#                        schema-validated discovery, a two-round deep dive over
+#                        typed findings, adversarial verification before
+#                        synthesis, and gates computed rather than narrated.
+#                        Default: true. Setting false always falls back to the
+#                        classic prose path, which remains fully supported.
+#                        The path is also skipped automatically when the
+#                        Workflow tool is unavailable in the session.
 # -----------------------------------------------------------------------------
 requirements:
   auto_search: true
@@ -181,6 +191,8 @@ requirements:
   auto_load_threshold: 0.9
   max_suggestions: 3
   archive_on_pr: true
+  workflow:
+    enabled: true
 
 
 # -----------------------------------------------------------------------------
@@ -212,6 +224,76 @@ requirements:
 #     enabled: false
 #     milestone_tools: [Edit, Write, MultiEdit, Task, NotebookEdit]
 #     throttle_seconds: 300
+
+
+# -----------------------------------------------------------------------------
+# Redaction (optional)
+# -----------------------------------------------------------------------------
+# Which STRUCTURED PII classes the redaction filter replaces with placeholders,
+# on top of the credential classes it always replaces.
+#
+# How redaction works, in one sentence: the redact-output hook rewrites every
+# Bash command so its output streams through a filter, and each matched value
+# comes back as a stable <REDACTED:kind:n> placeholder that the model can refer
+# to, compare and write back into a file (reverse-substitute), while the value
+# itself never enters the conversation.
+#
+# Credentials are NOT configurable here. An API key is never task input, so
+# there is no case for switching that tier off per project.
+#
+# The classes, and the default each one ships with:
+#
+#   email  true   local@domain.tld. Service addresses are exempt whatever this
+#                 is set to — git@…, noreply@…, no-reply@… and
+#                 *.noreply.github.com are on every git remote and commit
+#                 trailer and are nobody's contact address.
+#   phone  true   +… international numbers with 8-15 digits (E.164) and the
+#                 dashed Polish form 123-456-789. A bare space-separated
+#                 123 456 789 is NOT matched: three space-separated three-digit
+#                 columns are ordinary tabular output.
+#   iban   true   mod-97 checked, grouped or unseparated.
+#   pesel  true   control digit AND the embedded date checked, which is what
+#                 keeps an eleven-digit timestamp out.
+#   nip    true   the dashed forms anywhere; ten bare digits only on a line
+#                 that says NIP, because a bare ten-digit number is a unix
+#                 timestamp far more often than it is a tax id.
+#   card   true   13-19 digits, plain or in 4-4-4-4 / 4-6-5 groups, Luhn
+#                 checked. A UUID and a long id do not match.
+#   ip     FALSE  IPv4 with every octet in range. IPv6 is not covered at all.
+#
+# Why ip is the one that defaults OFF. The test applied to every class was:
+# does a working agent need the real value more often than not? If yes it
+# defaults off, because a redactor that breaks the task gets switched off
+# wholesale, and a wholesale-off redactor protects nothing. Container
+# addresses, 127.0.0.1, a 192.168.x home lab, a docker inspect, a failing DNS
+# lookup — IP addresses are usually infrastructure rather than people, and they
+# share their shape with a four-part version string, the worst false-positive
+# neighbour in the set. Everything else on the list is data an agent
+# essentially never needs to read back.
+#
+# email is the judgement call and it defaults ON: it is the class most likely
+# to carry a real person's data in a repository (fixtures, seed data, CSV
+# exports, support tickets). The cost, stated plainly, is that git log, git
+# blame and gh output show author addresses as placeholders. Set it false in a
+# project where addresses ARE the task.
+#
+# Per session, without editing this file (this beats the settings below):
+#   NEXUS_REDACT_PII=none          secrets only
+#   NEXUS_REDACT_PII=all           every class, ip included
+#   NEXUS_REDACT_PII=email,card    exactly these
+#
+# A class name that is not one of the seven above is ignored with a note on
+# stderr — a typo here is a class its author believes is on.
+# -----------------------------------------------------------------------------
+# redaction:
+#   pii:
+#     email: true
+#     phone: true
+#     iban: true
+#     pesel: true
+#     nip: true
+#     card: true
+#     ip: false
 
 
 # -----------------------------------------------------------------------------
@@ -473,6 +555,136 @@ requirements:
 #       - name: validate
 #         template: bash_script
 #         args: scripts/validate.sh
+#     workflow:
+#       enabled: true
+#
+# =============================================================================
+# TROUBLESHOOT  (optional — omit entirely and /troubleshoot behaves exactly as before)
+# =============================================================================
+#
+#   troubleshoot.workflow.enabled   whether Phase 6.3's verification review uses
+#                                   the orchestrated path (two blind verifiers on
+#                                   one question each, then three challengers
+#                                   refuting the reach verdict) when it is
+#                                   available. Default: true. Setting false always
+#                                   falls back to the classic two-agent review.
+#
+# What the orchestrated path changes, and why you might turn it off:
+#
+#   * The stated root cause stops being CONTEXT the skeptic reasons from and
+#     becomes the CLAIM under test. A fix that merely suppresses the symptom is
+#     reported as such, with the failure path traced and cited.
+#   * It costs five agent calls per verification round instead of two. On a small
+#     codebase with cheap, obvious fixes that is a poor trade; on anything where a
+#     wrong root cause is expensive, it is the point.
+#
+# What it does NOT change: the fix is still applied only by the lead, sequentially
+# (Phase 5), the commit is still the lead's (Phase 7), and the three-rejection
+# deadlock protocol still fires — the counter lives in the lead precisely so that
+# falling back to the classic path mid-run does not reset it.
+#
+# Both spellings work, and both mean the same thing:
+#
+#   troubleshoot:
+#     workflow:
+#       enabled: false
+#
+#   troubleshoot:
+#     workflow: false
+
+
+# =============================================================================
+# REVIEW PLAN  (optional — omit entirely and /review-plan behaves exactly as before)
+# =============================================================================
+#
+# One setting, with a safe default, so an existing config needs no migration.
+#
+#   review_plan.workflow.enabled  Whether /review-plan may take the orchestrated
+#                                 (workflow) path for its review panel: each
+#                                 reviewer reads the raw plan blind, findings
+#                                 are typed and must cite the plan verbatim,
+#                                 three challengers judge every finding before
+#                                 it is reported, and the verdict is arithmetic
+#                                 over what survives. Default: true. Setting
+#                                 false always falls back to the classic prose
+#                                 path, which remains fully supported.
+#                                 The path is also skipped automatically when
+#                                 the Workflow tool is unavailable in the
+#                                 session.
+#
+# Note that execution_mode's `review_plan` phase is NOT consulted on the
+# orchestrated path — a script has no teammate protocol, so `team` mode's
+# cross-pollination applies to the classic path only. Set enabled: false if you
+# want cross-pollination back.
+#
+# --- Example ---------------------------------------------------------------
+#
+#   review_plan:
+#     workflow:
+#       enabled: true
+#
+
+
+# =============================================================================
+# EPIC  (optional — omit entirely and /epic behaves exactly as before)
+# =============================================================================
+#
+#   epic.workflow.enabled   Whether /epic may take the orchestrated (workflow)
+#                           path for Phase 2 through Phase 5.5: a blind
+#                           analysis fan-out with the too-small gate computed
+#                           from typed fields, a per-ticket spec PIPELINE (each
+#                           ticket is verified while the next is still being
+#                           written), and an adversarial check of the wave
+#                           assignment against the generated specs.
+#                           Default: true. Setting false always falls back to
+#                           the classic prose path, which remains fully
+#                           supported. The path is also skipped automatically
+#                           when the Workflow tool is unavailable in the
+#                           session.
+#
+#                           Phase 1's questions, every file write, the epic
+#                           structure in Phase 6 and the manifest upsert in
+#                           Phase 6.5 stay in the orchestrator on both paths.
+#
+# --- Example ---------------------------------------------------------------
+#
+#   epic:
+#     workflow:
+#       enabled: true
+#
+
+
+# =============================================================================
+# Feedback (/feedback)
+# =============================================================================
+#
+#   feedback.plugin_repo         GitHub repo the retrospective issue is filed
+#                                against, as owner/repo. Default: none — Phase 7
+#                                is skipped entirely and says so.
+#
+#   feedback.workflow.enabled    whether to use the orchestrated analysis path
+#                                (two blind analysts, adversarial verification
+#                                of every scored deduction, and a score that is
+#                                arithmetic over what survived) when it is
+#                                available. Default: true. Setting false always
+#                                falls back to the classic prose path.
+#
+# --- What the orchestrated path changes -------------------------------------
+#
+# On the classic path the 100-point score is one agent reading two prose
+# analyses and writing a number. On the orchestrated path a deduction only
+# reaches the scorecard if the artifact it cites actually contains the line it
+# quotes, and the points figure is looked up from the rubric rather than
+# authored by an agent. A run it cannot verify comes back unscored and says so,
+# rather than publishing a number nothing checked.
+#
+# Turn it off if you want the cheaper single-pass report: the orchestrated path
+# dispatches five agents and sends them the session artifacts.
+#
+# --- Example ---------------------------------------------------------------
+#
+#   feedback:
+#     plugin_repo: my-org/my-plugin-repo
 #     workflow:
 #       enabled: true
 #

@@ -5,7 +5,7 @@ model: claude-opus-5
 userInvocable: true
 description: Decompose large initiatives into dependency-mapped, wave-sequenced tickets with per-ticket requirements. Use when a feature is too large for a single /create-requirements run — typically 5+ tickets with complex interdependencies.
 argument-hint: <epic-description>
-allowed-tools: "Read, Write, Grep, Glob, Bash, Task, AskUserQuestion"
+allowed-tools: "Read, Write, Grep, Glob, Bash, Task, Workflow, AskUserQuestion"
 ---
 
 # Epic Command
@@ -42,7 +42,12 @@ else
 fi
 WORK_DIR=$(resolve_artifact work work)
 echo "WORK_DIR=$WORK_DIR"
+EPIC_WORKFLOW_ENABLED=$(resolve_epic_workflow_enabled)
+echo "EPIC_WORKFLOW_ENABLED=$EPIC_WORKFLOW_ENABLED"
 ```
+
+Use the printed `EPIC_WORKFLOW_ENABLED` value to decide whether Phase 1.5 attempts the
+orchestrated path.
 
 Use `$WORK_DIR` instead of a hardcoded `.claude/work` — but only inside this block. Each later block is its own Bash tool call and does not inherit the variable, so those substitute the value printed above instead.
 
@@ -79,6 +84,55 @@ Extract:
 - Epic description (what needs to be built).
 
 **Per-ticket naming:** each generated ticket has `{ticket-id}` = `{ticket-number}-{ticket-slug}` where `{ticket-number}` is the Jira/issue identifier the user will assign (or a placeholder like `{epic-ticket}-001` until real ticket IDs are created) and `{ticket-slug}` is a kebab-case descriptor derived from the ticket's title. The composed `{ticket-id}` is the value used in paths and references throughout this skill.
+
+---
+
+## Phase 1.5: Path Selection
+
+Two paths through Phases 2-5.5. The orchestrated one makes the analysis blind, turns the
+too-small gate and the wave assignment into computations over typed data, and runs the
+per-ticket spec work as a **pipeline** — ticket A is verified while ticket B is still being
+written. The classic one is everything from Phase 2 down and remains fully supported.
+
+**Attempt the orchestrated path when both hold:**
+- the `EPIC_WORKFLOW_ENABLED` value printed by the Configuration block is `true` (the default), and
+- the `Workflow` tool is available in this session.
+
+**If so, read `references/workflow-decompose.md` and follow it.** It replaces Phases 2, 2.5,
+2.6, 3, 4, 5 and 5.5, and changes what Phase 6 receives. Pass the raw epic description,
+`{epic-id}`, `{epic-ticket}`, where the description came from, and a timestamp as `args` — the
+script cannot read files or shell out, so anything it needs must arrive that way.
+
+**Fall back to the classic path below — silently, it is not an error — when:**
+- the config disables it, or
+- the `Workflow` tool is not available, or
+- the orchestrated run fails, does not complete, or returns `status: "incomplete"`.
+
+**On a mid-run failure, discard the partial result and run the classic path from Phase 2 in
+full.** Do not merge partial orchestrated output into a classic run, and do not present a
+partial run as complete. Name the path actually taken in Phase 7.
+
+**One exception, and it matters:** `status: "too-small"` is a **completed run with a negative
+answer**, not a failure. Print the "Epic too small" template from `references/error-handling.md`
+verbatim and stop. Re-running the classic path after a too-small verdict would spend a second
+analysis to reach the same conclusion — and might reach a different one, which turns a gate
+into a coin flip.
+
+> Detection is attempt-and-observe: nothing in the tool's contract describes how absence
+> manifests, so do not write logic that depends on a specific error shape. If the orchestrated
+> path does not produce a result, take the fallback.
+
+**What never moves, on either path:** the epic-ticket and slug questions in Phase 1, every file
+write, the epic structure in Phase 6, the manifest upsert in Phase 6.5, and the summary in
+Phase 7. The script has no filesystem, cannot ask the user anything, and reaches no mutation.
+
+---
+
+## Phases 2-5.5 — the classic path
+
+Everything from here to Phase 5.5 is the classic path. On the orchestrated path it is replaced
+wholesale by `references/workflow-decompose.md`; skip to **Consuming the orchestrated result**
+below, then continue at Phase 6.
 
 ---
 
@@ -342,6 +396,90 @@ Return: APPROVED / CONDITIONAL (list specific issues) / REJECTED (fundamental re
 
 ---
 
+## Consuming the orchestrated result
+
+Only on the orchestrated path. You hold a validated object from
+`references/workflow-decompose.md`. **Do not re-summarise it.** The decomposition, the wave
+verdict and the drops already happened, mechanically, where they could not be renegotiated.
+Render it; do not re-judge it.
+
+`status` decides what happens next before anything else is read:
+
+| `status` | What you do |
+|---|---|
+| `complete` | Continue below, then Phase 6 |
+| `too-small` | Print the "Epic too small" template verbatim and stop. Do **not** run the classic path |
+| `incomplete` | Discard the whole result and run the classic path from Phase 2 in full |
+
+On `complete`, the mapping into Phase 6's files is direct:
+
+- **`tickets[].specText`** is the spec, already rendered. Write it verbatim to
+  `$WORK_DIR/{epic-id}/{tickets[].specPath}`. Do not re-generate it and do not edit it into
+  shape — the AC ids in it are scoped to the ticket number by construction, and rewriting them
+  is how the collision Phase 5.5 asks about gets reintroduced.
+- **`tickets[]`** and **`waves[]`** populate `state.json` per `references/state-schema.md`.
+  The mapping is exact, so do not re-derive any of it: state's `slug` is the ticket's **`id`**
+  (the full `{ticket-number}-{ticket-slug}`, not the bare `slug` field beside it), `spec_file`
+  is `specPath`, `title`/`type`/`estimate` map straight across, `blocked_by` is `blockedBy`,
+  `blocks` is `blocks` (computed from `blockedBy`, never asserted separately — that is what
+  keeps the two halves of the relation from drifting), and each wave's `tickets` list is
+  `waves[].tickets`.
+- **`tickets[].context`** is the codebase inventory the classic Phase 5 gathers with
+  `context-builder`. Write it to `$WORK_DIR/{epic-id}/{tickets[].id}/context/context.json`. One
+  agent per ticket was spent producing it; a run that writes the spec and drops this has paid
+  for it and thrown it away.
+- **`initiative`** and the surviving findings populate `EPIC_PLAN.md` per
+  `references/epic-plan-template.md`.
+
+Rules that are not stylistic, because each one is a way the plan can claim more than it checked:
+
+- **A wave with `parallel: false` is reported as broken, at the top of the plan**, with its
+  `violations` and the quote each one cites. That is the finding the wave check exists to
+  produce; burying it in an appendix undoes the check.
+- **A wave's `arithmetic` entries are reported beside its `violations`.** They come from the
+  declared graph, not from an agent: `wave-too-early` means the decomposition scheduled a
+  ticket before something it says blocks it, and a `cycle` entry (which carries `ticket: null`)
+  means no wave assignment can be valid at all. `waveFindings` holds the same set for the whole
+  epic, including the `wave-late` notes — a ticket that could start earlier than it was placed.
+- **A wave with `parallel: true` and `verified: false` is labelled `[UNCHECKED]`, never
+  "parallel".** Either the panel was short or a lens that answered skipped this wave — 
+  `noVerdictFrom` names which. Nobody contradicted the wave, and nobody confirmed it either;
+  those are different claims. `checkedBy` is per wave, so report it per wave.
+- **`waves[].lensVerdicts` is the record of what each lens actually said about that wave.**
+  Show it beside the verdict when a wave is contested or unverified; it is the difference
+  between "three lenses agreed" and "one answered and two were quiet".
+- **When any `panelIntegrity.*.complete` is false, say so at the top**, with the
+  received/dispatched counts and the missing names. A missing specialist means that area is
+  **uncovered**, not clean; a missing architect means the decomposition is **not
+  architecture-validated**, and it must not be described as if it were.
+- **Every `unresolved` entry is listed, with its ticket and its reason.** A ticket dropped at
+  the cap got no spec at all; a ticket at the revision cap has a spec that still fails its own
+  checks. Neither is a finished ticket and neither may be presented as one.
+- **`droppedViolations`, `droppedDependencies`, each ticket's `droppedFindings`, and each
+  ticket's non-blocking `findings` go in their own section**, with reasons. A finding that
+  vanishes silently is indistinguishable from one never found — which is why the script returns
+  what it dropped rather than only logging it.
+- **`gaps` are listed as open questions for the user**, not silently turned into extra tickets.
+  Adding a ticket nobody asked for is a decision, and decisions are the user's.
+- **Every `danglingEdges` entry is listed beside the ticket it belongs to.** Those edges are
+  real — the decomposition declared them — but the ticket they name got no spec, so it has no
+  directory and `/implement {epic-id}/{that-id}` resolves to nothing. Do not delete the edge to
+  tidy the graph; say which ids in `state.json` have no ticket behind them.
+- **A wave's `unsupportedDoubts` are reported beside it even when it is `parallel: true`.** A
+  lens answered "these cannot start together" and could not show why. It does not move the
+  verdict — an uncited doubt is not evidence — and it does not disappear either.
+- **`strayLensVerdicts` go in the dropped section** with the rest. A lens answered for a wave
+  the epic does not have, or answered one twice; the first answer per lens per wave stands and
+  the remainder is reported rather than binned.
+- **Name the path in Phase 7** — `orchestrated` or `classic (fallback: {reason})` — and, on the
+  orchestrated path, print `caps.ticketsProposed` beside `caps.ticketsSpecced` so a capped run
+  is visible without reading `unresolved`.
+
+The `Agents Used` block in Phase 7 comes from `specialistsRun` and `specialistsSkipped`, so a
+specialist that was skipped and one that died are shown differently.
+
+---
+
 ## Phase 6: Create Epic Structure
 
 Create directory structure:
@@ -363,6 +501,7 @@ Save files:
 1. `$WORK_DIR/{epic-id}/EPIC_PLAN.md` - Shared technical plan (epic-level HOW context for all tickets)
 2. `$WORK_DIR/{epic-id}/state.json` - Epic tracking
 3. `$WORK_DIR/{epic-id}/{ticket-id}/spec.md` - Each ticket's product spec (WHAT/WHY only)
+4. `$WORK_DIR/{epic-id}/{ticket-id}/context/context.json` - The ticket's codebase context inventory (orchestrated path: `tickets[].context`; classic path: the `context-builder` output from Phase 5)
 
 Register active session for the optional `auto-context.sh` PostToolUse hook (no-op when neither `CLAUDE_SESSION_ID` nor `CLAUDE_CODE_SESSION_ID` is set):
 

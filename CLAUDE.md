@@ -210,9 +210,22 @@ Full reference: [`plugin/shared/hook-profiles.md`](shared/hook-profiles.md).
 
 | Variable | Effect |
 |----------|--------|
-| `NEXUS_HOOK_PROFILE=minimal` | Disable advisory hooks; keep safety hooks (`git-mutation-guard`, `validate-commit`, `redact-output`, `read-guard`) |
+| `NEXUS_HOOK_PROFILE=minimal` | Disable advisory hooks; keep safety hooks (`git-mutation-guard`, `validate-commit`, `redact-output`, `read-guard`, `reverse-substitute`) |
 | `NEXUS_HOOK_PROFILE=off` | Disable **all** hooks — nuclear option, removes git guards |
 | `NEXUS_DISABLED_HOOKS=notify,audit` | Fine-grained per-hook disable by name |
+| `NEXUS_REDACT_PII=none` | Redact secrets but not structured PII. `all`, or a comma list of `email,phone,iban,pesel,nip,card,ip`, sets the classes instead; `.claude/configuration.yml` → `redaction.pii.*` sets them per project |
+
+**Redaction, in one paragraph.** `redact-output` rewrites every Bash command so
+its output streams through a filter: secrets and structured PII come back as
+stable `<REDACTED:kind:n>` placeholders and the values never enter the
+conversation. `read-guard` refuses Read, Grep and Glob on files named to hold
+secrets and redirects to the Bash equivalent, which is filtered.
+`reverse-substitute` turns a placeholder the model writes into a Write or an
+Edit back into the real value, so a file can carry a value the conversation
+never held — never into a path outside the repository or one the deny list marks
+sensitive, unless the file already contains that value. Every class, every
+default and everything this does **not** cover is in
+[`plugin/shared/hook-profiles.md`](shared/hook-profiles.md).
 
 ---
 

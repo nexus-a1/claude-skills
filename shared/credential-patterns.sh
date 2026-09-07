@@ -86,6 +86,32 @@ NEXUS_SENSITIVE_PATH_GLOBS=(
     '*/.claude/session-state/*'
 )
 
+# Does $1 match NEXUS_SENSITIVE_PATH_GLOBS? Prints the glob that matched and
+# returns 0; returns 1 with no output otherwise.
+#
+# One implementation, two callers with opposite jobs — read-guard.sh refuses to
+# READ such a file, reverse-substitute.sh refuses to WRITE a secret into one —
+# because two copies of a deny list drift, and a drifted deny list reads as
+# protection while being none.
+#
+# An entry containing `/` is matched against the whole path, anything else
+# against the basename. A relative path is also tested with a leading slash, so
+# a directory-anchored glob like `*/.kube/config` matches the relative
+# `.kube/config` a tool may have been handed.
+nexus_sensitive_path_match() {
+    local p="${1%/}" base abs g
+    [ -n "$p" ] || return 1
+    base="${p##*/}"
+    case "$p" in /*) abs="$p" ;; *) abs="/$p" ;; esac
+    for g in "${NEXUS_SENSITIVE_PATH_GLOBS[@]}"; do
+        case "$g" in
+            */*) case "$abs" in $g) printf '%s' "$g"; return 0 ;; esac ;;
+            *)   case "$base" in $g) printf '%s' "$g"; return 0 ;; esac ;;
+        esac
+    done
+    return 1
+}
+
 # Emit the ERE patterns this project should redact with.
 #
 # Mirrors the two-tier resolution credential-scan.sh uses at detection time:

@@ -640,6 +640,102 @@ resolve_pr_review_workflow_enabled() {
   if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
 }
 
+# --- create-requirements gate helper ---
+# Whether /create-requirements may take the orchestrated (workflow) path for its
+# deep dive and synthesis. Default true.
+#
+# Same yq trap as resolve_pr_review_workflow_enabled above, and the same reason
+# it is spelled out again rather than shared: `// true` returns "true" for an
+# explicit `enabled: false`, so the kill switch would silently stop working.
+# Both spellings are honoured for the same reason.
+resolve_requirements_workflow_enabled() {
+  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
+  local _raw
+  _raw=$(yq -r '.requirements.workflow.enabled' "$CONFIG" 2>/dev/null)
+  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
+    _raw=$(yq -r '.requirements.workflow' "$CONFIG" 2>/dev/null)
+  fi
+  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
+}
+
+# --- troubleshoot gate helpers ---
+# Whether /troubleshoot's Phase 6.3 may take the orchestrated (workflow) path.
+# Default true, matching resolve_pr_review_workflow_enabled above.
+#
+# Do NOT write `// true` here. yq treats a literal `false` as empty, so
+# `.troubleshoot.workflow.enabled // true` returns "true" for an explicit
+# `enabled: false` and the documented kill switch silently stops working. That
+# is not hypothetical: it is what shipped for pr_review until CL-40's T16
+# manual run caught it. Test the raw value instead.
+#
+# Both spellings are honoured: the nested `workflow: {enabled: false}` that
+# matches this repo's `worktree.enabled` convention, and the bare scalar
+# `workflow: false` that a user will reach for first.
+resolve_troubleshoot_workflow_enabled() {
+  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
+  local _raw
+  _raw=$(yq -r '.troubleshoot.workflow.enabled' "$CONFIG" 2>/dev/null)
+  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
+    _raw=$(yq -r '.troubleshoot.workflow' "$CONFIG" 2>/dev/null)
+  fi
+  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
+}
+
+# --- review-plan gate helper ---
+# Whether /review-plan may take the orchestrated (workflow) path for its review
+# panel. Default true.
+#
+# Same yq trap as resolve_pr_review_workflow_enabled above, and the same reason
+# it is spelled out again rather than shared: `// true` returns "true" for an
+# explicit `enabled: false`, so the documented kill switch would silently stop
+# working. Both spellings are honoured for the same reason — a config that
+# means to turn the path off must turn it off.
+resolve_review_plan_workflow_enabled() {
+  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
+  local _raw
+  _raw=$(yq -r '.review_plan.workflow.enabled' "$CONFIG" 2>/dev/null)
+  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
+    _raw=$(yq -r '.review_plan.workflow' "$CONFIG" 2>/dev/null)
+  fi
+  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
+}
+
+# --- epic gate helper ---
+# Whether /epic may take the orchestrated (workflow) path for its initiative
+# analysis and its per-ticket spec pipeline. Default true.
+#
+# Same yq trap as resolve_pr_review_workflow_enabled above, and spelled out
+# again for the same reason rather than shared: `// true` returns "true" for an
+# explicit `enabled: false`, so the kill switch would silently stop working.
+# Both spellings are honoured for the same reason.
+resolve_epic_workflow_enabled() {
+  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
+  local _raw
+  _raw=$(yq -r '.epic.workflow.enabled' "$CONFIG" 2>/dev/null)
+  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
+    _raw=$(yq -r '.epic.workflow' "$CONFIG" 2>/dev/null)
+  fi
+  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
+}
+
+# --- feedback gate helper ---
+# Whether /feedback may take the orchestrated (workflow) path. Default true.
+#
+# Same shape and the same trap as resolve_pr_review_workflow_enabled above: do
+# NOT write `// true` here, because yq treats a literal `false` as empty and the
+# documented kill switch would silently stop working. Both spellings are
+# honoured — the nested `workflow: {enabled: false}` and the bare scalar
+# `workflow: false`.
+resolve_feedback_workflow_enabled() {
+  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
+  local _raw
+  _raw=$(yq -r '.feedback.workflow.enabled' "$CONFIG" 2>/dev/null)
+  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
+    _raw=$(yq -r '.feedback.workflow' "$CONFIG" 2>/dev/null)
+  fi
+  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
+}
+
 # Gate definitions as TSV: name<TAB>template<TAB>args.
 #
 # Reads the WORKING-TREE config, and is therefore only appropriate for display

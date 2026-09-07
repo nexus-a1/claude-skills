@@ -1,5 +1,55 @@
 # Changelog
 
+## [1.37.0] - 2026-09-07
+
+## What's Changed
+
+30 commits: 6 feat, 9 fix, 15 merges. No breaking changes.
+
+Five skills move their agent panels onto dynamic Workflow scripts, and the hook
+redaction layer gains a second tier. The fixes are almost all second-order — findings
+from adversarial review rounds against the new workflow scripts themselves, not against
+the code they replaced.
+
+### Features
+
+- **create-requirements**: the deep dive and synthesis run as a dynamic Workflow script — CL-82
+- **review-plan**: the agent panel moves into a dynamic Workflow script — CL-93
+- **epic**: analysis fan-out and the per-ticket spec loop move onto Workflow — CL-95
+- **feedback**: every scored deduction is now checkable via a Workflow script — CL-94
+- **troubleshoot**: the root-cause claim is put on trial in Phase 6.3 rather than accepted — CL-96
+- **hooks**: redaction tier 2 — structured PII, reverse substitution, and a Grep policy — CL-91
+
+### Bug Fixes
+
+- **create-requirements**: a prototype key returned by a challenger no longer throws the
+  round away — CL-82
+- **create-requirements**: a second pass is shown the triad it is told to revise — CL-82
+- **create-requirements**: an unaskable flag repeated across rounds is recorded once — CL-82
+- **create-requirements**: a config-gate defect reason that was false, and a scan flag
+  nobody could read — CL-82
+- **create-requirements**: the review panel's fifteen findings on the orchestrated path — CL-82
+- **create-requirements**: the CI review's three findings on the orchestrated path — CL-82
+- **review-plan**: a zero-width character outside a marker survives the scan — CL-93
+- **feedback**: prototype-safe lookups, and the boundary defense split from the citation
+  compare so neutralising a marker cannot corrupt quoted evidence — CL-94
+- **hooks**: the second adversarial round's seven findings, on the fixes — CL-91
+
+### Notes
+
+Two defect classes were found across all five workflow scripts and fixed in every one:
+
+- **Prototype-named keys.** A findings map built as `{}` and keyed by agent-returned
+  strings treats `constructor` and `__proto__` as present without their being own
+  properties, so a truthiness guard passes and the following `.push` throws at top level,
+  destroying the whole round. All five scripts had it.
+- **Byte fidelity versus marker neutralisation.** A defense that *rewrites* untrusted text
+  corrupts the verbatim quoted evidence a citation check compares against. Tolerance for
+  confusables and zero-width characters belongs in the matching pattern, not in a
+  normalising pass over the string.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.36.0...v1.37.0
+
 ## [1.36.0] - 2026-09-06
 
 ## What's Changed
