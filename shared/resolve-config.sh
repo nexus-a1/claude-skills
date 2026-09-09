@@ -736,6 +736,64 @@ resolve_feedback_workflow_enabled() {
   if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
 }
 
+# Same shape and the same two spellings, for /refactor's quality-gate panel.
+# Deliberately not folded into a shared helper with the six above: the body is
+# four lines, and the one thing a shared version would have to parameterise is
+# the config key, which is exactly the string a copy makes greppable.
+resolve_refactor_workflow_enabled() {
+  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
+  local _raw
+  _raw=$(yq -r '.refactor.workflow.enabled' "$CONFIG" 2>/dev/null)
+  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
+    _raw=$(yq -r '.refactor.workflow' "$CONFIG" 2>/dev/null)
+  fi
+  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
+}
+
+# Same shape and the same two spellings, for /update-documentation's gap
+# pipeline. This is the seventh near-identical body in this file; a follow-up
+# to collapse them behind one helper with named wrappers is the right move when
+# the next change has to touch all seven at once (a third accepted spelling, an
+# env override, or a validator that enumerates them). Not folded here, because
+# doing it would touch every skill's resolver for zero behaviour change.
+resolve_update_documentation_workflow_enabled() {
+  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
+  local _raw
+  _raw=$(yq -r '.update_documentation.workflow.enabled' "$CONFIG" 2>/dev/null)
+  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
+    _raw=$(yq -r '.update_documentation.workflow' "$CONFIG" 2>/dev/null)
+  fi
+  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
+}
+
+# Same shape and the same two spellings, for /implement's Phase 4 QA panel.
+# Ninth near-identical body in this file. The collapse-into-one-helper follow-up
+# is the right move when a change has to touch all of them at once — a third
+# accepted spelling, an env override, or a validator that enumerates them —
+# and none of those is this ticket.
+resolve_implement_workflow_enabled() {
+  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
+  local _raw
+  _raw=$(yq -r '.implement.workflow.enabled' "$CONFIG" 2>/dev/null)
+  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
+    _raw=$(yq -r '.implement.workflow' "$CONFIG" 2>/dev/null)
+  fi
+  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
+}
+
+# Same shape and the same two spellings, for /brainstorm's judge panel. Tenth
+# body in this file; the collapse-into-one-helper follow-up is still waiting for
+# a change that has to touch all of them at once.
+resolve_brainstorm_workflow_enabled() {
+  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
+  local _raw
+  _raw=$(yq -r '.brainstorm.workflow.enabled' "$CONFIG" 2>/dev/null)
+  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
+    _raw=$(yq -r '.brainstorm.workflow' "$CONFIG" 2>/dev/null)
+  fi
+  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
+}
+
 # Gate definitions as TSV: name<TAB>template<TAB>args.
 #
 # Reads the WORKING-TREE config, and is therefore only appropriate for display

@@ -1,5 +1,87 @@
 # Changelog
 
+## [1.38.0] - 2026-09-09
+
+## What's Changed
+
+21 commits: 4 feat, 14 fix, 1 refactor, 1 perf, 1 test. No breaking changes.
+
+Four more skills move their agent panels onto dynamic Workflow scripts, completing the
+conversion started in v1.37.0. Almost every fix here is second-order — findings from
+adversarial review rounds against the new scripts, not against the code they replaced. One
+skill needed eight such rounds.
+
+### Features
+
+- **refactor**: the quality-gate review panel runs as a dynamic Workflow script — three blind
+  dimensions, three challengers, and a verdict of `pass`/`fail`/`unverified` — CL-97
+- **update-documentation**: each documentation gap is drafted then independently verified on
+  its own pipeline chain, so one gap's verification does not wait on another's draft — CL-98
+- **implement**: the Phase 4 QA panel becomes five gated dimensions with three challengers, and
+  the quality gate at 4.7.4 becomes arithmetic over verified findings rather than a prose
+  reading — CL-99
+- **brainstorm**: a generate-score-synthesize judge panel. Four approaches generated
+  independently from declared angles by agents that cannot see each other, three judges scoring
+  every approach on four declared criteria, and a synthesis built from the winner that grafts
+  from the runners-up citing each source by id — CL-100
+
+### Bug Fixes
+
+**brainstorm — one defect, eight review rounds, six faces.** Every round's fix contained the
+next, and all of them were the same thing: one judge deciding a winner the panel did not
+choose.
+
+- scores were unbounded, so `fit: 1000` from one judge beat a unanimous 5/5/5/5 from two others
+- dropping an off-scale row deleted the *dissent*, so the approach a judge hated gained points
+- clamping instead flattened a judge working on a 0-10 scale into indifference
+- detecting that damage by comparing per-judge *sums* was unsound: clamping is monotonic per
+  value, not per sum, and could reverse a judge outright
+- detecting it per criterion still missed compression that shrinks a gap without reordering it
+- a contradictory duplicate row let emission order decide the winner
+
+The design changed twice as a result. The judge is now rejected rather than the row —
+all-or-nothing, so a judge off-scale on the third approach also loses its good row on the
+first — and the result is order-independent. Also fixed: a panel that scored nothing returned
+`ok: true` with a winner; `rankingComparable` compared how many judges scored each approach
+rather than which; a `null` entry in a judge's scores killed the run; a non-list
+`violatesConstraints` from a generator threw away a completed panel; and the winner block's
+`clean()` calls had no test coverage, so a forged boundary marker in a generator's `risks`
+could place attacker text outside the block. — CL-100
+
+**Others:**
+
+- **create-requirements**: the spec's machine-read contract is checked inside the script, with
+  one bounded repair pass that takes only the spec field so a repair cannot drop acceptance
+  criteria — CL-106
+- **implement**: the review panel's findings on the QA gate — a finding no challenger judged is
+  `verified: false` and cannot fail the gate alone — CL-99
+- **refactor**: the review panel's seven findings on the quality gate; test authoring is pinned
+  to the PASS branch, because a coverage gap is usually important-or-minor and would otherwise
+  never reach the auto-fix step — CL-97
+- **release**: `version-suggest.sh` could not see this repository's own commit format. It
+  anchored `^feat` while the documented subject is `[CL-123] feat(scope): …`, so every commit
+  fell through to `chore` and it had never recommended anything but a patch. The breaking
+  detector had the same anchor, so `[CL-123] feat(x)!: …` was invisible — a patch number for a
+  breaking change — CL-104
+- **validators**: C10 called `scan_fail` with three of its four arguments — CL-106
+
+### Performance
+
+- **hooks**: this repository ran five of its own hooks twice, costing ~163 ms per Bash call.
+  Affects the development repo only, not installs — CL-109
+
+### Tests
+
+- **validators**: C10 gets the fixture test its siblings all have — CL-106
+
+---
+
+**On the review rounds.** The `claude-review` CI job passed every one of the commits that
+carried the defects listed above. Each was found by a dispatched review panel run against the
+branch, and every fix was mutation-tested — the brainstorm script alone ends at 65 test cases,
+up from 15 at first push, with every guard's mutant dying except two that were verified
+equivalent rather than assumed so.
+
 ## [1.37.0] - 2026-09-07
 
 ## What's Changed

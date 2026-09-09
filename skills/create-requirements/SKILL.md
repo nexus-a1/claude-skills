@@ -2273,6 +2273,24 @@ happened, mechanically, where it could not be renegotiated. Render it and write 
    `{identifier}-JIRA_TICKET.md` come from `triad.spec`, `triad.plan`, `triad.tasks` and
    `triad.jiraTicket`. There are no `---BEGIN/END---` markers on this path, so Stage 4.2's
    missing-marker recovery does not apply; the four-file verification fence still does.
+
+   **`specContract` is that fence's answer, computed before the documents were written.**
+   The script checks the two things in the spec that are located by pattern rather than
+   read — the `## Acceptance Criteria` heading, and the anchored `AC-E2E-SCOPE` line
+   `/implement` greps to decide whether to author E2E coverage — and spends one repair
+   dispatch on any breach. `specContract.ok` false means the breach survived that repair.
+
+   **When it is false, say so in the Stage 4.11 report and name every entry in
+   `specContract.breaches`.** Do not report the run as complete without it. The content of
+   such a run is usually sound; what is broken is the interface to the next skill, and a
+   malformed `AC-E2E-SCOPE` line fails *silently* downstream — the QA phase simply does not
+   find it and falls back to a heuristic, reporting nothing. A breach here is the only
+   warning anyone gets.
+
+   This is a different fact from a `conditional` skeptic verdict, and the two are reported
+   separately: `conditional` means the panel found something wrong with the *requirements*;
+   a contract breach means the requirements may be fine but the file cannot be read by the
+   tool that consumes it.
 2. **Write the context files.** `context/discovery.json` from `discovery`, and
    `context/{agent}.md` from each entry in `bodies`. On this path those files are
    **artifacts for `/implement` and `/resume-work`**, not the handoff mechanism — the
@@ -2301,6 +2319,12 @@ happened, mechanically, where it could not be renegotiated. Render it and write 
    report: every dimension in `coverage` that produced nothing, every entry in `dropped`
    with the lenses that refuted it, every entry in `uncited`, every `contradictions` entry,
    and every `unresolved` flag. Those last are the REQUIRES HUMAN DECISION items.
+
+   **And `specContract`, when `ok` is false** — name every entry in `breaches`, using the
+   `⚠ Spec contract` line in the Stage 4.11 template. Stated in step 1 as well, because that
+   is where the documents get written; repeated here because this is the list a lead scans
+   for what to report, and an obligation recorded only next to the write is one that gets
+   written and not reported.
 5. **Ask the questions the script could not.** A `gates.skeptic.verdict` of `conditional`
    goes to `AskUserQuestion` exactly as Stage 4.8 does today (Address gates / Override /
    Abort) — and note that a run can be `conditional` *and* have an incomplete panel, since
@@ -2418,6 +2442,13 @@ Agents Used:
   {end if}
   ✓ quality-guard (validation: {verdict})
     Gates: {gates_resolved}/{gates_raised} resolved
+
+{if the orchestrated path ran AND specContract.ok is false — omit this block entirely otherwise:}
+⚠ Spec contract: spec.md does not match the shape its readers grep for.
+  {one line per specContract.breaches entry}
+  /implement's QA phase locates the E2E decision with an anchored pattern; a
+  breach there fails silently, so this line is the only warning anyone gets.
+{end if}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

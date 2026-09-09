@@ -205,23 +205,67 @@ else
   commits_range="${head_ref}"
 fi
 
+# ONE REGEX, AND IT IS THE SAME ONE commits-data.sh ALREADY USES.
+#
+# House style puts a ticket key before the conventional-commit header —
+# CONTRIBUTING.md documents the subject as `[SKILLS-NNN] type(scope): summary`.
+# The previous classifier anchored `^feat`, `^fix` and the breaking pattern at
+# the start of the subject, so the `[CL-100] ` got in the way of all three and
+# every commit this repo has ever produced fell through to `chore`. It had
+# therefore never recommended anything but a patch: over v1.36.0..v1.37.0 it
+# reported `feat=0 fix=0 chore=15` for a range containing six feat commits, and
+# that release was cut by overriding the suggestion.
+#
+# The breaking half was the worse one. An under-counted feat gives a version
+# that is too low and misleads nobody downstream; a missed `!` gives a patch
+# number for a breaking change, which is a version that actively lies. A subject
+# written exactly as CONTRIBUTING.md prescribes — `[CL-123] feat(x)!: ...` — was
+# invisible to the detector.
+#
+# The prefix group is optional and tightly shaped (`[ABC-123] `), so a plain
+# `feat: ...` still classifies and a subject merely *containing* the word feat
+# still does not.
+#
+# TWO DELIBERATE LOOSENINGS RELATIVE TO commits-data.sh's COPY, both of them
+# shapes the OLD classifier here accepted and a straight lift would have dropped:
+#
+#   [a-zA-Z]+  the old breaking pattern was `^[a-zA-Z]+...` and caught `Feat!:`.
+#              The type is lowercased below before it is matched.
+#   :[ ]?      the old patterns ended at `:`, not `: `, so `feat!:no-space` was
+#              a breaking change. Requiring the space would silently turn that
+#              into a chore, i.e. a PATCH number for a breaking change — the
+#              exact failure this ticket exists to remove, reintroduced one
+#              character over.
+#
+# Neither shape appears in any subject in any local repo (0 of 3022 checked), so
+# this is about not narrowing a detector while claiming to widen it, rather than
+# about a case anyone has hit. commits-data.sh stays stricter on purpose: it
+# renders a changelog, where a malformed header is worth showing as unparsed. The
+# version number is the thing that must not silently get smaller.
+CC_RE='^(\[[A-Z][A-Z0-9]+-[0-9]+\] )?([a-zA-Z]+)(\(([^)]+)\))?(!)?:[ ]?'
+
 # Read each subject line and classify. Use process substitution to avoid
 # subshell variable scope issues.
 while IFS= read -r subject; do
   [[ -z "$subject" ]] && continue
-  # Detect breaking change: either "BREAKING CHANGE" anywhere, or "!:" / "!(scope):"
-  if [[ "$subject" =~ BREAKING[[:space:]]CHANGE ]] \
-     || [[ "$subject" =~ ^[a-zA-Z]+(\([^\)]+\))?\!: ]]; then
+  cc_type=""
+  cc_bang=""
+  if [[ "$subject" =~ $CC_RE ]]; then
+    # Lowercased so `Feat:` and `FIX:` classify as their lowercase types rather
+    # than falling to chore, matching what the old `[a-zA-Z]` pattern implied.
+    cc_type="${BASH_REMATCH[2],,}"
+    cc_bang="${BASH_REMATCH[5]}"
+  fi
+  # Breaking: the `!` marker on a parsed header, or the trailer anywhere.
+  if [[ -n "$cc_bang" ]] || [[ "$subject" =~ BREAKING[[:space:]]CHANGE ]]; then
     breaking_count=$((breaking_count + 1))
     continue
   fi
-  if [[ "$subject" =~ ^feat(\([^\)]+\))?: ]]; then
-    feat_count=$((feat_count + 1))
-  elif [[ "$subject" =~ ^fix(\([^\)]+\))?: ]]; then
-    fix_count=$((fix_count + 1))
-  else
-    chore_count=$((chore_count + 1))
-  fi
+  case "$cc_type" in
+    feat) feat_count=$((feat_count + 1)) ;;
+    fix)  fix_count=$((fix_count + 1)) ;;
+    *)    chore_count=$((chore_count + 1)) ;;
+  esac
 done < <(git log --no-merges --format="%s" "$commits_range" 2>/dev/null || true)
 
 base_for_bump="v$current_ver"

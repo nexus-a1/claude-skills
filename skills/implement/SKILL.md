@@ -50,6 +50,8 @@ else
 fi
 WORK_DIR=$(resolve_artifact work work)
 QA_EXEC_MODE=$(resolve_exec_mode qa_review team)
+QA_WORKFLOW_ENABLED=$(resolve_implement_workflow_enabled)
+echo "QA_WORKFLOW_ENABLED=$QA_WORKFLOW_ENABLED"
 echo "WORK_DIR=$WORK_DIR"
 ```
 
@@ -1160,6 +1162,48 @@ When in doubt on a non-trivial diff, include it. State the gate decision and rea
 
 **If `$QA_EXEC_MODE` = `"subagent"`:**
 
+##### Step 0: Path selection
+
+Two paths through **Steps 1, 2 and 3 of this section only**. Nothing outside `4.1` moves.
+
+**Attempt the orchestrated path when both hold:**
+- `<QA_WORKFLOW_ENABLED printed above>` is `true` (the default), and
+- the `Workflow` tool is available in this session.
+
+**If so, read `references/workflow-qa-panel.md` and follow it.** It replaces Steps 1-3 and
+changes what `4.1.5`, `4.3`, `4.7.1` and `4.7.4` receive. Pass the diff, the file list, the
+requirements text, the `4.2` test results (when already collected), `FRONTEND_CHANGED`,
+`INCLUDE_ARCHITECT`, `PLAYWRIGHT_SCOPE`, the round number, the cap and a timestamp as `args`.
+
+**What it does NOT replace. All of it stays here, in the lead:**
+
+1. **Everything that mutates.** Chunk commits, the push, `gh pr create`, worktree entry and
+   exit, the manifest write — and the auto-fix at `4.7.2`, which applies fixes sequentially.
+2. **Every checkpoint question** — `2.5`, `3.2b`, `4.8`, `5.2`, and the Playwright scoping
+   question in `4.0`. A script cannot ask anything.
+3. **`4.0` and `4.0b`.** They decide which dimensions this script dispatches, so they run
+   first and their results go in as `args`.
+4. **The `4.7` loop and its 2-round cap.** The script runs once per round.
+5. **Authoring the tests the `tests` and `e2e` dimensions name** — see `4.7.4`, which owns
+   this on the pass path too.
+
+**Take the classic path — silently, it is not an error — when:**
+- the config disables it, or
+- the `Workflow` tool is not available, or
+- the orchestrated run fails, does not complete, or returns `ok: false`.
+
+**On any of those, run Steps 1-3 below in full.** Do not merge a partial orchestrated result
+into a classic run. Name the path taken in the Phase 4 output either way.
+
+> Detection is attempt-and-observe: nothing in the tool's contract describes how absence
+> manifests, so do not write logic that depends on a specific error shape.
+
+Execution mode is not consulted on the orchestrated path. `workflow` is not a third value of
+`execution_mode`; it replaces the choice for this phase, because a script has no teammate
+protocol.
+
+---
+
 ##### Step 1: Parallel Initial Review
 
 Run QA agents in parallel as independent tasks (3 always; +1 if `FRONTEND_CHANGED=true`; +1 if `INCLUDE_ARCHITECT=true`).
@@ -1569,6 +1613,16 @@ This phase acts as a gate between QA (Phase 4) and PR creation (Phase 5). It col
 
 #### 4.7.1 Collect and Categorize All Findings
 
+**Orchestrated path: skip this step entirely.** The collection and categorisation already
+happened, mechanically, inside the script — `findings`, `dropped`, `criticalCount` and both
+integrity objects are the result. Re-collecting here would reintroduce the by-hand merge that
+4.1.5, 4.3 and this step performed on the classic path, which is the specific thing the
+orchestrated path exists to remove: three places a finding could be softened with no trace.
+
+Use the returned object directly. The same applies to `#### 4.3 Process Review Results`.
+
+**Classic path only, from here:**
+
 Gather outputs from all Phase 4 agents (code-reviewer, security-auditor, test-writer/test results). Create a consolidated findings list:
 
 ```
@@ -1624,7 +1678,39 @@ Generated: {ISO_TIMESTAMP}
 
 #### 4.7.4 Quality Gate Decision
 
-Based on remaining (unresolved) issues after auto-fix attempts:
+**On the orchestrated path the decision is `gate`, and it is already computed.** Do not
+re-derive it from the prose bodies — that by-hand merge is what this path removes, and
+re-doing it here would put it back at the last step.
+
+**A returned object is valid only for the round that produced it.** `gate` was computed
+BEFORE `4.7.2` ran, so after an auto-fix it describes the code as it was, not as it is. On
+`fail`: run `4.7.2`, then **re-invoke the script** with `round` incremented and read the NEW
+`gate`. Reading the stale one would report `fail` on a round where the auto-fix resolved
+everything, and would burn the cap arguing with a result that predates the fix.
+
+The `4.7` loop owns the cap: stop after `maxRounds` rounds whatever the last `gate` says, and
+report the remaining findings. The script is passed `maxRounds` for the record and never acts
+on it.
+
+| `gate` | Meaning | Action |
+|---|---|---|
+| `pass` | no VERIFIED critical finding, both panels complete | proceed to 4.8 |
+| `fail` | at least one verified critical finding | 4.7.2 auto-fix, another round if under the cap |
+| `unverified` | a panel was short, or a surviving finding nobody judged | **not a pass** — report it as such and do not present the PR as QA-clean |
+
+`criticalCount` is what the gate counted. Report every surviving finding, marking any whose
+`verified` is false as `[UNVERIFIED]`, and list `dropped` separately with each challenger's
+reason.
+
+**Before leaving this step on `pass`, author the tests the `tests` and `e2e` dimensions
+named.** On this path those two reviewers report and write nothing, and 4.7.2 only runs on
+`fail` — so a run where the gate passes with one coverage gap would lose tests the classic
+path writes. That is the commonest shape of a good run, not an edge case. Author them, re-run
+4.2, and say in the PR body that they were added after the gate.
+
+---
+
+**On the classic path**, based on remaining (unresolved) issues after auto-fix attempts:
 
 **If NO critical issues remain:**
 

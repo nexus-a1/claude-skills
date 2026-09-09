@@ -57,6 +57,7 @@ else
   exit 1
 fi
 BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
+BRAINSTORM_WORKFLOW_ENABLED=$(resolve_brainstorm_workflow_enabled)
 
 # The cross-skill session registry (.active-sessions) is shared with /implement,
 # /create-requirements and friends, so it stays under the work artifact. Only
@@ -78,6 +79,7 @@ LEGACY_BRAINSTORM_DIR="$WORK_DIR"
 # one session across two locations.
 BRAINSTORM_ROOT="$BRAINSTORM_DIR"
 echo "BRAINSTORM_DIR=$BRAINSTORM_DIR"
+echo "BRAINSTORM_WORKFLOW_ENABLED=$BRAINSTORM_WORKFLOW_ENABLED"
 echo "WORK_DIR=$WORK_DIR"
 ```
 
@@ -414,6 +416,61 @@ Do NOT include supporting context from one agent's domain in the other's prompt.
 
 **Goal:** Present 2-3 different ways to implement this feature.
 
+#### 3.0 Path selection
+
+Two paths through **3.1 and 3.1b only**. 3.2 and 3.3 are unchanged on both.
+
+**Attempt the orchestrated path when both hold:**
+- `<BRAINSTORM_WORKFLOW_ENABLED printed above>` is `true` (the default), and
+- the `Workflow` tool is available in this session.
+
+**If so, read `references/workflow-judge-panel.md` and follow it.** It replaces 3.1 and 3.1b
+and changes what 3.2 and 4.5 receive. Pass the captured feature, the Phase 2 exploration and
+business context, the repo name, optionally a shorter `angles` list, and a timestamp as
+`args` — the script cannot read files or shell out.
+
+**Choose how wide to cast before calling.** All four angles run by default; pass a shorter
+`angles` list for a small feature. The script generates what it is given and cannot judge
+whether four proposals are warranted — that is a read on the size of the thing, which the lead
+has and the script does not.
+
+**What it does NOT replace. All of it stays in the lead:**
+
+1. **The user's choice at 3.3.** The script scores and recommends; it never decides. Present
+   the synthesis as one option *alongside* the originals, not instead of them.
+2. **Every write** — `approaches.md`, `architecture-validation.md`, the state update, the
+   manifest.
+3. **Phase 0 resume, Phase 1 capture, the Phase 4 refine loop, and 4.5**, which now judges the
+   synthesis rather than a single-pass proposal.
+
+**Take the classic path — silently, it is not an error — when:**
+- the config disables it, or
+- the `Workflow` tool is not available, or
+- the orchestrated run fails, does not complete, or returns `ok: false`.
+
+**On any of those, run 3.1 and 3.1b below in full.** Name the path taken when presenting at
+3.2 either way.
+
+**Read the failure before discarding it.** An `ok: false` result is not empty, and 3.1z is
+skipped on this branch, so this is the only place its fields are ever seen:
+
+- **`stage`** says what died. `generate` means no angle produced a usable approach; `judge`
+  means approaches were generated but the panel produced no usable score row — a judge
+  scoring by approach *name* instead of by id lands here while looking perfectly healthy.
+  Two very different situations, and the second is a defect worth reporting.
+- **`unknownAngles` / `anglesArgIgnored`** mean the angles argument was wrong: a name that
+  does not exist, or a value that was not an array. That is a bug in *this skill's* call,
+  not in the feature, and it is the likeliest reason a `generate` stage came back empty.
+- **`judgeIntegrity.rejected`** on a `judge` failure names every judge whose rows were
+  discarded and why — `off-scale`, `malformed`, or `unknown-approach-id`. Three rejections
+  out of three is a panel that did not follow the scoring contract at all, which is worth
+  reporting as a defect rather than absorbing silently into the classic path.
+
+Say in one line what failed and why before running the classic path. Falling back silently
+after a `judge`-stage failure hides a script defect behind a working result.
+
+---
+
 #### 3.1 Brainstorm Implementation Options
 
 Use Task tool with `subagent_type: "Plan"`. Read `references/agent-prompts.md` (Phase 3.1 section) for the prompt template, including the architectural-distinction and trade-off rules.
@@ -449,6 +506,58 @@ Provide:
 Save output to `$BRAINSTORM_ROOT/{slug}/context/architecture-validation.md`.
 
 **IMPORTANT: Wait for both 3.1 (Plan agent) and 3.1b (architect) to complete before proceeding.** After both complete: Annotate each approach from 3.1 with architect constraints from 3.1b. Flag any approach that violates identified constraints. Add feasibility rating: Recommended / Feasible / Risky / Not Recommended.
+
+#### 3.1z Consume the orchestrated result (orchestrated path only)
+
+Skip this step entirely on the classic path.
+
+1. **Write the files yourself.** `context/approaches.md` from `approaches` and `synthesis`,
+   `context/architecture-validation.md` from `constraints`. The script wrote nothing.
+2. **Show the scores at 3.2, not just the ranking.** `criteria` and `scores` come back in
+   full — every judge's row, the per-criterion means and the total — so the user can disagree
+   with a number rather than with a verdict. A ranking with the arithmetic hidden is the prose
+   judgment this path replaced.
+3. **Present the synthesis as one option beside the originals.** It is built from the winner
+   and grafted from the runners-up, each graft naming its source id. It is not automatically
+   the right answer, and 3.3 still asks.
+4. **Say when a tie was broken.** `tieBroken` true means two approaches scored identically and
+   declaration order decided it. That is a tie-break, not a judgement, and the user may prefer
+   the other one.
+5. **Say when a panel was short.** `generatorIntegrity` incomplete means an angle is missing
+   from the comparison entirely; `judgeIntegrity` incomplete means the totals rest on fewer
+   judges than were dispatched. `fullyScored: false` means exactly that — fewer judges than
+   dispatched — and after any rejection EVERY approach carries it while the panels stay
+   identical, so it is not the relative-evidence signal it looks like. For "was this approach
+   judged on less evidence than its rivals", read `rankingComparable` and `judgePanels`.
+6. **`constraintsRan: false` is not "no constraints".** It means nobody checked. Say which one
+   happened — an empty list reads as the comfortable claim.
+7. **`graftsDropped > 0`** means the synthesis cited approach ids that do not exist. Worth a
+   line, because it casts doubt on its other attributions.
+8. **`judgeIntegrity.rejected` is the one to say out loud.** Each entry names a judge whose
+   rows were discarded **in full** — every approach, not just the one it fumbled — and why.
+   A judge is rejected when it scored off the 1-5 scale, returned a non-number, or scored an
+   approach nobody generated. Discarding it everywhere is what keeps the remaining totals
+   means over one panel rather than a mix; keeping its good rows was tried four times and each
+   version decided a winner the panel had not chosen.
+9. **Do not call the result undistorted.** A smaller panel is a *commensurable* comparison,
+   not an unbiased one: judges are not interchangeable, and a harsh judge's absence lifts every
+   approach it would have marked down. Say who is missing, why, and that a full panel might
+   have ranked differently. `rowTriage.duplicate` is minor by comparison — the first row per
+   approach won and nothing was lost.
+10. **`rankingComparable: false` means the totals are means over different panels** — judged
+    by *which* judges, not how many, so two approaches with two judges each and none in common
+    counts as uneven. `judgePanels` names the panel behind each. Rejection cannot cause this
+    (it removes a judge from every approach at once); a judge that simply omitted an approach
+    can. Show the ranking and say who scored what.
+11. **`total` follows the rows, `means` are rounded for display.** Their visible sum can sit
+    a cent below the total (four means of 3.333 print as 3.33 and sum to 13.32 against a total
+    of 13.33). That is display rounding, not an error; do not "correct" either number when
+    presenting them.
+12. **`unknownAngles` and `anglesArgIgnored` are caller bugs.** An angle name that does not
+    exist, or an `angles` value that was not an array, was requested and silently did not
+    take effect. Report it as a defect in the invocation, not as a finding about the feature.
+
+---
 
 #### 3.2 Present Approaches to User
 

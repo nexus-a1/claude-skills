@@ -35,16 +35,22 @@ else
   exit 1
 fi
 REFACTOR_EXEC_MODE=$(resolve_exec_mode refactor team)
+REFACTOR_WORKFLOW_ENABLED=$(resolve_refactor_workflow_enabled)
+echo "REFACTOR_WORKFLOW_ENABLED=$REFACTOR_WORKFLOW_ENABLED"
 ```
 
 Use `$REFACTOR_EXEC_MODE` to determine team vs sub-agent behavior in Steps 3 and 5.1.
+Use the printed `REFACTOR_WORKFLOW_ENABLED` to decide whether Step 5.1 attempts the
+orchestrated path.
 
 ## Write Safety
 
 When running QA agents in parallel (Step 5.1 quality gate loop), agents MUST NOT write to the same file:
 
 - **code-reviewer**: Returns findings via Task result only
-- **test-writer**: Writes test files (scoped to test directories)
+- **test-writer**: Writes test files — on the CLASSIC path only. On the orchestrated
+  quality-gate path it reports coverage gaps and writes nothing; the lead authors them
+  at Loop Exit, because a file write inside that fan-out is a race (scoped to test directories)
 - **quality-guard**: Returns validation via Task result only
 - **refactorer**: The only agent that modifies source code, runs sequentially (not in parallel with reviewers)
 
@@ -337,6 +343,53 @@ After fixes are applied, enter a review→fix loop (max 3 iterations) to ensure 
 └──────────────────────────────────────────────────┘
 ```
 
+#### 5.1.0 Path selection
+
+Two paths through **Iteration Step A only**. The orchestrated one runs the three reviewers
+blind and puts every finding through adversarial verification; the classic one is everything
+below it and remains fully supported.
+
+**Attempt the orchestrated path when both hold:**
+- `<REFACTOR_WORKFLOW_ENABLED printed above>` is `true` (the default), and
+- the `Workflow` tool is available in this session.
+
+**If so, read `references/workflow-quality-gate.md` and follow it.** It replaces Iteration
+Step A and changes what `Loop Exit` and `Present Results` receive. Pass the diff, the file
+list, the issues Step 5 set out to fix, a one-line summary of the refactoring, the current
+round number, the cap, and a timestamp as `args` — the script cannot read files or shell
+out, so anything it needs must arrive that way.
+
+**Three things it does NOT replace. All of them stay here, in the lead:**
+
+1. **Iteration Step B in full.** `refactorer` edits source files, and a file write inside a
+   fan-out is a race.
+2. **The loop, the round cap and `Loop Exit`.** The script runs once per round and reports a
+   verdict for the state it was given; it does not know when to stop.
+3. **Authoring any tests the `coverage` dimension names.** On this path `test-writer`
+   reports gaps and writes nothing, for the same race reason. They are authored at **Loop
+   Exit's PASS branch**, not in Step B — a coverage gap is usually `important` or `minor`,
+   which does not hold the gate, so the round passes and Step B never runs. Pinning them to
+   Step B loses them on the commonest shape of run.
+
+**Take the classic path — silently, it is not an error — when:**
+- the config disables it, or
+- the `Workflow` tool is not available, or
+- the orchestrated run fails, does not complete, or returns `ok: false`.
+
+**On any of those, run Iteration Step A below in full.** Do not merge a partial orchestrated
+result into a classic round, and do not present a partial round as complete. Name the path
+taken in `Present Results` either way.
+
+> Detection is attempt-and-observe: nothing in the tool's contract describes how absence
+> manifests, so do not write logic that depends on a specific error shape. If the
+> orchestrated path does not produce a result, take the fallback.
+
+Execution mode is not consulted on the orchestrated path. `workflow` is not a third value of
+`execution_mode`; it replaces the choice for this step, because a script has no teammate
+protocol.
+
+---
+
 #### Iteration Step A — Review
 
 **If `$REFACTOR_EXEC_MODE` = `"subagent"`:**
@@ -458,7 +511,50 @@ Requirements:
 
 Then return to **Iteration Step A** (review again).
 
+#### 5.1.9 Consume the orchestrated result (orchestrated path only)
+
+Skip this step entirely on the classic path.
+
+The script returned typed data. **Do not re-summarise it** — the aggregation already
+happened, mechanically, where it could not be renegotiated. Render it; do not re-judge it.
+
+1. **The verdict drives the loop, and it has THREE values.** `pass` exits. `fail` goes to
+   Iteration Step B and then another round if under the cap. **`unverified` is neither** — a
+   panel was short, so nothing was tallied. Treat it as a round that did not conclude: say so
+   plainly, mark every finding `[UNVERIFIED]`, and never report it as a pass. It still counts
+   against the round cap, because the alternative is an unbounded retry on a broken panel.
+2. **Report every surviving finding**, with its file, line, severity and the verbatim
+   evidence. Dropping one here would undo the verification.
+3. **Dropped findings go in their own section**, each with the lenses that refuted it and
+   their reasons. A dropped finding that vanishes silently is indistinguishable from one that
+   was never found — and on a quality gate, the reader needs to see what was considered and
+   rejected, not only what remains.
+4. **Name every dimension in `coverage` that produced nothing**, and separately any that did
+   not run at all (`reviewIntegrity.missing`). Silence from a dimension is not a clean bill
+   from it.
+5. **Author the tests the `coverage` dimension named** — at **Loop Exit**, on the PASS
+   branch, not in Step B. Step B runs only on `fail`, and a coverage gap rarely fails the
+   gate, so Step B is the one place that would reliably miss them.
+6. **Only a VERIFIED `blocking` finding holds the gate.** A finding no challenger judged comes back `verified: false` and the round's verdict is `unverified`, not `fail`. Important and minor ones are reported and do
+   not force another round — the loop exists to stop regressions, not to reach zero findings.
+   A gate that never passes burns all three rounds and reports failure regardless of what was
+   actually fixed.
+
+---
+
 #### Loop Exit
+
+**On PASS — orchestrated path only, BEFORE exiting:** author any surviving finding whose
+`dimension` is `coverage`. On this path `test-writer` reported those gaps and wrote nothing,
+and a coverage gap is normally `important` or `minor` — which does not hold the gate, so the
+round passes and the loop ends here. Pinning the authoring to Iteration Step B would lose
+them entirely in the single most likely shape of a run: refactoring sound, one coverage gap,
+verdict `pass`, Step B never runs. The classic path would have written those tests, so
+skipping them is a real regression against it, on the common path rather than a rare one.
+
+Author them, re-run the project's test command, and only then exit. If authoring them changes
+source or test files, say so in the results — the user approved a refactoring, and these are
+additional edits made after the gate passed.
 
 **On PASS:** Present results and exit. In team mode, send shutdown_request to all teammates and TeamDelete.
 

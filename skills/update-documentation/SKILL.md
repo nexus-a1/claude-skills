@@ -43,9 +43,13 @@ else
   exit 1
 fi
 DOC_EXEC_MODE=$(resolve_exec_mode documentation_update team)
+DOC_WORKFLOW_ENABLED=$(resolve_update_documentation_workflow_enabled)
+echo "DOC_WORKFLOW_ENABLED=$DOC_WORKFLOW_ENABLED"
 ```
 
 Use `$DOC_EXEC_MODE` to determine team vs sub-agent behavior in Phases 2-4.
+Use the printed `DOC_WORKFLOW_ENABLED` to decide whether Phase 4 attempts the orchestrated
+path.
 
 ---
 
@@ -354,6 +358,43 @@ Store selected scope as `{update_scope}`.
 
 **Goal**: Update all documentation (technical and API) using the doc-writer agent.
 
+#### 4.0 Path selection
+
+Two paths through **Phase 4 only**. The orchestrated one drafts and checks each document on
+its own chain; the classic one is everything below it and remains fully supported.
+
+**Attempt the orchestrated path when both hold:**
+- `<DOC_WORKFLOW_ENABLED printed above>` is `true` (the default), and
+- the `Workflow` tool is available in this session.
+
+**If so, read `references/workflow-gap-pipeline.md` and follow it.** It replaces 4.1 and 4.2
+and changes what 5.1 receives. Pass the approved gap list, the Phase 1.4 repo context, the
+work directory and a timestamp as `args` — the script cannot read files or shell out.
+
+**Filter the gap list to the priorities the user approved at 3.2 BEFORE calling.** The script
+drafts everything it is given; scope is the lead's decision and the script has no way to ask.
+
+**What it does NOT replace, all staying in the lead:**
+
+1. **Every file write.** The script returns drafts; the lead applies the accepted ones.
+2. **The scope and trigger questions (1.2, 1.3) and the 3.2 plan confirmation.** A script
+   cannot ask anything.
+3. **Phases 2 and 3.** context-builder and business-analyst still run in order — the script
+   replaces only what happens once the gap list exists.
+
+**Take the classic path — silently, it is not an error — when:**
+- the config disables it, or
+- the `Workflow` tool is not available, or
+- the orchestrated run fails, does not complete, or returns `ok: false`.
+
+**On any of those, run 4.1 and 4.2 below in full.** Do not merge a partial orchestrated result
+into a classic run. Name the path taken in `5.3 Present Summary` either way.
+
+> Detection is attempt-and-observe: nothing in the tool's contract describes how absence
+> manifests, so do not write logic that depends on a specific error shape.
+
+---
+
 #### 4.1 Run Doc Writer
 
 Run doc-writer for all documentation updates (technical, API, architecture).
@@ -406,6 +447,34 @@ Mark your task as completed when done. If task tools are unavailable to you, the
 ### Phase 5: Review & Cleanup
 
 **Goal**: Verify consistency across all updated docs, clean up team.
+
+#### 5.0 Consume the orchestrated result (orchestrated path only)
+
+Skip this step entirely on the classic path.
+
+The script returned typed data with **five** outcomes per gap. Collapsing any two of them
+loses the thing this path was built for.
+
+1. **Apply `accepted` only**, one file at a time, here in the lead.
+2. **Report `rejected` with the unsupported claim and the reason.** This is the bucket the
+   path exists for: the code does not support what the draft said, so it was not written. The
+   document is still stale and the user needs to know that and why. On the classic path that
+   text would already be on disk.
+
+   Two causes land here and both read the same way to the user — a claim the code
+   contradicts, and a draft that proposed text while asserting no checkable claim at all. The
+   second is reported with `(none asserted)` as the claim; it is rejected rather than applied
+   because nothing could be checked against the code, which is the one thing this path is
+   for.
+3. **Never apply `unverified`.** A draft nothing checked is not a draft the code supports.
+4. **Report `pipelineIntegrity.failed`.** Those documents were never drafted at all. Silence
+   reads as "no changes needed", which is `unchanged` and a different answer.
+5. **`unchanged` means the document was already accurate** — say so; it is a useful result.
+6. **Feed `consistency.conflicts` into 5.1 below** rather than re-deriving them. When
+   `consistency.ran` is false, report which reason: fewer than two accepted drafts is normal,
+   the agent not returning is not.
+
+---
 
 #### 5.1 Review Consistency
 

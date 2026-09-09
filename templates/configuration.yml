@@ -655,6 +655,168 @@ requirements:
 
 
 # =============================================================================
+# REFACTOR  (optional — omit entirely and /refactor behaves exactly as before)
+# =============================================================================
+#
+#   refactor.workflow.enabled   Whether /refactor may take the orchestrated
+#                               (workflow) path for Iteration Step A of the
+#                               Step 5.1 quality gate: three reviewers read the
+#                               applied diff blind, every finding is put to
+#                               three challengers, and the pass/fail verdict is
+#                               arithmetic over what survives rather than an
+#                               agent's summary.
+#                               Default: true. Setting false always falls back
+#                               to the classic prose path, which remains fully
+#                               supported. The path is also skipped
+#                               automatically when the Workflow tool is
+#                               unavailable in the session.
+#
+#                               Iteration Step B, the three-round cap and Loop
+#                               Exit stay in the lead on both paths: the script
+#                               reviews one round and reports, it does not loop
+#                               and it never edits a file.
+#
+# --- One behavioural difference, worth knowing before enabling it -----------
+#
+# On the classic path test-writer ADDS tests for coverage the refactoring lost.
+# On the orchestrated path it reports those gaps and writes nothing — two agents
+# writing files inside one fan-out is a race, and a reviewer that silently
+# closes the gap it found leaves nothing to audit. The lead authors them in
+# Iteration Step B instead. Same coverage, one step later, and visible.
+#
+# --- Example ---------------------------------------------------------------
+#
+#   refactor:
+#     workflow:
+#       enabled: true
+#
+
+
+# UPDATE DOCUMENTATION  (optional — omit and /update-documentation is unchanged)
+# =============================================================================
+#
+#   update_documentation.workflow.enabled
+#                               Whether /update-documentation may take the
+#                               orchestrated (workflow) path for Phase 4. Each
+#                               gap in the prioritized list gets its own
+#                               draft-then-verify chain with no barrier between
+#                               the stages, so N documents cost the slowest
+#                               single chain rather than the sum. A cross-document
+#                               consistency pass runs once at the end — the one
+#                               place a barrier is correct.
+#                               Default: true. Setting false always falls back to
+#                               the classic prose path, which remains fully
+#                               supported. Skipped automatically when the Workflow
+#                               tool is unavailable in the session.
+#
+#                               The scope questions, the Phase 3.2 plan
+#                               confirmation and EVERY file write stay in the lead
+#                               on both paths.
+#
+# --- What the orchestrated path changes ------------------------------------
+#
+# On the classic path doc-writer edits the documentation files directly, so a
+# claim that no longer matches the code is on disk before anything checks it —
+# and Phase 5.1 compares documents against EACH OTHER, not against the source.
+#
+# Here doc-writer returns a draft and writes nothing. A verify stage reads each
+# claim against the file it cites, and a claim the code does not support is
+# REJECTED rather than written. That means this path can decline an update the
+# classic path would have applied: the document stays stale and the run says so,
+# which is the trade this buys. The lead applies the accepted drafts afterwards.
+#
+# --- Example ---------------------------------------------------------------
+#
+#   update_documentation:
+#     workflow:
+#       enabled: true
+#
+
+
+# =============================================================================
+# IMPLEMENT  (optional — omit entirely and /implement behaves exactly as before)
+# =============================================================================
+#
+#   implement.workflow.enabled  Whether /implement may take the orchestrated
+#                               (workflow) path for its Phase 4 QA panel: the
+#                               reviewers read the diff blind, every finding is
+#                               put to three challengers, and the quality-gate
+#                               decision at 4.7.4 becomes arithmetic over
+#                               verified findings instead of a prose reading.
+#                               Default: true. Setting false always falls back to
+#                               the classic prose path, which remains fully
+#                               supported. Skipped automatically when the
+#                               Workflow tool is unavailable in the session.
+#
+#                               NOTHING that mutates moves. Chunk commits, the
+#                               push, gh pr create, worktree entry and exit, the
+#                               manifest write, the auto-fix in 4.7.2 and every
+#                               checkpoint question all stay in the lead on both
+#                               paths. Only the review fan-out, the skeptic and
+#                               the per-gate resolution move.
+#
+# --- What the orchestrated path changes -------------------------------------
+#
+# On the classic path the lead merges QA findings by hand at THREE points — 4.1.5,
+# 4.3 and 4.7.1 — and each is a prose judgment where a finding can be softened or
+# dropped without a trace. 4.7.4 then reads whatever survived. Here the merge
+# happens once, mechanically, and the gate counts verified critical findings.
+#
+# One behavioural difference: test-writer and playwright-engineer REPORT coverage
+# gaps rather than writing tests, because a file write inside the fan-out is a
+# race. The lead authors them in 4.7.2 — including on the PASS path, which is the
+# case the classic path covers and a naive port would lose.
+#
+# --- Example ---------------------------------------------------------------
+#
+#   implement:
+#     workflow:
+#       enabled: true
+#
+
+# BRAINSTORM  (optional — omit entirely and /brainstorm behaves exactly as before)
+# =============================================================================
+#
+#   brainstorm.workflow.enabled Whether /brainstorm may take the orchestrated
+#                               (workflow) path for Phase 3. Approaches are
+#                               generated INDEPENDENTLY, one agent per declared
+#                               angle (mvp-first, risk-first, user-first,
+#                               cost-first), then scored by three judges on four
+#                               declared criteria, then synthesized from the
+#                               winner while grafting the best ideas from the
+#                               runners-up.
+#                               Default: true. Setting false always falls back to
+#                               the classic single-pass path, which remains fully
+#                               supported. Skipped automatically when the Workflow
+#                               tool is unavailable in the session.
+#
+#                               The USER still chooses at 3.3. The script scores
+#                               and recommends; it never decides. Phase 1 capture,
+#                               the Phase 4 refine loop, every write under the
+#                               brainstorms artifact and the manifest all stay in
+#                               the lead.
+#
+# --- Why a judge panel rather than one generator ---------------------------
+#
+# On the classic path one agent produces two or three approaches in a single
+# pass, so they share its priors: the second is usually the first with a knob
+# turned. You cannot get genuine variety by asking one generator for variety.
+#
+# Here each approach is generated from a declared angle by an agent that cannot
+# see the others, and the synthesis step grafts across real rivals — which a
+# single-pass generator cannot do at all, having never had any. The scoring is
+# arithmetic over recorded per-judge rows, so the ranking can be recomputed by
+# hand and disagreed with by number rather than by verdict.
+#
+# --- Example ---------------------------------------------------------------
+#
+#   brainstorm:
+#     workflow:
+#       enabled: true
+#
+
+
+# =============================================================================
 # Feedback (/feedback)
 # =============================================================================
 #

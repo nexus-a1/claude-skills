@@ -792,7 +792,32 @@ function synthPrompt(extra) {
     + 'Produce four documents, each as its own field:\n'
     + '  spec       — WHAT and WHY. Acceptance criteria as AC-n. No file paths, no class\n'
     + '               names, no library choices: those are HOW and belong in the plan.\n'
-    + '               Include a well-formed `AC-E2E-SCOPE: required` or `not-required` line.\n'
+    + '               Two headings are read by tooling and must appear verbatim, at the\n'
+    + '               start of their own line: "## Acceptance Criteria" and\n'
+    + '               "## Testing Scope".\n'
+    + '               Under the second, on a line of its own, put the E2E decision:\n'
+    + '\n'
+    // The VALUE is a placeholder, not a literal, and that is deliberate. A bare
+    // example here would be copied: this prompt's first version demonstrated the
+    // token inside backticks and the analyst reproduced the backticks, which is
+    // the defect this whole check exists to catch. Writing one of the two values
+    // instead would trade a format the model copies for a DECISION the model
+    // copies — silently skipping E2E authoring on every run that should have had
+    // it, which is the same loss wearing different clothes. SKILL.md's classic
+    // path reached the same conclusion and uses the same placeholder form.
+    + 'AC-E2E-SCOPE: {required|not-required — your actual decision, not this literal text}\n'
+    + '\n'
+    + '               The shape of that line is the requirement: the token, a colon, one\n'
+    + '               of the two values, and nothing else. No backticks, no bold, no\n'
+    + '               bullet, no indentation, nothing before or after it, and no braces —\n'
+    + '               those mark the placeholder here, they are not part of what you\n'
+    + '               write. The next skill locates the line with an anchored pattern, so\n'
+    + '               any wrapping makes the match fail silently and the decision is lost\n'
+    + '               rather than reported.\n'
+    + '               Decide the value from this feature: "required" when it has a\n'
+    + '               user-facing surface a person could exercise, "not-required" when\n'
+    + '               every outcome is internal. It is a judgement about the feature, not\n'
+    + '               a default.\n'
     + '               Budget ~1500 tokens.\n'
     + '  plan       — HOW. Mechanisms, each grounded in a finding id. ~2500 tokens.\n'
     + '  tasks      — EXECUTION. Every task cites the AC ids it covers; every AC in the\n'
@@ -1020,6 +1045,141 @@ while (skepticRound < MAX_SKEPTIC) {
   triad = repaired
 }
 
+// ---------------------------------------------------------------------------
+// The spec's machine-read contract.
+//
+// Two things in the spec are LOCATED BY PATTERN rather than read: SKILL.md's
+// Stage 4.2 fence greps for the "## Acceptance Criteria" heading, and
+// /implement's QA phase greps an anchored AC-E2E-SCOPE line to decide whether
+// to author E2E coverage. Prose that a human would call correct is not enough;
+// the shape is the interface.
+//
+// Both were checked ONLY by that shell fence, after this script had already
+// returned — where it printed a warning and changed nothing. So a spec no
+// downstream tool could read was reported as a successful run. The first real
+// end-to-end run did exactly that: the analyst emitted the token wrapped in
+// backticks, the fence said so, twice, and the run reported success anyway.
+//
+// Checked here instead, where a rewrite is still possible. Bounded to one pass,
+// like every other repair in this script.
+// ---------------------------------------------------------------------------
+// These two mirror what actually reads the spec, and deliberately no more.
+//
+// E2E_LINE_RE tracks /implement's QA grep
+// (`^AC-E2E-SCOPE:\s*(required|not-required)\s*$`). NOT character for character,
+// and the two known divergences are recorded rather than papered over, because
+// a comment claiming an equivalence that does not hold is worse than none:
+//   - JS `/m` treats a lone \r and U+2028/U+2029 as line breaks; grep does not.
+//     A spec using those as separators passes here and fails the fence — the
+//     gate fails OPEN, which is the safe direction (the fence still warns).
+//   - `[ \t]` rejects \v and \f, which grep's `\s` accepts. Such a line fails
+//     here and passes the fence — one wasted repair dispatch, no false clean.
+// Both need a spec whose line endings are not \n or \r\n, which no model has
+// produced here. They are bounded and pointed the right way, so the check is
+// left simple rather than grown to chase them.
+//
+// AC_HEADING_RE is SKILL.md's Stage 4.2 fence character for character
+// (`^##? *Acceptance Criteria`) — ONE OR TWO hashes, and no end anchor.
+// Tightening it to exactly "## Acceptance Criteria$" was the first version of
+// this check and it was wrong in the expensive direction: a spec the fence
+// accepts would have been sent back for a paid repair dispatch it did not need.
+// A gate placed in front of a consumer must not refuse what the consumer takes.
+//
+// "## Testing Scope" is NOT checked. The template asks for it and the synthesis
+// prompt now does too, but nothing reads it — the E2E token is located by an
+// anchored match anywhere in the document, so the heading's absence costs a
+// reader nothing and is not worth a dispatch to correct.
+var E2E_LINE_RE = /^AC-E2E-SCOPE:[ \t]*(required|not-required)[ \t]*$/m
+var AC_HEADING_RE = /^##? *Acceptance Criteria/m
+
+// Every acceptance-criterion id the spec declares. Used to check that a
+// format repair did not quietly take content with it — a count of breaches
+// cannot tell "fixed the token" from "fixed the token and deleted six ACs".
+// Deliberately loose about the id shape (AC-1.1, AC-SEC-1, AC-E2E-SCOPE all
+// count): the question is whether an id present before is still present, so a
+// false positive here costs nothing and a missed id costs the whole check.
+function specAcIds(s) {
+  var m = String(s === null || s === undefined ? '' : s).match(/\bAC-[A-Za-z0-9][A-Za-z0-9.-]*/g)
+  if (!m) return []
+  var seen = Object.create(null)
+  var out = []
+  for (var i = 0; i < m.length; i++) {
+    if (!seen[m[i]]) { seen[m[i]] = true; out.push(m[i]) }
+  }
+  return out
+}
+
+function specContractBreaches(s) {
+  var spec = String(s === null || s === undefined ? '' : s)
+  var out = []
+  if (!AC_HEADING_RE.test(spec)) {
+    out.push('The spec has no "## Acceptance Criteria" heading. It must start a line.')
+  }
+  if (!E2E_LINE_RE.test(spec)) {
+    // Present-but-wrapped and absent are different repairs, so they get
+    // different instructions. Telling an analyst that wrote the line to "add
+    // the line" is how a repair pass reproduces what it was sent to fix.
+    out.push(/AC-E2E-SCOPE/.test(spec)
+      ? 'An AC-E2E-SCOPE line is present but wrapped, indented, or has other text on '
+        + 'its line, so the anchored pattern does not match it. Emit it bare: no '
+        + 'backticks, no bold, no bullet, no leading whitespace, nothing else on the line.'
+      : 'The spec has no AC-E2E-SCOPE line at all. Add one under "## Testing Scope", '
+        + 'bare on its own line, reading exactly "AC-E2E-SCOPE: required" or '
+        + '"AC-E2E-SCOPE: not-required".')
+  }
+  return out
+}
+
+var specBreaches = specContractBreaches(triad.spec)
+if (specBreaches.length) {
+  log('spec contract: ' + specBreaches.length + ' breach(es) — one repair pass')
+  var contractFixed = await dispatch(
+    synthPrompt(priorTriad(triad) + 'This is a CONTRACT REPAIR PASS. The CONTENT of your previous triad is\n'
+      + 'accepted and is not under review. Only the spec\'s machine-read format is wrong.\n'
+      + 'Return the complete triad again, unchanged except for the breaches below.\n\n'
+      + 'BREACHES:\n'
+      + specBreaches.map(function (b) { return '- ' + b }).join('\n') + '\n\n'),
+    { label: 'repair:spec-contract', phase: 'Gates', agentType: 'nexus:business-analyst', schema: TRIAD_SCHEMA }
+  )
+  if (contractFixed === null) {
+    log('contract repair pass failed; keeping the previous triad')
+  } else {
+    var after = specContractBreaches(contractFixed.spec)
+    // TAKE THE SPEC FIELD ONLY, never the whole triad.
+    //
+    // This dispatch runs AFTER the skeptic loop, so unlike the repair at the
+    // top of that loop its output is never re-panelled. Adopting all four
+    // documents would let a format repair rewrite `plan` and `tasks` that the
+    // panel already gated, and the returned triad would then be a document set
+    // no gate ever saw while `gates.skeptic.verdict` still said `approved` —
+    // the verdict describing a superseded artifact. Every breach this check
+    // raises is in the spec, so the spec is the only field that needs to move;
+    // keeping the other three keeps them the ones the panel approved, and the
+    // verdict stays true of them.
+    //
+    // Two conditions, and the second is the one the count cannot express. A
+    // rewrite that fixes the backtick and drops half the acceptance criteria
+    // reduces the breach count exactly as a good repair does — so the ids are
+    // compared directly. The prompt says "unchanged except for the breaches",
+    // but that is an instruction to a model, not a check on its output.
+    var idsBefore = specAcIds(triad.spec)
+    var idsAfter = specAcIds(contractFixed.spec)
+    var lostIds = idsBefore.filter(function (id) { return idsAfter.indexOf(id) === -1 })
+    if (after.length >= specBreaches.length) {
+      log('contract repair did not reduce the breaches; keeping the original spec')
+    } else if (lostIds.length) {
+      log('contract repair dropped ' + lostIds.length + ' acceptance criterion id(s) ('
+          + lostIds.join(', ') + '); keeping the original spec')
+    } else {
+      triad = Object.assign({}, triad, { spec: contractFixed.spec })
+      specBreaches = after
+    }
+  }
+  if (specBreaches.length) {
+    log('SPEC CONTRACT STILL BREACHED after the repair pass — the lead must report this')
+  }
+}
+
 // The verdict is arithmetic. The lead asks the user; the script does not.
 //
 // Integrity and verdict are separate axes. Overwriting `conditional` with
@@ -1048,6 +1208,11 @@ return {
   // "no two agents cited the same file, so nothing was compared" are different
   // facts, and every other silence in this result is labelled.
   contradictionScanRan: contradictionScanRan,
+  // Whether the spec still breaches its machine-read contract after the repair
+  // pass. `ok: true` with a breach here is a real state: the content is sound
+  // and the format is not, and the lead reports it rather than writing four
+  // files and calling the run complete.
+  specContract: { ok: specBreaches.length === 0, breaches: specBreaches },
   panelIntegrity: panelIntegrity,
   round2Ran: round2Ran,
   triad: triad,
@@ -1071,9 +1236,12 @@ return {
   ok: true,
   discovery, roster: {run, skipped}, coverage, bodies,          // phases 1-2
   findings, dropped, uncited, contradictions, panelIntegrity,   // phase 3
+  contradictionScanRan, round2Ran,                              // did they run at all
   triad: {spec, plan, tasks, jiraTicket, flags},                // phase 4
   reanalysis, unresolved,
   gates: { architecture, skeptic: {verdict, rounds, blocking, integrity} },
+  specContract: {ok, breaches},                                 // the spec's machine-read shape
+  configDefects,
   agentCount
 }
 ```
@@ -1115,6 +1283,13 @@ plan triggered nothing) — and only the first is a pass.
 | `verified: false` on a finding | Not fully judged, or added by re-analysis after the panel ran |
 | in `dropped` | Two or more refutations, with every lens's reason recorded |
 | `panelIntegrity.complete: false` | The panel was short; nothing was tallied and every finding is `verified: false` |
+| `specContract.ok: false` | The spec still breaches its machine-read shape after the repair pass. A **different axis again**: it says nothing about whether the requirements are right, only that the file cannot be located by the patterns `/implement` and the Stage 4.2 fence grep. Content can be sound and this still false — report it, do not fold it into the verdict |
+
+The contract repair takes the **spec field only**, never the whole triad. It runs after the
+skeptic loop, so unlike the repair inside that loop its output is never re-panelled; adopting
+`plan` and `tasks` from it would return documents no gate saw while `skeptic.verdict` still
+said `approved`. It is also refused when it drops an `AC-` id the previous spec declared — a
+breach count cannot tell "fixed the token" from "fixed the token and deleted six criteria".
 
 ---
 
