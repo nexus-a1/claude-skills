@@ -1,11 +1,39 @@
 #!/bin/bash
 # Hook: Log all tool usage for audit trail
 
-# ── Kill-switch ──────────────────────────────────────────────────────────────
+# ── OPT-IN ───────────────────────────────────────────────────────────────────
+# This hook is OFF by default. Set NEXUS_AUDIT=1 to turn it on.
+#
+# It matches `.*`, the broadest matcher in the hook set, so it runs after EVERY
+# tool call — every Read, Grep, Glob, Edit, Write, Task and Bash — and measured
+# 44 ms each time. A session making several hundred tool calls spent tens of
+# seconds writing a log that, when asked in 2026-09, nobody was reading.
+#
+# WHY THIS EXITS HERE, ABOVE EVERYTHING ELSE, AND WHY THAT IS THE WHOLE POINT.
+# The 44 ms is not process startup — a bash process is 3 ms. It is almost
+# entirely `hook_read_input` parsing the JSON payload with jq, which happens
+# before the hook can decide it has nothing to do. Exiting above that parse
+# costs 3 ms, identical to an empty process. So a disabled hook is not a cheap
+# hook, it is a free one, and there is no reason to trade the trail's existence
+# for its cost.
+#
+# THE HOOK IS NOT DELETED, DELIBERATELY. "Nobody reads it" is a statement about
+# the past. An audit trail's entire value is being ALREADY ON when something
+# goes wrong; one enabled after an incident records nothing about the incident.
+# So it stays one environment variable away rather than one code change away:
+#
+#     NEXUS_AUDIT=1 claude          # this session logs tool use
+#
+# If you are turning it on to investigate something, turn it on before you need
+# it, not after.
+_nexus_name="audit"; _nexus_class="advisory"
+[ "${NEXUS_AUDIT:-0}" = "1" ] || exit 0
+
+# The standard kill-switches still apply on top, so `off` and `minimal` and an
+# explicit disable all continue to work for anyone who has enabled it.
 # NEXUS_HOOK_PROFILE=off      → disable ALL hooks (nuclear option)
 # NEXUS_HOOK_PROFILE=minimal  → disable advisory hooks; keep safety hooks
 # NEXUS_DISABLED_HOOKS=a,b   → disable specific hooks by name
-_nexus_name="audit"; _nexus_class="advisory"
 [ "${NEXUS_HOOK_PROFILE:-full}" = "off" ] && exit 0
 [ "${NEXUS_HOOK_PROFILE:-full}" = "minimal" ] && [ "$_nexus_class" = "advisory" ] && exit 0
 case ",${NEXUS_DISABLED_HOOKS//[[:space:]]/}," in *",$_nexus_name,"*) exit 0 ;; esac

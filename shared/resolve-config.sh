@@ -613,186 +613,75 @@ resolve_service_path() {
   echo "${WORKSPACE_ROOT}/${svc}"
 }
 
-# --- pr-review gate helpers ---
-# Whether the orchestrated review path is enabled for this project.
-# Opt-out default, matching jira.enabled / implement.deviation_checkpoint.enabled.
-# Whether /pr-review may take the orchestrated (workflow) path. Default true.
+# --- orchestrated-workflow gate helpers ---
 #
-# Do NOT write `// true` here. yq treats a literal `false` as empty, so
-# `.pr_review.workflow.enabled // true` returns "true" for an explicit
+# Every orchestrated skill exposes the same kill switch under its own config
+# key: `<key>.workflow.enabled: false`, or the bare `<key>.workflow: false` that
+# a user will reach for first. Ten skills once carried ten copies of the same
+# four-line body differing only in that key (CL-107 collapsed them).
+#
+# Do NOT write `// true` in this helper. yq treats a literal `false` as empty,
+# so `.pr_review.workflow.enabled // true` returns "true" for an explicit
 # `enabled: false` and the documented kill switch silently stops working —
 # which is precisely what it did until CL-40's T16 manual run caught it. Same
 # reasoning already recorded at plugin/skills/implement/SKILL.md:1838. Test the
-# raw value instead.
+# raw value instead, as below.
 #
-# Both spellings are honoured: the nested `workflow: {enabled: false}` that
-# matches this repo's `worktree.enabled` convention, and the bare scalar
-# `workflow: false` that a user will reach for first. A config that means to
-# turn the path off must turn it off; guessing wrong about which shape someone
-# wrote is not a reason to keep running.
-resolve_pr_review_workflow_enabled() {
+# Both spellings are honoured for the same reason: a config that means to turn
+# the path off must turn it off; guessing wrong about which shape someone wrote
+# is not a reason to keep running. Anything that is neither "true" nor "false"
+# at the nested path (absent block, a map, a typo) falls through to the bare
+# scalar, and anything that is not "false" there defaults the gate on.
+#
+# $1 = config key, e.g. "implement". The named wrappers below are the public
+# entry points — they keep the current names greppable and callable from the
+# skills and their tests.
+_resolve_workflow_enabled() {
   [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
-  local _raw
-  _raw=$(yq -r '.pr_review.workflow.enabled' "$CONFIG" 2>/dev/null)
+  local _key="$1" _raw
+  _raw=$(yq -r ".${_key}.workflow.enabled" "$CONFIG" 2>/dev/null)
   if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
-    _raw=$(yq -r '.pr_review.workflow' "$CONFIG" 2>/dev/null)
+    _raw=$(yq -r ".${_key}.workflow" "$CONFIG" 2>/dev/null)
   fi
   if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
 }
 
-# --- create-requirements gate helper ---
+# Whether /pr-review may take the orchestrated (workflow) path. Default true.
+resolve_pr_review_workflow_enabled() { _resolve_workflow_enabled pr_review; }
+
 # Whether /create-requirements may take the orchestrated (workflow) path for its
 # deep dive and synthesis. Default true.
-#
-# Same yq trap as resolve_pr_review_workflow_enabled above, and the same reason
-# it is spelled out again rather than shared: `// true` returns "true" for an
-# explicit `enabled: false`, so the kill switch would silently stop working.
-# Both spellings are honoured for the same reason.
-resolve_requirements_workflow_enabled() {
-  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
-  local _raw
-  _raw=$(yq -r '.requirements.workflow.enabled' "$CONFIG" 2>/dev/null)
-  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
-    _raw=$(yq -r '.requirements.workflow' "$CONFIG" 2>/dev/null)
-  fi
-  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
-}
+resolve_requirements_workflow_enabled() { _resolve_workflow_enabled requirements; }
 
-# --- troubleshoot gate helpers ---
 # Whether /troubleshoot's Phase 6.3 may take the orchestrated (workflow) path.
-# Default true, matching resolve_pr_review_workflow_enabled above.
-#
-# Do NOT write `// true` here. yq treats a literal `false` as empty, so
-# `.troubleshoot.workflow.enabled // true` returns "true" for an explicit
-# `enabled: false` and the documented kill switch silently stops working. That
-# is not hypothetical: it is what shipped for pr_review until CL-40's T16
-# manual run caught it. Test the raw value instead.
-#
-# Both spellings are honoured: the nested `workflow: {enabled: false}` that
-# matches this repo's `worktree.enabled` convention, and the bare scalar
-# `workflow: false` that a user will reach for first.
-resolve_troubleshoot_workflow_enabled() {
-  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
-  local _raw
-  _raw=$(yq -r '.troubleshoot.workflow.enabled' "$CONFIG" 2>/dev/null)
-  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
-    _raw=$(yq -r '.troubleshoot.workflow' "$CONFIG" 2>/dev/null)
-  fi
-  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
-}
+resolve_troubleshoot_workflow_enabled() { _resolve_workflow_enabled troubleshoot; }
 
-# --- review-plan gate helper ---
 # Whether /review-plan may take the orchestrated (workflow) path for its review
-# panel. Default true.
-#
-# Same yq trap as resolve_pr_review_workflow_enabled above, and the same reason
-# it is spelled out again rather than shared: `// true` returns "true" for an
-# explicit `enabled: false`, so the documented kill switch would silently stop
-# working. Both spellings are honoured for the same reason — a config that
-# means to turn the path off must turn it off.
-resolve_review_plan_workflow_enabled() {
-  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
-  local _raw
-  _raw=$(yq -r '.review_plan.workflow.enabled' "$CONFIG" 2>/dev/null)
-  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
-    _raw=$(yq -r '.review_plan.workflow' "$CONFIG" 2>/dev/null)
-  fi
-  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
-}
+# panel.
+resolve_review_plan_workflow_enabled() { _resolve_workflow_enabled review_plan; }
 
-# --- epic gate helper ---
 # Whether /epic may take the orchestrated (workflow) path for its initiative
-# analysis and its per-ticket spec pipeline. Default true.
-#
-# Same yq trap as resolve_pr_review_workflow_enabled above, and spelled out
-# again for the same reason rather than shared: `// true` returns "true" for an
-# explicit `enabled: false`, so the kill switch would silently stop working.
-# Both spellings are honoured for the same reason.
-resolve_epic_workflow_enabled() {
-  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
-  local _raw
-  _raw=$(yq -r '.epic.workflow.enabled' "$CONFIG" 2>/dev/null)
-  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
-    _raw=$(yq -r '.epic.workflow' "$CONFIG" 2>/dev/null)
-  fi
-  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
-}
+# analysis and its per-ticket spec pipeline.
+resolve_epic_workflow_enabled() { _resolve_workflow_enabled epic; }
 
-# --- feedback gate helper ---
-# Whether /feedback may take the orchestrated (workflow) path. Default true.
-#
-# Same shape and the same trap as resolve_pr_review_workflow_enabled above: do
-# NOT write `// true` here, because yq treats a literal `false` as empty and the
-# documented kill switch would silently stop working. Both spellings are
-# honoured — the nested `workflow: {enabled: false}` and the bare scalar
-# `workflow: false`.
-resolve_feedback_workflow_enabled() {
-  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
-  local _raw
-  _raw=$(yq -r '.feedback.workflow.enabled' "$CONFIG" 2>/dev/null)
-  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
-    _raw=$(yq -r '.feedback.workflow' "$CONFIG" 2>/dev/null)
-  fi
-  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
-}
+# Whether /feedback may take the orchestrated (workflow) path.
+resolve_feedback_workflow_enabled() { _resolve_workflow_enabled feedback; }
 
-# Same shape and the same two spellings, for /refactor's quality-gate panel.
-# Deliberately not folded into a shared helper with the six above: the body is
-# four lines, and the one thing a shared version would have to parameterise is
-# the config key, which is exactly the string a copy makes greppable.
-resolve_refactor_workflow_enabled() {
-  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
-  local _raw
-  _raw=$(yq -r '.refactor.workflow.enabled' "$CONFIG" 2>/dev/null)
-  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
-    _raw=$(yq -r '.refactor.workflow' "$CONFIG" 2>/dev/null)
-  fi
-  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
-}
+# Whether /refactor may take the orchestrated (workflow) path for its quality
+# gate panel.
+resolve_refactor_workflow_enabled() { _resolve_workflow_enabled refactor; }
 
-# Same shape and the same two spellings, for /update-documentation's gap
-# pipeline. This is the seventh near-identical body in this file; a follow-up
-# to collapse them behind one helper with named wrappers is the right move when
-# the next change has to touch all seven at once (a third accepted spelling, an
-# env override, or a validator that enumerates them). Not folded here, because
-# doing it would touch every skill's resolver for zero behaviour change.
-resolve_update_documentation_workflow_enabled() {
-  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
-  local _raw
-  _raw=$(yq -r '.update_documentation.workflow.enabled' "$CONFIG" 2>/dev/null)
-  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
-    _raw=$(yq -r '.update_documentation.workflow' "$CONFIG" 2>/dev/null)
-  fi
-  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
-}
+# Whether /update-documentation may take the orchestrated (workflow) path for
+# its gap pipeline.
+resolve_update_documentation_workflow_enabled() { _resolve_workflow_enabled update_documentation; }
 
-# Same shape and the same two spellings, for /implement's Phase 4 QA panel.
-# Ninth near-identical body in this file. The collapse-into-one-helper follow-up
-# is the right move when a change has to touch all of them at once — a third
-# accepted spelling, an env override, or a validator that enumerates them —
-# and none of those is this ticket.
-resolve_implement_workflow_enabled() {
-  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
-  local _raw
-  _raw=$(yq -r '.implement.workflow.enabled' "$CONFIG" 2>/dev/null)
-  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
-    _raw=$(yq -r '.implement.workflow' "$CONFIG" 2>/dev/null)
-  fi
-  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
-}
+# Whether /implement may take the orchestrated (workflow) path for its Phase 4
+# QA panel.
+resolve_implement_workflow_enabled() { _resolve_workflow_enabled implement; }
 
-# Same shape and the same two spellings, for /brainstorm's judge panel. Tenth
-# body in this file; the collapse-into-one-helper follow-up is still waiting for
-# a change that has to touch all of them at once.
-resolve_brainstorm_workflow_enabled() {
-  [[ -f "$CONFIG" ]] || { echo "true"; return 0; }
-  local _raw
-  _raw=$(yq -r '.brainstorm.workflow.enabled' "$CONFIG" 2>/dev/null)
-  if [[ "$_raw" != "true" && "$_raw" != "false" ]]; then
-    _raw=$(yq -r '.brainstorm.workflow' "$CONFIG" 2>/dev/null)
-  fi
-  if [[ "$_raw" == "false" ]]; then echo "false"; else echo "true"; fi
-}
+# Whether /brainstorm may take the orchestrated (workflow) path for its judge
+# panel.
+resolve_brainstorm_workflow_enabled() { _resolve_workflow_enabled brainstorm; }
 
 # Gate definitions as TSV: name<TAB>template<TAB>args.
 #

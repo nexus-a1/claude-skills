@@ -1,5 +1,50 @@
 # Changelog
 
+## [1.39.0] - 2026-09-10
+
+Seven tickets, and the theme is framework performance: two hooks that ran on every single tool call now cost what they should.
+
+## Performance
+
+**The audit trail is now opt-in — `NEXUS_AUDIT=1` (CL-112).**
+`audit.sh` matched `.*`, the broadest matcher in the hook set, so it ran after every Read, Grep, Glob, Edit, Write, Task and Bash call at ~44 ms each. It is now off under every profile, including `full`: **4 ms disabled, 57 ms enabled.**
+
+> **Behaviour change.** If you rely on `~/.claude/tool-audit.log`, it will stop filling up. Set `NEXUS_AUDIT=1` to keep it. It was disabled rather than deleted because an audit trail's value is being *already on* when something goes wrong — one enabled after an incident records nothing about the incident.
+
+**Disabling the quiet-flag filter now actually saves time (CL-111).**
+`bash-token-filter` is an advisory convenience (it injects `-q`/`--silent`) that runs inside the `redact-output` safety hook, on every Bash call. Its kill switch was checked *inside* the Python, by which point the interpreter had already started — so turning it off stopped the rewrite and recovered nothing. The switch is now checked before the spawn:
+
+| Setting | before | after |
+|---|---|---|
+| default | 139 ms | 133 ms |
+| `NEXUS_DISABLED_HOOKS=bash-token-filter` | 133 ms | **69 ms** |
+| `NEXUS_HOOK_PROFILE=minimal` | 134 ms | **65 ms** |
+
+The default is deliberately unchanged. `NEXUS_HOOK_PROFILE=minimal` is now a real performance escape hatch rather than a nominal one.
+
+Both fixes turn on the same measured fact: **a bash process costs 3 ms**, not the 20–25 ms previously assumed. A hook's cost is entirely in what runs *after* its gate — so both changes are about *where* the check sits, and both test suites pin that position rather than merely the behaviour, because a gate below the expensive part behaves identically and saves nothing.
+
+## Fixes
+
+**The redaction map is keyed on the repository, not the checkout (CL-110).**
+`git rev-parse --show-toplevel` answers with a *linked worktree's* own path, so every worktree of one repository got its own map and its own placeholder counter. Two different secrets in two worktrees both became `<REDACTED:env-secret:1>`, and `reverse-substitute` would resolve that placeholder to the wrong value with nothing in the transcript showing the swap. Reproduced first, then fixed: a new shared locator uses `--git-common-dir`, the one directory every linked worktree shares.
+
+**`/review-plan` no longer passes untrusted text through a heredoc (CL-102).**
+Quoting a heredoc delimiter disables expansion inside the body, but it does not decide where the body *ends*. A plan line equal to the delimiter closed the heredoc there and everything after it reached bash as source — and the skill's own banner says the plan may be pasted from a ticket or a third party. Both values now go through the Write tool, which puts no shell in the path.
+
+## Internals
+
+- **Ten workflow-enabled resolvers collapsed into one helper (CL-107)**, with the ten public names kept as wrappers so no caller changes. Verified across 10 keys × 10 config cases — 100 comparisons, 0 mismatches.
+
+## CI (repository only, not shipped in the plugin)
+
+- **ripgrep is installed and verified in the three agent workflows (CL-105).** Claude Code's Grep and Glob shell out to `rg`; the runner image lacked it, so both tools were silently degraded — searches that should have matched came back empty, which is indistinguishable from finding nothing.
+- **`Verify python3` step added to the test workflow (CL-108).** Seven suites need it. When a runner turned up without it, all seven went red at once as ordinary assertion failures with nothing naming the cause.
+
+## Upgrade notes
+
+The only behaviour change is the audit trail (CL-112). Everything else is either faster or fixes a defect. If you use linked worktrees, CL-110 also means the redaction map moves to the main checkout's `.claude/session-state/` — one map per repository instead of one per worktree.
+
 ## [1.38.0] - 2026-09-09
 
 ## What's Changed

@@ -242,7 +242,13 @@ Do you have a ticket number for it now?
   # heredocs rather than templating them into the command line. Inside a
   # double-quoted string, $(...) and backticks still expand when bash PARSES
   # the line, before any validator runs; a quoted heredoc delimiter disables
-  # all expansion, so this holds even if one of these values is adversarial.
+  # all expansion. What quoting does NOT do is decide where the body ends: a
+  # body line equal to the delimiter terminates the heredoc and the lines after
+  # it run as commands. These three are safe from that because each is
+  # SINGLE-LINE by construction — a session id, a ticket key, a branch name —
+  # so there is no line after the delimiter to run. See
+  # shared/kb-write-pattern.md; a value that can span lines belongs in a file
+  # written by the `Write` tool instead.
   ID=$(cat <<'ID_EOF'
 {identifier}
 ID_EOF

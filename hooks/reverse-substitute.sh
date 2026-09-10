@@ -126,13 +126,20 @@ case "$_path" in *[[:cntrl:]]*) _bail "the target path contains a control charac
 # absence used to end the run silently, which is fail-safe and undiagnosable.
 command -v grep >/dev/null 2>&1 || _bail "grep is not available"
 
-# ── Where the session map lives (same rule as redact-output.sh) ──────────────
+# ── Where the session map lives ─────────────────────────────────────────────
+# The locator is shared with redact-output.sh, which writes the map this hook
+# reads: one map per REPOSITORY, so a placeholder assigned while the session
+# sat in one linked worktree still resolves to its own value from another
+# (CL-110). It is not `--show-toplevel`, which answers per worktree.
+#
+# $_root stays the CURRENT worktree's root, because it answers a different
+# question — rule 5's "is this write inside the repository" — and a write into
+# the checkout the session is standing in is inside it.
 _root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-if [ -n "$_root" ]; then
-    _state="$_root/.claude/session-state"
-else
-    _state="${HOME:-/tmp}/.claude/session-state"
-fi
+# shellcheck source=../shared/session-map-path.sh
+. "$_hook_dir/../shared/session-map-path.sh" 2>/dev/null || _bail "cannot load the session-map locator"
+type nexus_redaction_state_dir >/dev/null 2>&1 || _bail "the session-map locator defines no nexus_redaction_state_dir"
+_state="$(nexus_redaction_state_dir)"
 _map="$_state/redaction-map.tsv"
 _audit="$_state/redaction-audit.log"
 [ -r "$_map" ] || _bail "no readable session map at $_map"

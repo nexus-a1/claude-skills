@@ -37,12 +37,74 @@ Comma-separated list of individual hook names to disable. Overrides
 regardless of the profile setting.
 
 ```bash
-# Disable desktop notifications and the audit trail
-NEXUS_DISABLED_HOOKS=notify,audit claude
+# Disable desktop notifications and the output-size nudge
+NEXUS_DISABLED_HOOKS=notify,output-guard claude
 
 # Disable token-filter rewriting (keep everything else)
 NEXUS_DISABLED_HOOKS=bash-token-filter claude
 ```
+
+---
+
+## `NEXUS_AUDIT`
+
+The one hook that is **off under every profile, including `full`**. Set
+`NEXUS_AUDIT=1` to turn the audit trail on.
+
+```bash
+# This session records every tool call to ~/.claude/tool-audit.log
+NEXUS_AUDIT=1 claude
+```
+
+`audit` matches `.*`, the broadest matcher in the set, so it runs after every
+Read, Grep, Glob, Edit, Write, Task and Bash call — measured at ~44 ms each,
+which is tens of seconds across a long session. It shipped on by default and
+the trail went unread.
+
+**Why it is disabled rather than deleted.** An audit trail's value is being
+already on when something goes wrong; one enabled *after* an incident records
+nothing about the incident. Off is one environment variable away from on, and
+that is affordable because the disabled hook costs 3 ms, not 44: its check sits
+above `hook_read_input`, so it exits before the payload is parsed. A gate placed
+below that parse would look identical in behaviour and save nothing —
+`tests/hooks/audit-opt-in.test` pins the position, not just the behaviour.
+
+The profile switches above still apply on top once it is on: `off`, `minimal`,
+and `NEXUS_DISABLED_HOOKS=audit` each silence it regardless of `NEXUS_AUDIT`.
+
+---
+
+## The token filter is the expensive part of `redact-output`
+
+`redact-output` is the most costly hook in the set, and about half that cost is
+not redaction — it is CPython starting up to run `bash-token-filter.py`, an
+**advisory** convenience (injecting `-q`/`--silent`) that runs inside a **safety**
+hook on every Bash call.
+
+Before CL-111 its kill switch was checked only inside the Python, by which point
+the interpreter had already started and imported its modules. The switch is now
+checked in `redact-output.sh` *before* the spawn as well, so `off`, `minimal`,
+and the by-name entry each actually skip it. Measured end to end, 25 runs per
+cell on an idle machine:
+
+| Setting | before | after |
+|---|---|---|
+| default | 139 ms | 133 ms |
+| `NEXUS_DISABLED_HOOKS=bash-token-filter` | 133 ms | 69 ms |
+| `NEXUS_HOOK_PROFILE=minimal` | 134 ms | 65 ms |
+
+The default is unchanged by design. Disabling the filter recovers **~65-70 ms,
+roughly half the hook**, where before it recovered nothing distinguishable from
+noise.
+
+The check inside `bash-token-filter.py` is deliberately kept. It is the authority
+if the filter is ever invoked from anywhere else, and the two are asserted to
+agree — including on whitespace in the list — by `tests/hooks/redact-output.test`.
+Removing either as a duplicate reintroduces the cost or the gap.
+
+**Redaction itself is never skipped by any of this.** Whatever disables the
+token filter, the command still gets the redaction wrapper; that is asserted
+too.
 
 ---
 
@@ -55,9 +117,9 @@ NEXUS_DISABLED_HOOKS=bash-token-filter claude
 | `redact-output` | **safety** | ✅ active | ❌ off | Rewrite every Bash command so its output streams through `redact-stream.sh`: secrets become stable `<REDACTED:kind:n>` placeholders before the model sees them |
 | `read-guard` | **safety** | ✅ active | ❌ off | Refuse Read, Grep and Glob on files that exist to hold secrets (`.env*`, `*.pem`, `*credentials*`, the redaction map, …) — by path or by filename filter — and redirect to the Bash equivalent (`grep` for a Grep, `cat` otherwise), whose output is redacted |
 | `reverse-substitute` | **safety** | ✅ active | ❌ off | On Write, Edit and MultiEdit: turn a `<REDACTED:kind:n>` placeholder the model wrote into the real value from the session map, so a file can carry a value the conversation never held. Refuses outside the repository and on sensitive paths unless the file already contains that value; logs every substitution without the value |
-| `audit` | advisory | ❌ off | ❌ off | Write all tool usage to `~/.claude/tool-audit.log` |
+| `audit` | advisory | ❌ off | ❌ off | **Opt-in — off under `full` too.** `NEXUS_AUDIT=1` writes all tool usage to `~/.claude/tool-audit.log`. See [`NEXUS_AUDIT`](#nexus_audit) |
 | `auto-context` | advisory | ❌ off | ❌ off | Auto-append entries to active work-session state.json |
-| `bash-token-filter` | advisory | ❌ off | ❌ off | Inject `-q`/`--silent` flags to reduce noisy output. Runs *inside* `redact-output` (not registered on its own, so only one hook ever rewrites a command); this name still disables it |
+| `bash-token-filter` | advisory | ❌ off | ❌ off | Inject `-q`/`--silent` flags to reduce noisy output. Runs *inside* `redact-output` (not registered on its own, so only one hook ever rewrites a command); this name still disables it, and since CL-111 disabling it **skips the `python3` spawn** rather than starting an interpreter that exits immediately — worth ~65-70 ms on every Bash call. See [the note below](#the-token-filter-is-the-expensive-part-of-redact-output) |
 | `notify` | advisory | ❌ off | ❌ off | Send desktop notification on session end |
 | `output-guard` | advisory | ❌ off | ❌ off | Advisory nudge when Bash output exceeds thresholds |
 
@@ -136,7 +198,10 @@ On top of secrets, `redact-output` redacts **structured personal data** — clas
 with a shape a filter can match and, where the format defines one, a checksum
 that turns a guess into a decision. Same placeholder scheme, same session map:
 `carol@example.com` becomes `<REDACTED:email:1>` and stays that placeholder for
-the session.
+as long as the session stays in that repository — the map is keyed on the
+repository, so every linked worktree of it shares one map and one numbering, and
+a `cd` into a **different** repository starts a different sequence in which the
+same number means something else.
 
 | Class | Default | What it matches | What it deliberately does not |
 |-------|:-------:|-----------------|-------------------------------|
@@ -271,9 +336,19 @@ least once.
   commit-time credential scan is the gate that stands between such a file and a
   push.
 
-The session map (`.claude/session-state/redaction-map.tsv`, or
-`~/.claude/session-state/` outside a repository) holds the redacted values the filter can chase — secret-shaped ones —
-in clear, so later output is redacted consistently. It is created mode 0600 with a
+The session map (`.claude/session-state/redaction-map.tsv` in the **main
+checkout** of the repository, or `~/.claude/session-state/` outside a repository)
+holds the redacted values the filter can chase — secret-shaped ones —
+in clear, so later output is redacted consistently. There is **one map per
+repository**, not one per checkout: `git rev-parse --show-toplevel` answers with
+a linked worktree's own path, so keying the map on it gave every worktree its own
+independently numbered sequence, and `<REDACTED:env-secret:1>` then meant one
+value in one worktree and a different one in the next — with the substitution
+picking whichever map matched the current directory, and nothing in the
+transcript showing the swap. The locator is `git rev-parse --git-common-dir`
+(`plugin/shared/session-map-path.sh`), which every worktree of one repository
+answers identically. The cost, accepted deliberately: one plaintext file now
+holds every value the session saw in any of those worktrees. It is created mode 0600 with a
 `.gitignore` of `*` beside it, `read-guard` refuses it (Read, Grep and Glob alike),
 and `cat` on it, or any reformatting of it, comes back as placeholders. Both hooks need `jq`; without it they
 **block** (exit 2) and name the `NEXUS_DISABLED_HOOKS` opt-out, rather than run silently

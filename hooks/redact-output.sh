@@ -35,8 +35,9 @@
 # that returns updatedInput for Bash: it runs bash-token-filter.py itself,
 # takes its quiet-flag rewrite as the starting point, and wraps that. The
 # token filter is no longer registered on its own in hooks.json for exactly
-# this reason; its NEXUS_DISABLED_HOOKS name still works, because the script
-# checks its own kill-switch.
+# this reason; its NEXUS_DISABLED_HOOKS name still works, and since CL-111 it
+# is checked HERE as well as inside the script, so disabling it skips the
+# python3 spawn rather than paying for an interpreter that exits immediately.
 #
 # FAILS CLOSED where it can: a missing or non-executable redact-stream.sh
 # blocks the call (exit 2) rather than letting it run unfiltered. Inside the
@@ -155,9 +156,42 @@ _pii_q=""
 
 # Quiet-flag rewrite first, so this stays the single writer of updatedInput.
 # Advisory: a missing python3 or a filter that says nothing leaves the
-# command as it was. Its own kill-switch is honoured inside the script.
+# command as it was.
+#
+# THE KILL-SWITCH IS CHECKED HERE, NOT ONLY INSIDE THE SCRIPT (CL-111).
+# bash-token-filter.py checks the same three switches at its own line 25 and
+# exits 0, which is correct and bought nothing: by then CPython has started and
+# imported json, os, re and sys. Measured, that spawn is 102 ms of this hook's
+# 162 ms, and `NEXUS_DISABLED_HOOKS=bash-token-filter` recovered 2 ms of it --
+# a switch that stops the rewrite and not the cost. This hook runs on EVERY
+# Bash call, so that 102 ms is the single largest fixed cost in the hook set.
+#
+# The condition below is the Python's own, transcribed: `off` disables
+# everything, `minimal` disables advisory components and the token filter is
+# advisory, and the by-name entry disables it explicitly. The check inside the
+# script STAYS -- it is the authority if the filter is ever invoked from
+# somewhere else, and two agreeing checks are the point rather than a
+# duplication to collapse. tests/hooks/redact-output.test asserts they agree
+# on all four settings, so they cannot drift apart silently.
+# `:-` matters here and does not in the kill-switch block at the top of this
+# file: that block runs BEFORE `set -u` on line 62, this one runs after. Without
+# it, an unset NEXUS_DISABLED_HOOKS aborts the hook with status 1 and no
+# stdout -- which Claude Code does not treat as a block, so the command runs
+# with NO redaction wrapper at all. A safety hook failing open, on every Bash
+# call, introduced by a performance fix.
+_tf_disabled=0
+[ "${NEXUS_HOOK_PROFILE:-full}" = "off" ] && _tf_disabled=1
+[ "${NEXUS_HOOK_PROFILE:-full}" = "minimal" ] && _tf_disabled=1
+_tf_list="${NEXUS_DISABLED_HOOKS:-}"
+# Whitespace is stripped, matching line 59 above AND bash-token-filter.py's own
+# `h.strip()`. Without it `NEXUS_DISABLED_HOOKS="a, bash-token-filter"` -- a
+# perfectly ordinary way to write a list -- would disable the filter inside the
+# Python and NOT here, so the spawn would still be paid. Two checks that
+# disagree about their input are worse than one.
+case ",${_tf_list//[[:space:]]/}," in *",bash-token-filter,"*) _tf_disabled=1 ;; esac
+
 _context=""
-if command -v python3 >/dev/null 2>&1 && [ -f "$_hook_dir/bash-token-filter.py" ]; then
+if [ "$_tf_disabled" -eq 0 ] && command -v python3 >/dev/null 2>&1 && [ -f "$_hook_dir/bash-token-filter.py" ]; then
     _tf_out="$(printf '%s' "$_raw" | python3 "$_hook_dir/bash-token-filter.py" pre 2>/dev/null || true)"
     if [ -n "$_tf_out" ]; then
         _tf_cmd="$(printf '%s' "$_tf_out" | jq -r '.hookSpecificOutput.updatedInput.command // empty' 2>/dev/null || true)"
@@ -166,18 +200,28 @@ if command -v python3 >/dev/null 2>&1 && [ -f "$_hook_dir/bash-token-filter.py" 
     fi
 fi
 
-# The session map lives with the repository the session is in, under
-# .claude/session-state/. Outside a repository it lives under the same
-# subdirectory of the user's own ~/.claude — a subdirectory this hook owns,
-# never ~/.claude itself, because the `*` .gitignore written beside the map
-# would otherwise ignore the user's whole config directory. Created here,
-# mode 0600, so the filter never has to.
-_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-if [ -n "$_root" ]; then
-    _state="$_root/.claude/session-state"
-else
-    _state="${HOME:-/tmp}/.claude/session-state"
+# The session map lives with the REPOSITORY the session is in, under the main
+# checkout's .claude/session-state/ — one map and one placeholder sequence for
+# every linked worktree of that repository, because a number that means one
+# value in one worktree and another value in the next is worse than no number
+# at all (CL-110). Outside a repository it lives under the same subdirectory of
+# the user's own ~/.claude — a subdirectory this hook owns, never ~/.claude
+# itself, because the `*` .gitignore written beside the map would otherwise
+# ignore the user's whole config directory. Created here, mode 0600, so the
+# filter never has to.
+#
+# Shared with reverse-substitute.sh rather than spelled twice: the two must
+# land on the same file, and when they were two copies of the same ten lines
+# they were two copies of the same bug. Fails closed like the PII library —
+# a hook that cannot say where the map is cannot keep the numbering honest.
+_map_lib="$_hook_dir/../shared/session-map-path.sh"
+# shellcheck source=../shared/session-map-path.sh
+if ! . "$_map_lib" 2>/dev/null || ! type nexus_redaction_state_dir >/dev/null 2>&1; then
+    echo "BLOCKED: redact-output cannot load the session-map locator at $_map_lib — refusing to run the command with a redactor that cannot number its placeholders consistently." >&2
+    echo "Reinstall the nexus plugin, or disable this hook explicitly: NEXUS_DISABLED_HOOKS=redact-output" >&2
+    exit 2
 fi
+_state="$(nexus_redaction_state_dir)"
 _map="$_state/redaction-map.tsv"
 # The map holds every value the session redacted, in clear, so that later
 # output can be redacted consistently. Three things keep it from leaving:

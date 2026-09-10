@@ -245,8 +245,20 @@ templating them into the command line — inside a double-quoted string
 (`"{subject}"`) or a hand-composed JSON literal (`'{parties_json_array}'`),
 `$(...)` and backticks still expand, and a stray quote breaks the JSON, when
 bash/jq PARSE the line, before `jq --arg`'s own safety applies. A quoted
-heredoc delimiter disables all of that — the content reaches jq as inert
-bytes no matter what it contains:
+heredoc delimiter disables all of that, so the content reaches jq as inert
+bytes.
+
+What quoting does **not** decide is where the body ends. A body line equal to
+the delimiter terminates the heredoc and the lines after it are parsed as
+commands — `{subject}` is single-line and so cannot reach that, but
+`{parties_one_per_line}` can. Both keep their heredocs on **provenance**: the
+subject and the attendee list are typed or dictated by the user in this
+session, so a party named `PARTIES_EOF` on a line of its own is the user
+attacking themselves. Anything assembled from outside the session — a pasted
+agenda, an invite body, a transcript — is not cleared by that argument and
+goes to a file written by the `Write` tool instead
+(`${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md`, or
+`~/.claude/shared/kb-write-pattern.md` for local/dev copies):
 
 ```bash
 # A wrong or missing substitution must fail here, not write next to `/`.

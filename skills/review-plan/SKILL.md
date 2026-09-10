@@ -79,42 +79,81 @@ The user's response via the text input becomes `PLAN_TEXT`. If they enter nothin
 1. `SECURITY_OPT_IN=1` (user passed `--security`)
 2. `PLAN_TEXT` matches security heuristic — check with grep, case-insensitive, for any of: `auth`, `authn`, `authz`, `authentic`, `authoriz`, `password`, `credential`, `token`, `secret`, `permission`, `role`, `session`, `cookie`, `encrypt`, `decrypt`, `PII`, `sensitive`, `personal data`, `payment`, `card number`, `social security`, `SSN`
 
-Both inputs are derived inside the block that uses them. Nothing here is
-carried from an earlier Bash call, because nothing survives one.
+Neither value goes on a command line: free text containing a quote or `$( )`
+would close the argument and run. Both go to a file and are grepped as files.
+
+**Neither value goes through a heredoc either.** A quoted delimiter disables
+every expansion inside the body, which is what these two writes used to rely
+on. It does not decide where the body *ends* — the body does. A plan line that
+was exactly `REVIEW_PLAN_TEXT_EOF` closed the heredoc there, and every line
+after it was handed to bash as source. Quoting is no defence against that: the
+terminator is matched before the content is interpreted at all. The banner
+above says the plan may be pasted from a ticket, a chat or a third party, and
+a plan *about this skill* would carry the delimiter by accident.
+
+An unguessable delimiter narrows that window without closing it — a model is
+not a random source, and one plan can carry twenty candidate delimiter lines
+for free. The `Write` tool closes the class instead: no shell parses the
+content on the way in, so there is no delimiter to collide with and nothing to
+quote. This is the rule in
+[`kb-write-pattern.md`](../../shared/kb-write-pattern.md).
+
+**Call 1 — prepare the directory, before any `Write`:**
 
 ```bash
-# $ARGUMENTS is free text the user typed, so it does NOT go on a command line —
-# not even to be inspected. `case "$ARGUMENTS" in` would put it there, and
-# substituting a value in order to CHECK it is the same defect as using it (see
-# shared/kb-write-pattern.md). It goes to a file and is grepped as one.
 umask 077
-mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
-set -C   # refuse to write through a pre-planted symlink
-cat > "$HOME/.claude/tmp/review-plan-args.$$.txt" <<'REVIEW_PLAN_ARGS_EOF' || exit 1
-$ARGUMENTS
-REVIEW_PLAN_ARGS_EOF
-if grep -qF -- '--security' "$HOME/.claude/tmp/review-plan-args.$$.txt"; then
+mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp" || exit 1
+# Before the Write, not after: `Write` follows a symlink already sitting at the
+# path, so a stale file or a planted link has to go first. `set -C` cannot help
+# here — the write is not a shell redirection any more.
+rm -f "$HOME/.claude/tmp/review-plan-args.txt" "$HOME/.claude/tmp/review-plan-text.txt"
+```
+
+The `chmod` is not redundant with `-m 700`: the mode argument applies only to a
+directory `mkdir` actually creates, so an existing `~/.claude/tmp` at 755 keeps
+its mode and leaves the plan world-readable. Neither name carries `$$` — the
+PID differs in every Bash tool call, so a name built here would not be the name
+Call 2 opens.
+
+**Then `Write` each value to its own file** — the exact value and nothing else.
+`Write` does not expand `$HOME`, so pass resolved absolute paths:
+
+```text
+Write → $HOME/.claude/tmp/review-plan-args.txt   (the raw arguments verbatim, or the single line --none-- when there were none)
+Write → $HOME/.claude/tmp/review-plan-text.txt   (PLAN_TEXT verbatim)
+```
+
+`--none--` rather than an empty file, so the guard in Call 2 can tell "no
+arguments were passed" from "the `Write` never happened". It is a literal this
+skill chooses; it is never anything the user typed.
+
+**Call 2 — decide the scope:**
+
+```bash
+# Both reads are guarded. The heredocs could not fail this way — the values
+# were inline, so they were always there — so these guards are what close the
+# regression the change would otherwise introduce: a skipped or failed `Write`
+# would leave both greps reading nothing and silently drop security-auditor.
+ARGS_FILE="$HOME/.claude/tmp/review-plan-args.txt"
+TEXT_FILE="$HOME/.claude/tmp/review-plan-text.txt"
+[ -s "$ARGS_FILE" ] || { echo "ERROR: arguments file missing or empty at $ARGS_FILE" >&2; exit 1; }
+[ -s "$TEXT_FILE" ] || { echo "ERROR: plan text file missing or empty at $TEXT_FILE" >&2; exit 1; }
+
+# The flag is still decided by grep on a FILE, never by substituting the raw
+# arguments into a `case`: substituting a value in order to CHECK it is the
+# same defect as using it (see shared/kb-write-pattern.md).
+if grep -qF -- '--security' "$ARGS_FILE"; then
   SECURITY_OPT_IN=1
 else
   SECURITY_OPT_IN=0
 fi
-rm -f "$HOME/.claude/tmp/review-plan-args.$$.txt"
 
-# The plan is free text the user typed, so it never goes on a command line: a
-# value containing a quote or $( ) would close the argument and run. It is
-# written through a QUOTED heredoc — which disables every expansion inside it —
-# and grepped as a file.
-cat > "$HOME/.claude/tmp/review-plan-text.$$.txt" <<'REVIEW_PLAN_TEXT_EOF' || exit 1
-{PLAN_TEXT}
-REVIEW_PLAN_TEXT_EOF
-set +C
-
-if [ "$SECURITY_OPT_IN" = "1" ] || grep -qiE "auth(n|z|entic|oriz)|password|credential|token|secret|permission|role|session|cookie|encrypt|decrypt|pii|sensitive|personal data|payment|card number|social security|ssn" "$HOME/.claude/tmp/review-plan-text.$$.txt"; then
+if [ "$SECURITY_OPT_IN" = "1" ] || grep -qiE "auth(n|z|entic|oriz)|password|credential|token|secret|permission|role|session|cookie|encrypt|decrypt|pii|sensitive|personal data|payment|card number|social security|ssn" "$TEXT_FILE"; then
   INCLUDE_SECURITY=1
 else
   INCLUDE_SECURITY=0
 fi
-rm -f "$HOME/.claude/tmp/review-plan-text.$$.txt"
+rm -f "$ARGS_FILE" "$TEXT_FILE"
 echo "INCLUDE_SECURITY=$INCLUDE_SECURITY"
 ```
 
@@ -432,10 +471,19 @@ would close the argument and run the rest, and one containing `$( )` or
 backticks would be executed outright. The delimiter is QUOTED, which is what
 stops the body being expanded as it is written.
 
+**This one keeps its heredoc, deliberately, and Step 2's two did not.** The
+difference is the body, not the provenance: a *heading or first line* is
+SINGLE-LINE by construction. Terminating a heredoc early needs a body line
+equal to the delimiter followed by more lines to run, and a one-line body has
+no line after it — the worst case is an empty slug and a
+`review-plan-.md` path, not execution. That is a stronger guarantee than
+provenance, and it is the same reasoning `/update-context` records for its own
+single-line bindings. Step 2's plan text is a whole document and had no such
+bound, which is why it moved to the `Write` tool.
+
 ```bash
-# Same hardening as the two temp writes above, for the same reasons: the name
-# carries the PID so a second session in this worktree cannot overwrite it
-# between the write and the read, noclobber refuses to follow a pre-planted
+# The name carries the PID so a second session in this worktree cannot overwrite
+# it between the write and the read, noclobber refuses to follow a pre-planted
 # symlink, and the write ABORTS if it fails — with noclobber a failed write
 # leaves whatever was already there, and reading it anyway would turn a
 # refused write into a silent read of someone else's content.

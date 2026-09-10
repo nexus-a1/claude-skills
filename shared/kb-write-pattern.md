@@ -227,6 +227,20 @@ Leaving it unquoted reintroduces exactly what the heredoc was for.
 the content that is exactly the delimiter terminates the heredoc, and every
 line after it is parsed as commands. That match happens before any
 interpretation of the content, so quoting is no defence against it at all.
+The match is against the WHOLE line, byte for byte: a delimiter with a leading
+or trailing space, a trailing character, or (under a plain `<<`) a leading tab
+does **not** terminate. Do not read that as safety — `<<-` strips leading tabs
+before comparing, and the exact-line case is the one an attacker writes.
+
+**A SINGLE-LINE body is the one shape this cannot reach, and it is a stronger
+guarantee than provenance.** Terminating early needs a body line equal to the
+delimiter *and* at least one line after it to run; a value that cannot contain
+a newline has neither. A work-directory name, a slug, a branch, a ticket key,
+a single-segment path, a heading: for these a quoted heredoc stays correct
+whoever wrote the value, and the worst case is an empty variable rather than
+execution. State which of the two reasons clears a site — provenance or line
+count — because they fail differently and a reader cannot tell them apart from
+the code.
 
 **When the body is not typed by the user in this session, do not use a heredoc
 at all — write the file with the `Write` tool.** A note synthesised from a
