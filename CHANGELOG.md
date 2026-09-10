@@ -1,5 +1,63 @@
 # Changelog
 
+## [1.41.0] - 2026-09-10
+
+One new command. Nothing else in the plugin changed.
+
+## `/standup` — where do we stand right now (CL-117)
+
+A few lines you read in about ten seconds: what landed, what is in flight, what is waiting on you, what is next. It checks git, open pull requests and work sessions, and it keeps what it verified visibly apart from what it did not.
+
+**Its defining property is not brevity — it is honesty.** A status summary assembled from conversation memory states stale facts with full confidence, and a confident stale summary is worse than none because it gets acted on. That is the failure this command is built against, not "the answer was too long".
+
+### Silence is never a valid answer
+
+Every source emits one of three things: data, a `none` record, or a `skipped` record carrying a reason. **A source with no record at all is a collector bug, not "nothing to report."** That is what makes "say what you could not check" hold by construction rather than by the model remembering to mention it.
+
+Three distinctions are kept apart, because merging any of them produces a wrong answer that reads exactly like a right one:
+
+| Distinction | Why merging them is dangerous |
+|---|---|
+| `none` vs `skipped` | "No open PRs" and "I could not check" lead to opposite decisions |
+| `upstream=none` vs `ahead=0 behind=0` | Reporting a never-pushed branch as in-sync answers "is my work pushed" with a confident wrong yes |
+| `truncated` vs complete | A capped list presented whole is a partial view nobody knows is partial |
+
+It degrades rather than fails: no git, no `gh`, no work directory each produce a `skipped` record with its reason, and the remaining sources still report.
+
+It also fixes a gap it could have copied — every other skill treats `git rev-parse --abbrev-ref HEAD` on a detached HEAD as a branch literally named `HEAD`. This one says detached.
+
+### Read-only
+
+No commit, no lifecycle transition, no write. The collector never runs `git fetch` either: that mutates remote-tracking refs and can hang on an unreachable remote.
+
+One honest footnote on that claim. The skill declares `Bash(source:*)`, which is **not** a read verb — it loads the plugin's own `resolve-config.sh` and `forged-marker-scan.sh`, as every skill here does. The read-only guarantee covers the git and gh surface. An earlier draft of the spec claimed "read verbs only"; that was an overstatement and it now says what is actually true.
+
+### Four defects caught before this shipped
+
+An adversarial review rejected the first version. All four were reproduced before being fixed, and each now has a mutant guarding it.
+
+1. **Work-session records could be forged.** Session `id`, `phase` and `status` were emitted raw, so a `state.json` whose `.status` contained a newline could inject a fabricated line — `pr number=999 state=MERGED checks=passing title=all shipped, nothing to do` — into the middle of the output. Around seventeen skills write those files and none validates at write time. Every field now goes through a character allowlist.
+
+2. **The content boundary could be closed from inside.** The skill wraps untrusted text (PR titles, commit subjects, branch names) in a marker; a PR title containing a literal `UNTRUSTED-CONTENT:END` pushes the rest of the output outside the fence. Six other skills already scan with the shared scanner before emitting a marker. This was the seventh wrapping site and the only one that did not. It now scans, and it distinguishes clean / marker-found / scan-failed rather than folding a broken check into a pass.
+
+3. **A failing PR was reported as pending, forever.** GitHub's `statusCheckRollup` is a union: a `CheckRun` carries `.conclusion`, a `StatusContext` carries `.state` and no conclusion at all. Branching on `.conclusion` alone reported every commit-status CI — most non-Actions setups — as pending. Precisely the confident stale fact this command exists to prevent.
+
+4. **A hardcoded absolute path under one developer's home**, pinned to a specific plugin version, shipping inside the plugin. It resolves through `${CLAUDE_PLUGIN_ROOT}` now, like its ten peers.
+
+Also from that review: the tool declaration used an unprecedented `Bash(bash *path*)` glob. The A6 validator reduces that form to the single word `bash`, so **A6 passing was no evidence the pattern was right** — it would have matched nothing and prompted on every run.
+
+## What `/standup` does not do
+
+Stated plainly, because a status command that quietly omits a source is the thing this release is about.
+
+- **No tracker check.** Ticket status is not verified. The incident that motivated this ticket was a stale *board* — six already-shipped tickets still showing open — and **`/standup` will not catch that case.** Deliberate scope decision, recorded as a known trade rather than discovered later.
+- **No release check.** "Is a release due" is not answered.
+- **No work-session lifecycle depth.** `/work-status --brief` owns that; `/standup` reports sessions at a glance and points there.
+
+## Upgrade notes
+
+Nothing changes for existing commands. `/standup` is new and read-only; there is no configuration to set and no default that moved.
+
 ## [1.40.0] - 2026-09-10
 
 One change to the plugin, and it removes a habit rather than a bug.
