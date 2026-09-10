@@ -1,5 +1,61 @@
 # Changelog
 
+## [1.40.0] - 2026-09-10
+
+One change to the plugin, and it removes a habit rather than a bug.
+
+## The credential scanner no longer flags test fixtures (CL-114)
+
+`tests/hooks/*.test` files hold invented credential-shaped strings — AKIA, GitHub PAT, Anthropic, Stripe, PEM, JWT — because they *are* the corpus the patterns are tested against. The scanner reads whole staged files, so editing a comment in one of them tripped the gate on its own fixtures and required `CREDENTIAL_SCAN_BYPASS=1`.
+
+The nuisance was not the problem. **A gate overridden as routine stops being read**, and the next bypass on a commit with a real finding is muscle memory.
+
+### The marker
+
+A line under a `tests/` directory that carries
+
+```
+nexus-credential-scan:fixture
+```
+
+is not reported. Two properties, both deliberate:
+
+- **Per line, not per path.** A `tests/**` allowlist would make every line of every test file a place a real key could sit unreported. Marking the exact line keeps each exemption visible in any diff that adds one.
+- **Only under `tests/`, measured relative to the repository root.** The marker is inert anywhere else — a `.env`, a plugin source file — and inert in a file that is not inside a repository at all.
+
+A real credential in a test file is still reported unless someone marks that exact line. That residual is the accepted cost of this direction.
+
+### If you use it in your own project
+
+Append it as a trailing comment on the line holding the fixture:
+
+```bash
+run_hook 'echo "AKIA................"'  # nexus-credential-scan:fixture
+```
+
+**If you use gitleaks** (`gitleaks` on PATH plus a repo `.gitleaks.toml`), the scanner takes that path instead and gitleaks does not know this marker. It now prints a note when a marked file goes that way, so a silently-ignored marker cannot be mistaken for a covered line — add a `.gitleaks.toml` allowlist entry there instead.
+
+### Caught before release
+
+An earlier version of this judged the **absolute** path, which made every file in a repository eligible for anyone whose checkout sat under a directory named `tests` (`~/tests/myrepo/`, a CI workspace for a repo named `tests`). That is the repository-wide allowlist the design was chosen over. Found by a second-opinion review on a different model, reproduced, and fixed before merge; a mutant now guards against its return.
+
+## Known and not fixed (CL-116)
+
+Two pre-existing ways the scanner can report **clean** on a file it never examined, both filed and neither addressed here:
+
+- a file it cannot **read** is reported clean, because the grep's status is flattened by `|| true`
+- `grep -I` silently skips any file containing a NUL byte
+
+Verified that this release makes neither worse. If you rely on this hook, know that its silence does not yet mean "looked and found nothing" in those two cases.
+
+## Also in this release
+
+`.claude/settings.json`'s explanation of the CL-109 hook removal carried a cost model that measurement disproved — it claimed a ~20-25 ms per-hook floor and concluded an early-exit fix would recover only a third. Process spawn is 3 ms; the rest is the jq parse an early exit skips, so that option would have recovered ~90%. The file now says so explicitly rather than quietly swapping the number. Repository-only; not shipped in the plugin.
+
+## Upgrade notes
+
+Nothing changes unless you add markers. No defaults moved, no behaviour changed for an unmarked tree.
+
 ## [1.39.0] - 2026-09-10
 
 Seven tickets, and the theme is framework performance: two hooks that ran on every single tool call now cost what they should.
