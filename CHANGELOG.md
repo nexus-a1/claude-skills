@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.42.0] - 2026-09-18
+
+## `/explain` — a plain-English answer about one thing
+
+One new skill. Give it a file, a function, an error message, a config key, a ticket key or a plain question, and it says what the thing is and how it works in the words a person would use out loud, then stops.
+
+- **Fixed shape, hard cap.** Answer, then how it works, then what is worth knowing, then the `file:line` places it read. 200 words, or 500 with `--more`. The cap is the point of the command, not a nicety.
+- **Sourced, or not said.** Every claim about the repository names where it came from; anything it could not read is listed as `Not checked: …` rather than guessed from a name.
+- **Plain words by rule.** Named filler list, plain-word swaps, jargon defined in eight words or fewer.
+- **It declines work that is not its own.** One line pointing at `/troubleshoot`, `/pr-review`, `/create-requirements`, `/load-context` or `/standup` instead of half-doing it.
+- **Read-only in behaviour:** no edits, no commits, no state files. The one command it runs is the shared Jira reader, and the skill says plainly that this bound is its own text rather than its permission.
+
+Three review rounds shaped the argument-classification table that decides what you gave it: pasted errors that mention a file are read as errors rather than as missing paths, lowercase compiler output (`error:`, `panic:`, `fatal:`) counts, and a dotted name like `java.lang.NullPointerException` is not mistaken for a file. `tests/explain/01-skill-contract.test` (14 cases) pins the table, its order, the output contract, the word cap, the sourcing rules and the tool grant.
+
+Skill count is now 37. No behaviour changes to any existing skill, agent, hook or shared library.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+https://claude.ai/code/session_01CyztULEbR2rftoZEB6B71C
+
 ## [1.41.0] - 2026-09-10
 
 One new command. Nothing else in the plugin changed.
