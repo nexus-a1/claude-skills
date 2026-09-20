@@ -576,13 +576,13 @@ TITLE="$(cat "<MDIR printed above>/.doc-title")"
 # Only exit 3 (pandoc absent) means "fall back to a caller-authored body".
 # Exit 2 (usage / missing input file) is a real error — surface it rather
 # than mislabel it as PANDOC_ABSENT and silently fall back over a genuine bug.
-render_doc() {  # $1=title  $2=out  $3=md  $4=label
-  if bash "$RENDER" --title "$1" --out "$2" --md "$3"; then
-    echo "HTML_OK=$4"
+render_doc() {  # positional parameters: title, out, md, label
+  if bash "$RENDER" --title "${1}" --out "${2}" --md "${3}"; then
+    echo "HTML_OK=${4}"
   elif [ $? -eq 3 ]; then
-    echo "PANDOC_ABSENT_$4"
+    echo "PANDOC_ABSENT_${4}"
   else
-    echo "RENDER_ERROR_$4 — bad inputs ($3); fix, do NOT fall back" >&2
+    echo "RENDER_ERROR_${4} — bad inputs (${3}); fix, do NOT fall back" >&2
   fi
 }
 render_doc "$TITLE" "<MDIR printed above>/summary.html" "<MDIR printed above>/summary.md" summary

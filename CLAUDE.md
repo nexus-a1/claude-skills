@@ -278,6 +278,7 @@ storage:
     meetings:          { location: local, subdir: meetings }
     work:              { location: local, subdir: work }
     refactoring:       { location: local, subdir: work/refactoring-sessions }
+    tasks:             { location: local, subdir: tasks }
 
 requirements:
   auto_search: true
@@ -336,6 +337,7 @@ All skills that use multiple agents support configurable execution mode (`"subag
 | `brainstorms` | `local` | `brainstorm` | `/brainstorm` |
 | `meetings` | `local` | `meetings` | `/meeting` |
 | `refactoring` | `local` | `work/refactoring-sessions` | `refactorer` agent |
+| `tasks` | `local` | `tasks` | `/todo`, `/todo-work`, `/rebuild-index tasks` — local only; a git-typed location is refused |
 | `proposals` | `local` | `proposals` | `/create-proposal` |
 | `requirements` | `local` | `requirements` | `/archive-requirements`, `/search-requirements`, `archivist` agent |
 | `product-knowledge` | `local` | `.` | `product-expert` agent |

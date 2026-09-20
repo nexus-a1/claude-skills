@@ -112,6 +112,9 @@ storage:
   #                       /create-proposal, /brainstorm promote, and any skill
   #                       that keeps a resumable session (16 components total)
   #   refactoring       — refactorer agent
+  #   tasks             — /todo, /todo-work, /rebuild-index tasks. Local only: a
+  #                       git-typed location is refused, and so is a path that is,
+  #                       contains or equals another artifact's directory
   # ---------------------------------------------------------------------------
   artifacts:
     requirements:      { location: team-knowledge, subdir: requirements }
@@ -121,6 +124,7 @@ storage:
     meetings:          { location: local, subdir: meetings }
     work:              { location: local, subdir: work }
     refactoring:       { location: local, subdir: work/refactoring-sessions }
+    tasks:             { location: local, subdir: tasks }
 
 
 # -----------------------------------------------------------------------------

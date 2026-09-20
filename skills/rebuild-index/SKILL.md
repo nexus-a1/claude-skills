@@ -3,7 +3,7 @@ name: rebuild-index
 model: claude-haiku-4-5
 category: project-setup
 description: Rebuild manifest.json for any artifact storage type. Scans directories and regenerates from scratch.
-argument-hint: <artifact-type|all>
+argument-hint: <work|brainstorms|proposals|refactoring|product-knowledge|requirements|tasks|all>
 userInvocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep, Task, AskUserQuestion
 ---
@@ -21,6 +21,7 @@ Rebuild `manifest.json` for one or all artifact storage types by scanning direct
 /rebuild-index refactoring       # Rebuild refactoring manifest
 /rebuild-index product-knowledge # Rebuild product knowledge manifest
 /rebuild-index requirements      # Delegates to /rebuild-requirements-index
+/rebuild-index tasks             # Rebuild the task store index (via tasks.sh)
 /rebuild-index all               # Rebuild all manifests
 ```
 
@@ -70,7 +71,7 @@ IFS='|' read -r PRODUCT_DIR PROD_TYPE      <<< "$(resolve_artifact_typed product
 
 Parse `$ARGUMENTS` to determine which artifact type(s) to rebuild.
 
-**Valid arguments:** `work`, `brainstorms`, `proposals`, `refactoring`, `product-knowledge`, `requirements`, `all`
+**Valid arguments:** `work`, `brainstorms`, `proposals`, `refactoring`, `product-knowledge`, `requirements`, `tasks`, `all`
 
 **If no argument or invalid argument:**
 ```
@@ -83,6 +84,7 @@ Usage:
   /rebuild-index refactoring
   /rebuild-index product-knowledge
   /rebuild-index requirements
+  /rebuild-index tasks
   /rebuild-index all
 
 See `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for manifest schema details.
@@ -129,6 +131,7 @@ For `all`, run each artifact type sequentially (or report results for each). For
 **Special cases:**
 - `requirements` → Delegate to `/rebuild-requirements-index` skill
 - `product-knowledge` → Delegate to `product-expert` agent
+- `tasks` → Delegate to `shared/tasks/tasks.sh` (see Rebuild: Tasks). Step 2's git sync and Step 3.5's commit do not apply: the task store is local only.
 
 ---
 
@@ -311,7 +314,7 @@ if [[ "$PROD_TYPE" == "git" && -d "$PRODUCT_DIR" ]]; then
       else
         default_branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
         [ -z "$default_branch" ] && default_branch=$(timeout 10 git ls-remote --symref origin HEAD 2>/dev/null \
-          | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2; exit}')
+          | awk '/^ref:/ {sub("refs/heads/", "", $(2)); print $(2); exit}')
         default_branch="${default_branch:-master}"
         git commit -m "Rebuild product-knowledge manifest"
         NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1 git push origin -- "$default_branch"
@@ -337,6 +340,27 @@ Delegating to /rebuild-requirements-index...
 ```
 
 Trigger the `/rebuild-requirements-index` skill.
+
+---
+
+## Rebuild: Tasks
+
+The task store has one owner, `shared/tasks/tasks.sh`, and this target only asks
+it to rebuild. Do **not** resolve the tasks path here, scan its files, back up or
+write its `manifest.json`: the script resolves the store with its own write
+gating — it refuses a git-backed, overlapping or broken `tasks` entry and writes
+nothing — and applies archive-wins, which a second scan here could disagree with.
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op rebuild
+```
+
+- Exit `0`: report `open` (tasks in the rebuilt index) and `repaired` (leftover
+  open copies of tasks that were already archived, now removed). `note: "no task
+  store yet"` means there was nothing to rebuild and nothing was created.
+- Exit `20`: the store's location was refused. Show the message unchanged — it
+  names the reason — and report the target as `Refused`, not rebuilt.
+- Exit `30`: show the message and report `Failed`.
 
 ---
 
@@ -400,7 +424,7 @@ for pair in "${_pairs[@]}"; do
         else
           default_branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
           [ -z "$default_branch" ] && default_branch=$(timeout 10 git ls-remote --symref origin HEAD 2>/dev/null \
-            | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2; exit}')
+            | awk '/^ref:/ {sub("refs/heads/", "", $(2)); print $(2); exit}')
           default_branch="${default_branch:-master}"
           git commit -m "Rebuild ${_artifact} manifest"
           NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1 git push origin -- "$default_branch"
@@ -470,8 +494,9 @@ Proposals             2   Rebuilt
 Refactoring           0   Empty (no sessions)
 Product Knowledge     8   Rebuilt (via agent)
 Requirements          5   Rebuilt (via /rebuild-requirements-index)
+Tasks                 4   Rebuilt (via tasks.sh)
 
-Total: 19 items indexed across 6 artifact types.
+Total: 23 items indexed across 7 artifact types.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```

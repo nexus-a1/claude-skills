@@ -477,6 +477,7 @@ ${ARTIFACTS_YAML}          # shared artifacts now carry location: team-knowledge
     refactoring:       { location: local, subdir: work/refactoring-sessions }
     requirements:      { location: local, subdir: requirements }
     product-knowledge: { location: local, subdir: . }
+    tasks:             { location: local, subdir: tasks }
 ```
 
 **Add requirements behavior flags:**
@@ -712,20 +713,19 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
    → Resolved path IS, or CONTAINS, the directory holding configuration.yml →
      FAIL ("artifact '{name}' resolves to {path}, which is the configuration
      directory — an agent told to read a knowledge base there gets
-     settings.json, session-state/ and worktrees/ instead"). Compare with the
-     trailing-slash form so the equality case falls out of the same test as the
-     ancestor case — and strip the trailing slash into its OWN variable first:
+     settings.json, session-state/ and worktrees/ instead"). Do not write the
+     comparison yourself. Source the shared check in the same Bash call that
+     asks it, and use its status:
 
-       path_base="${path%/}"
-       case "${config_dir}/" in "$path_base"/*) … ;; esac
+       source "${CLAUDE_PLUGIN_ROOT}/shared/artifact-containment.sh"
+       nexus_path_holds_config_dir "$path" "$CONFIG"   # 0 = is or contains it
 
-     Both halves are load-bearing, and this is the same code as
-     `_gate_optional_agent` in /create-requirements — keep them identical.
-     Without the strip, a resolved path of "/" builds the pattern "//*", which
-     matches no real directory, so the check never fires for the maximal case.
-     And the strip must not be written inline as `"${path%/}"/*`: bash reads the
-     `/` of the suffix-removal operator as part of the pattern and the branch
-     silently never matches.
+     (`~/.claude/shared/artifact-containment.sh` for local/dev copies.) It is the
+     same function /create-requirements' optional-agent gate uses, so the two
+     cannot disagree. The comparison has been written wrong twice before — a
+     resolved path of "/" slipped past an unstripped trailing slash, and an
+     inline `"${path%/}"/*` pattern silently never matched — and the helper's
+     header records both.
    → This is a FAIL and the missing-directory case is only a WARN, deliberately.
      A path that does not exist yet is a project that has not created it;
      a path that swallows the configuration directory is always wrong and puts

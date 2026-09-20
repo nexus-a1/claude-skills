@@ -626,11 +626,11 @@ fi
 # may show only the LAST job's noise while an earlier job hides the real
 # stack trace. In that case, walk each failed job individually rather
 # than trusting the unified tail.
-JOB_COUNT=$(awk -F'\t' 'NF>1 {print $1}' "$LOG_FILE" | sort -u | wc -l)
+JOB_COUNT=$(awk -F'\t' 'NF>1 {print $(1)}' "$LOG_FILE" | sort -u | wc -l)
 if [ "$JOB_COUNT" -gt 1 ]; then
   echo "WARN multi-job failure ($JOB_COUNT failed jobs in $LOG_FILE) — tail-200 may not capture earlier job's error"
   echo "     Inspect each job's segment via Read with offset, or re-fetch per-job logs:"
-  awk -F'\t' 'NF>1 {print $1}' "$LOG_FILE" | sort -u
+  awk -F'\t' 'NF>1 {print $(1)}' "$LOG_FILE" | sort -u
 fi
 ```
 

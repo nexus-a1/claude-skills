@@ -373,7 +373,7 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 1
 > Call 3 — push must lead, on ONE line, so the guard engages and logs the bypass WARNs.
 
 ```bash
-NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1 git push origin -- "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' | grep . || timeout 10 git ls-remote --symref origin HEAD 2>/dev/null | awk '/^ref:/{sub("refs/heads/","",$2);print $2;exit}' | grep . || echo master)"
+NEXUS_KB_WRITE=1 SECURITY_AUDITOR_BYPASS=1 git push origin -- "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' | grep . || timeout 10 git ls-remote --symref origin HEAD 2>/dev/null | awk '/^ref:/{sub("refs/heads/","",$(2));print $(2);exit}' | grep . || echo master)"
 ```
 
 ### Step 9: Confirm

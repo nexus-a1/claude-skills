@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.43.0] - 2026-09-20
+
+## Two fixes for text that reaches a place where it is not treated as text
+
+### Positional placeholders in skill text (#416)
+
+Before the model reads a skill, Claude Code replaces `$1`, `$2`, … in the skill text with words of the invocation's arguments. Six shipped skills used positional parameters in fenced shell or awk, so any run given enough words silently received a word of the user's request in their place — and a no-argument test of the same skill passes, which is why it stayed quiet.
+
+- `add-product-knowledge`, `create-requirements`, `meeting`, `monitor-pr`, `rebuild-index` and `rebuild-requirements-index` now write `${N}` in shell and `$(N)` in awk — forms the interpreter reads identically and the runtime never touches.
+- A new validator check, **G9**, fails any bare dollar-digit anywhere in a skill file, so it cannot come back.
+- ADR-016 records the measured runtime rule, the rejected options and the decision.
+
+### `/todo` and `/todo-work` on a JSON task store (#417)
+
+`TODO.md` is replaced by a task store that resolves through `.claude/configuration.yml` like every other artifact (`storage.artifacts.tasks`, local only). One shared library, `shared/tasks/tasks.sh`, owns every read and write.
+
+- `/todo` — `add`, `list`, `show`, `done`, and a one-time, re-runnable `migrate` that imports an existing `TODO.md` after backing it up and never writes to it.
+- `/todo-work` — pick a pending task, mark it in progress, hand off to `/review-plan`, `/create-requirements` or `/implement`. Task text reaches `/create-requirements` inside content-boundary markers, and a task whose text carries such a marker — or whose text could not be scanned — is not handed off at all.
+- `/create-requirements` links a promoted task both ways, or not at all: the session records the task first, the task is marked promoted second, and a failed write undoes the first.
+- `/rebuild-index tasks` rebuilds the store's index.
+- Task text never reaches a shell as an argument: it travels as files the Write tool puts in a private directory, read with `jq --rawfile`.
+
+The review panel on this change found nine issues before merge, all fixed: a marker scan that reported clean when it could not read the text, `**Status:**` lines inside a fenced example being taken as the entry's real status, and seven smaller ones.
+
+Skill count is unchanged at 37. `TODO.md` files are not touched by the upgrade; run `/todo migrate` when you want them imported.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+https://claude.ai/code/session_01CyztULEbR2rftoZEB6B71C
+
 ## [1.42.0] - 2026-09-18
 
 ## `/explain` — a plain-English answer about one thing

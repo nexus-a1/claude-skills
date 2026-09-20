@@ -169,6 +169,11 @@ _valid_location_name() {
 # on the reasoning that the advisory resolvers' exact output was depended on —
 # but the thing depending on it was a test asserting the bogus shape, and
 # a plausible-looking but empty path reaching a caller is the defect, not a contract.
+# The public spelling, for callers outside this file: tasks.sh asks it whether
+# a configured subdir names its location root. The underscore-prefixed name
+# below stays for this file's own resolvers.
+normalize_artifact_path() { _normalize_artifact_path "$@"; }
+
 _normalize_artifact_path() {
   local p="$1" prev=""
   while [[ "$p" != "$prev" ]]; do

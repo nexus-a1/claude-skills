@@ -22,7 +22,7 @@ Every `manifest.json` shares this outer structure:
 |-------|------|-------------|
 | `version` | string | Schema version. Currently `"1.0"`. |
 | `last_updated` | ISO-8601 | Timestamp of the last write to this manifest. |
-| `artifact_type` | string | One of: `work`, `brainstorms`, `proposals`, `refactoring`, `product-knowledge`, `meetings`. |
+| `artifact_type` | string | One of: `work`, `brainstorms`, `proposals`, `refactoring`, `product-knowledge`, `meetings`, `tasks`. |
 | `total_items` | integer | Count of items in the `items` array. |
 | `items` | array | Artifact-specific item objects (see below). |
 
@@ -171,20 +171,83 @@ than translating to this schema's snake_case convention elsewhere —
 translating would desync the manifest from the meeting's own `state.json`,
 which is the source of truth.
 
-**Written once, at wrap only** — not at creation, unlike every other
-artifact type in this file. Because of that, `wrapped` is the only value
-that ever actually appears here: an in-progress meeting has no `summary.md`/
-`changes.md` yet (what `/create-requirements --from-meeting` seeds from), so
-it isn't cataloged — and isn't a valid candidate for that flow — until wrap
-produces them. (The meeting's own `state.json` does pass through an
-`in-progress` status before that, but this manifest entry doesn't exist
-yet at that point to carry it.)
+**Created at wrap** — not at creation, unlike every other artifact type in
+this file. An in-progress meeting has no `summary.md`/`changes.md` yet (what
+`/create-requirements --from-meeting` seeds from), so it isn't cataloged — and
+isn't a valid candidate for that flow — until wrap produces them. (The
+meeting's own `state.json` does pass through an `in-progress` status before
+that, but this manifest entry doesn't exist yet at that point to carry it.)
+After wrap the entry holds `wrapped`, and `/create-requirements --from-meeting`
+later updates it to `promoted` and sets `promoted_to` — so both values appear.
 
 **Deliberately excluded**: `probed`/`findings` arrays and other
 session-internal detail. This manifest is a catalog for picking a meeting
 to seed from, not a mirror of the meeting's full state — mirrors how the
 Brainstorms schema above carries `alternatives_count` (a summary int)
 rather than the full alternatives array.
+
+### Tasks (`{TASKS_DIR}/manifest.json`)
+
+The task store behind `/todo` and `/todo-work`. **Every read and write goes
+through `shared/tasks/tasks.sh`** — no skill scans these files or edits them
+with jq itself, because the status rules and the write order below live in
+that one script.
+
+Layout under `{TASKS_DIR}`:
+
+| Path | Role |
+|------|------|
+| `manifest.json` | Live index of open tasks — a **rebuildable cache** |
+| `items/{id}.json` | One file per open task — the source of truth |
+| `archive/{id}.json` | Done tasks, outside the index |
+| `migration/TODO.md.bak` | The one backup `/todo migrate` takes, never overwritten |
+
+Index item:
+
+```json
+{
+  "id": "20260912-203500-a1b2",
+  "title": "Replace TODO.md with a JSON task store",
+  "status": "proposed|not_started|needs_discussion|in_progress|promoted",
+  "priority": "emergency|high|medium|low|unknown",
+  "category": "Improvement",
+  "created_at": "2026-09-12T20:35:00Z",
+  "updated_at": "2026-09-12T20:35:00Z",
+  "promoted_to": null,
+  "path": "items/20260912-203500-a1b2.json"
+}
+```
+
+Detail file (`items/{id}.json`, and `archive/{id}.json` with `status: "done"`)
+carries the index fields plus `scope`, `description`, `related`, `ticket_key`
+(plain text or `null` — nothing syncs with a tracker) and `migrated_from`
+(`{"source", "line", "fingerprint"}` or `null`).
+
+Unique key: `id`, generated as `YYYYMMDD-HHMMSS-xxxx` (hex), never derived from
+the title, so two tasks with the same title never collide. Required: `id`,
+`title`, `status`, `priority`, `created_at`, `updated_at`, `path`.
+
+Statuses:
+- **pending** — `proposed`, `not_started`, `needs_discussion`; the only ones `/todo-work` offers for pickup
+- `in_progress` — handed off by `/todo-work`
+- `promoted` — became a requirements session; `promoted_to` holds its identifier
+- `done` — archive only; never in the index
+
+Allowed transitions: pending → `in_progress` → `promoted`; any open status →
+`done`. A `promoted` task only moves to `done`, and keeps its `promoted_to`.
+Nothing else is allowed.
+
+Reverse link: the requirements session's `state.json` records
+`"task": {"promoted_from": "<id or null>"}`.
+
+**Archive wins.** A task is archived if `archive/{id}.json` is a regular file. Rebuild
+lists `items/` minus any id present in `archive/`, reports and removes such a
+leftover item file, and list reads apply the same rule to index entries — so an
+interrupted `/todo done` leaves exactly one copy.
+
+**Local only.** The `tasks` artifact is refused on a git-typed location, and
+refused when its resolved path is, contains or equals another artifact's
+directory, or is at or above the configuration directory.
 
 ## Update Operations
 
