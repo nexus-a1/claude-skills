@@ -56,12 +56,12 @@ outside it. Content may not carry the fence meant to contain it — the same rul
 skills in this plugin already apply, using this same shared scanner.
 
 ```bash
-NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
 if [ ! -f "$NEXUS_SHARED/standup/collect.sh" ]; then
   NEXUS_SHARED="$HOME/.claude/shared"
 fi
 if [ ! -f "$NEXUS_SHARED/standup/collect.sh" ]; then
-  echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2
+  echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2
   exit 1
 fi
 source "$NEXUS_SHARED/resolve-config.sh"

@@ -213,6 +213,6 @@ When running as part of a team (spawned with `team_name` parameter), you have ac
 - **Suggest tests** to test-writer: When you find a bug, send the specific test case that would catch it
 - **Respond to challenges** from quality-guard: When skeptic questions your finding, respond with concrete evidence (file path, line number, reproduction steps)
 - **Read teammate outputs**: Check if security-auditor or test-writer found related issues before finalizing your report
-- **Message size discipline**: Every SendMessage payload capped at **5 lines / ~80 words** (see `shared/principles.md` #8). Cite `file:line` for every finding reference. Do NOT paste full reports, full diffs, or full test output — write those to your role-scoped file and reference the path.
+- **Message size discipline**: Every SendMessage payload capped at **5 lines / ~80 words** (see `shared/principles.md` #8). Cite `file:line` for every finding reference. Do NOT paste full reports, full diffs, or full test output into messages to teammates. **Your final report** is the one exception: you have no Write tool, so send it in full to the lead only, and the lead saves it to your role-scoped file (see `shared/team-mode.md` Rule 2).
 
 When NOT in a team, operate independently as usual.

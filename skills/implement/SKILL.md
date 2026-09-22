@@ -1417,7 +1417,7 @@ Issue final verdict.
 
 **If `$QA_EXEC_MODE` = `"team"` (default):**
 
-Read `references/qa-team-mode.md` for team mode QA execution details (TeamCreate, task assignment, cross-pollination, shutdown). In team mode, the quality-guard joins as a teammate and challenges findings via SendMessage in real-time rather than in sequential steps.
+Read `references/qa-team-mode.md` for team mode QA execution details (team-start fallback, TeamCreate, task assignment, report-back, cross-pollination, collection, shutdown). In team mode, the quality-guard joins as a teammate and challenges findings via SendMessage in real-time rather than in sequential steps.
 
 **IMPORTANT**: Regardless of mode, the output of Phase 4.1 is the same — a set of QA findings categorized by severity, plus test files written, PLUS a skeptic validation report. Subsequent phases (4.2 onward) process these findings identically.
 
@@ -1554,6 +1554,8 @@ git commit -m "[TICKET-123] fix(review): address review feedback"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Quality Assurance Summary
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Mode: {team | team (partial: {roles}) | subagent | subagent (fallback: team start failed at {step})}   (classic path only)
 
 Tests:
   ✓ New tests written: {count}

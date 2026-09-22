@@ -161,14 +161,14 @@ When running as part of a team (spawned with `team_name` parameter), you have ac
   SendMessage(recipient="qa-reviewer", message="GATE: Line 45 of UserService.php — you said no issues but findById() returns ?User and line 45 dereferences without null check. Verify.")
   ```
 - **Receive evidence** from agents: Teammates respond with file paths, line numbers, and test output
-- **Issue verdict in real-time**: Once all gates are resolved (or max rounds reached), share your final verdict with all teammates
-- **Message size discipline**: Every SendMessage payload capped at **5 lines / ~80 words** (see `shared/principles.md` #8). The GATE example above is the target shape — one sentence per gate, `file:line` mandatory. Do NOT paste full findings reports or full diffs; challenge specific lines, not entire outputs.
+- **Issue verdict in real-time**: Once all gates are resolved (or max rounds reached), send your full final report and verdict to the lead, and at most a one-line verdict notice to teammates
+- **Message size discipline**: Every SendMessage payload capped at **5 lines / ~80 words** (see `shared/principles.md` #8). The GATE example above is the target shape — one sentence per gate, `file:line` mandatory. Do NOT paste full findings reports or full diffs into messages to teammates; challenge specific lines, not entire outputs. **Your final report** is the one exception: you have no Write tool, so send it in full to the lead only, and the lead saves it (see `shared/team-mode.md` Rule 2).
 
 **Team mode workflow:**
 1. Wait for working agents (code-reviewer, security-auditor, test-writer) to complete initial findings
 2. Read all findings and cross-reference against the actual codebase
 3. Send specific challenges to specific agents via SendMessage
 4. Receive and verify their responses
-5. Issue final verdict
+5. Issue final verdict — send the full report to the lead (Rule 2 above)
 
 When NOT in a team, operate in sequential report mode as described above.

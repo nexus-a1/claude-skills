@@ -31,9 +31,9 @@ Set up project-specific configuration that skills and agents use for storage loc
 **Every `bash` block below that calls `resolve_artifact` or an `artifact_*` function must start with these six lines.** Each block runs as a separate shell invocation — functions and variables do not carry over from an earlier block, so sourcing once at the top of the skill would leave every later block calling undefined functions:
 
 ```bash
-NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
 [ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
-[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
 source "$NEXUS_SHARED/resolve-config.sh"
 source "$NEXUS_SHARED/config/artifacts.sh"
 TEMPLATE=$(artifact_template_path) || TEMPLATE=""   # empty = degrade, never fail
@@ -54,9 +54,9 @@ If `$ARGUMENTS` contains "migrate":
 ### Step 1: Check Existing Configuration
 
 ```bash
-NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
 [ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
-[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
 source "$NEXUS_SHARED/resolve-config.sh"
 source "$NEXUS_SHARED/config/artifacts.sh"
 TEMPLATE=$(artifact_template_path) || TEMPLATE=""
@@ -107,12 +107,12 @@ If user selects "Validate", jump to **Step 9: Validate Configuration**.
 
 ### Step 2: Load Template
 
-Read the template, trying in order: `${CLAUDE_PLUGIN_ROOT}/templates/configuration.yml`, then `~/.claude/templates/configuration.yml` (local/dev copies).
+Read the template, trying in order: `${CLAUDE_PLUGIN_ROOT}/templates/configuration.yml`, then the `templates/configuration.yml` two directories above the shared library the preamble sourced (the installed plugin's own copy — `artifact_template_path` resolves it from the library's location, since the variable itself is not present in a Bash call), then `~/.claude/templates/configuration.yml` (local/dev copies).
 
-**If neither is found:** the template is optional — Step 6 builds the YAML from scratch regardless. Warn and continue:
+**If none is found:** the template is optional — Step 6 builds the YAML from scratch regardless. Warn and continue:
 
 ```
-Template not found (searched ${CLAUDE_PLUGIN_ROOT}/templates/configuration.yml and ~/.claude/templates/configuration.yml).
+Template not found (searched ${CLAUDE_PLUGIN_ROOT}/templates/configuration.yml, the templates/ beside the plugin's shared library, and ~/.claude/templates/configuration.yml).
 Continuing without a template — the configuration will be built from your answers below.
 ```
 
@@ -394,9 +394,9 @@ Build the YAML configuration using the `LOCAL_PATH` value. The `storage` section
 **Generate the artifact mappings from the template, never from a list written here.** A hardcoded list drifts the moment the template gains an artifact, and a config missing an artifact resolves it to a fallback path that is silently wrong whenever `LOCAL_PATH` is not the conventional `.claude` — which is the defect this step exists to stop producing:
 
 ```bash
-NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
 [ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
-[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
 source "$NEXUS_SHARED/resolve-config.sh"
 source "$NEXUS_SHARED/config/artifacts.sh"
 TEMPLATE=$(artifact_template_path) || TEMPLATE=""
@@ -513,9 +513,9 @@ Write the built YAML to `.claude/configuration.yml` using the Write tool.
 Then create a directory for every locally-stored artifact so skills don't encounter missing paths. Drive this from the config just written, not from the template: an artifact the user pointed at the team repo must not also get a stray local directory, and one the user relocated must get the directory they actually chose.
 
 ```bash
-NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
 [ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
-[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
 source "$NEXUS_SHARED/resolve-config.sh"
 source "$NEXUS_SHARED/config/artifacts.sh"
 
@@ -616,9 +616,9 @@ not, because Step 1 ends in an `AskUserQuestion` whenever an existing config is
 found, which is exactly the case `validate` runs in.
 
 ```bash
-NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
 [ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
-[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
 source "$NEXUS_SHARED/resolve-config.sh"
 source "$NEXUS_SHARED/config/artifacts.sh"
 TEMPLATE=$(artifact_template_path) || TEMPLATE=""
@@ -852,9 +852,9 @@ Step 9, this block asks nothing, so the "no interactive wizard" contract holds.
 The preamble and the plan build must be **one** block: `TIMESTAMP` and `PLAN` are shell state, and a separate block would start a fresh shell without them.
 
 ```bash
-NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
 [ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
-[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
 source "$NEXUS_SHARED/resolve-config.sh"
 source "$NEXUS_SHARED/config/artifacts.sh"
 TEMPLATE=$(artifact_template_path) || TEMPLATE=""
@@ -1005,9 +1005,9 @@ This phase runs in a fresh shell, and the `AskUserQuestion` gate sits between it
 Run this whenever the confirmed plan contains **any** verb that writes a `.yml` file — that is `config-json-to-yml`, `rename-key`, `location-rename`, or `artifact-backfill`. Decide that from the plan you showed the user; do not branch on a `PLAN` array, which does not exist in this shell:
 
 ```bash
-NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
 [ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
-[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
 source "$NEXUS_SHARED/resolve-config.sh"
 source "$NEXUS_SHARED/config/artifacts.sh"
 TEMPLATE=$(artifact_template_path) || TEMPLATE=""
@@ -1024,9 +1024,9 @@ fi
 # artifact_backup_once lives in config/artifacts.sh, and a shell FUNCTION does
 # not survive a Bash tool-call boundary any better than a variable does. Sourced
 # here, in the call that uses it, or the call dies with "command not found".
-NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
 [ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
-[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
 source "$NEXUS_SHARED/config/artifacts.sh"
 # The literal already printed in the plan — NOT a fresh `date`. A new value
 # would put backups at a suffix the user never saw.
@@ -1044,9 +1044,9 @@ fi
 # artifact_backup_once lives in config/artifacts.sh, and a shell FUNCTION does
 # not survive a Bash tool-call boundary any better than a variable does. Sourced
 # here, in the call that uses it, or the call dies with "command not found".
-NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
 [ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
-[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
 source "$NEXUS_SHARED/config/artifacts.sh"
 # The literal already printed in the plan — NOT a fresh `date`. A new value
 # would put backups at a suffix the user never saw.
@@ -1072,9 +1072,9 @@ Nothing is merged into the `.yml`. Folding stale values from an unread file into
 # artifact_backup_once lives in config/artifacts.sh, and a shell FUNCTION does
 # not survive a Bash tool-call boundary any better than a variable does. Sourced
 # here, in the call that uses it, or the call dies with "command not found".
-NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
 [ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
-[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
 source "$NEXUS_SHARED/config/artifacts.sh"
 umask 077
 mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
@@ -1119,9 +1119,9 @@ fi
 # artifact_backup_once lives in config/artifacts.sh, and a shell FUNCTION does
 # not survive a Bash tool-call boundary any better than a variable does. Sourced
 # here, in the call that uses it, or the call dies with "command not found".
-NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
 [ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
-[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
 source "$NEXUS_SHARED/config/artifacts.sh"
 # The literal already printed in the plan — NOT a fresh `date`. A new value
 # would put backups at a suffix the user never saw.
@@ -1148,9 +1148,9 @@ yq -i '.product_knowledge = .domain_knowledge | del(.domain_knowledge)' "$file"
 # artifact_backup_once lives in config/artifacts.sh, and a shell FUNCTION does
 # not survive a Bash tool-call boundary any better than a variable does. Sourced
 # here, in the call that uses it, or the call dies with "command not found".
-NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
 [ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
-[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus plugin not found or out of date — reinstall: /plugin install nexus@claude-skills" >&2; exit 1; }
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
 source "$NEXUS_SHARED/config/artifacts.sh"
 # The literal already printed in the plan — NOT a fresh `date`. A new value
 # would put backups at a suffix the user never saw.
@@ -1187,8 +1187,9 @@ The rename and the artifact repointing are one write inside the library, so ther
 ```bash
 # artifact_backup_once lives in config/artifacts.sh — sourcing resolve-config.sh
 # alone leaves it undefined in this call.
-NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/shared"
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
 [ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
 source "$NEXUS_SHARED/config/artifacts.sh"
 # Re-derived here: shell state does not survive between Bash tool calls.
 if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then

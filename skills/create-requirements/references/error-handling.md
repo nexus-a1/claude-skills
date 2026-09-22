@@ -40,12 +40,10 @@ options:
 
 ## Team Creation Fails (Team Mode Only)
 
-Fall back to sub-agent mode automatically. Log:
+Follow the **Team-start fallback** in `team-mode-protocol.md` Stage 2.1: `TeamDelete` any team that was created, set `EXEC_MODE = "subagent"`, continue, and record the mode as `subagent (fallback: team start failed at {step})`. Log:
 ```
-WARNING: Team creation failed. Falling back to sub-agent execution mode.
+WARNING: Team start failed at {step}. Falling back to sub-agent execution mode.
 ```
-
-Set `EXEC_MODE = "subagent"` and continue.
 
 ## Remote Push Fails
 

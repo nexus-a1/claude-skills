@@ -27,7 +27,7 @@ below"; below, here, means this prompt.
 
 **Sub-agent mode** — Use Task tool with `subagent_type: "business-analyst"`.
 
-**Team mode** — Use Task tool with `subagent_type: "business-analyst"`, `team_name: "req-{identifier}"`, `name: "business-analyst"`.
+**Team mode** — Use Task tool with `subagent_type: "business-analyst"`, `team_name: "req-{identifier}"`, `name: "business-analyst-resynth"` — a distinct name, because the Stage 4.1 `business-analyst` teammate may still be alive in the same team.
 
 Prompt (same for both modes):
 ```
@@ -101,4 +101,4 @@ Use this EXACT format:
 IMPORTANT: Use the exact ---BEGIN/END--- markers. They are used to extract each document into separate files. Do NOT include HOW details in SPEC or JIRA_TICKET.
 ```
 
-**Team mode extra**: Add to prompt: `"Mark your task as completed when done."`
+**Team mode extra**: Add to prompt: `"Report to the lead: when done, SendMessage your full four-block output to the lead only — you have no Write tool, so the lead saves it."` The lead marks the task completed once the output is saved — the agent has no task tools. It is the only role in this stage: if it is idle, has been chased once, and nothing has been delivered, it is silent — re-run it now as an unnamed `business-analyst` sub-agent with this prompt minus the team-mode extra, use that output, and record it for the Mode line (`${CLAUDE_PLUGIN_ROOT}/shared/team-mode.md` Rule 3).

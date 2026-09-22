@@ -950,7 +950,8 @@ Write `$WORK_DIR/{identifier}/state.json`:
 
   "team": {
     "name": null,
-    "created": false
+    "created": false,
+    "mode": null
   },
 
   "outputs": {
@@ -1344,7 +1345,7 @@ through every Stage 3 prompt so the boundary reads identically at each hop.
 an empty marked block is still a boundary, whereas dropping the markers because one of the
 two values is absent leaves the description unmarked at the site that introduced it.
 
-**Team mode extra**: Add to prompt: `"Save your output to $WORK_DIR/{identifier}/context/discovery.json. Mark task T1 as completed when done."`
+**Team mode extra**: Add to prompt: `"Report to the lead: when done, SendMessage your full JSON inventory to the lead only — you have no Write tool, so the lead saves it to $WORK_DIR/{identifier}/context/discovery.json."` The lead marks T1 completed once that file is saved — context-builder has no task tools. context-builder is the only role in Stage 2, and all of Stage 3 is blocked on it: if it is idle, has been chased once, and `discovery.json` is still absent, it is silent — re-run it now as an unnamed `context-builder` sub-agent, save the result, and record it for the Mode line (`${CLAUDE_PLUGIN_ROOT}/shared/team-mode.md` Rule 3) before starting Stage 3.
 
 Save output to `$WORK_DIR/{identifier}/context/discovery.json`
 
@@ -1601,8 +1602,9 @@ directory was the cause; the silence is what made it invisible.
 ```
 Check $WORK_DIR/{identifier}/context/ for files from other agents.
 If files exist from agents that completed before you, incorporate relevant findings into your analysis.
-After completing your analysis, save your output to $WORK_DIR/{identifier}/context/{agent-name}.md as your FINAL action before returning.
-Mark your task as completed when done.
+{the lead includes ONE of these two lines, by the agent's class in shared/team-mode.md — writer: integration-analyst, archivist; Write-less: every other role}
+Report to the lead (writer): when done, save your output to $WORK_DIR/{identifier}/context/{agent-name}.md and SendMessage the lead a short notice naming it.
+Report to the lead (Write-less): when done, SendMessage your full output to the lead only; the lead saves it to $WORK_DIR/{identifier}/context/{agent-name}.md.
 ```
 
 **Before launching agents, distill discovery gaps into targeted questions.**
@@ -2162,7 +2164,7 @@ Every AC in SPEC maps to at least one task:
 IMPORTANT: Use the exact ---BEGIN/END--- markers. They are used to extract each document into separate files. Do NOT include HOW details in SPEC or JIRA_TICKET. Do NOT restate AC content in PLAN — reference by ID.
 ```
 
-**Team mode extra**: Add to prompt: `"Mark your task as completed when done."`
+**Team mode extra**: Add to prompt: `"Report to the lead: when done, SendMessage your full four-block output to the lead only — you have no Write tool, so the lead saves it."` The lead marks the task completed once the output is saved — the agent has no task tools. business-analyst is the only role in this stage: if it is idle, has been chased once, and nothing has been delivered, it is silent — re-run it now as an unnamed `business-analyst` sub-agent with the Stage 4.1 prompt minus this team-mode extra, use that output for Stage 4.2, and record it for the Mode line (`${CLAUDE_PLUGIN_ROOT}/shared/team-mode.md` Rule 3).
 
 **Note**: Performance review is deferred to implementation phase where code-reviewer can analyze actual code changes.
 
@@ -2555,7 +2557,7 @@ Requirements Complete: {identifier}
 Feature: {title}
 Branch: {feature/{identifier}, or "none yet — draft session, run reconcile once a ticket exists" if no_ticket_mode}
 Base: {base_branch, or "n/a (draft)" if no_ticket_mode}
-Mode: {EXEC_MODE} {if team: "(cross-pollination enabled)"}
+Mode: {team | team (partial: {roles}) | subagent | subagent (fallback: team start failed at {step})} {if team: "(cross-pollination enabled)"}   (classic path only — omit when the orchestrated path ran)
 
 Work Directory: $WORK_DIR/{identifier}/
 

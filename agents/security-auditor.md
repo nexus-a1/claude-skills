@@ -169,7 +169,7 @@ When invoked as the mandatory pre-push/pre-commit audit, the caller is responsib
 1. Caller invokes this agent on the staged/committed changes.
 2. If the agent returns with zero 🔴 CRITICAL findings and no unresolved 🟡 MEDIUM, caller records the confirmation:
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT:-plugin}/hooks/record-audit.sh"
+   bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
    ```
 3. That writes `.claude/session-state/git-audit.json` (current branch + HEAD sha). The push hook verifies this file matches the current HEAD before allowing `git push`.
 
@@ -183,6 +183,6 @@ When running as part of a team (spawned with `team_name` parameter), you have ac
 - **Inform test-writer**: Suggest security-focused test cases (injection attempts, auth bypass scenarios, boundary conditions)
 - **Respond to challenges** from quality-guard: When skeptic questions a finding, provide the exploit scenario with concrete steps
 - **Read teammate outputs**: Check code-reviewer's findings for issues with security implications that weren't flagged as security
-- **Message size discipline**: Every SendMessage payload capped at **5 lines / ~80 words** (see `shared/principles.md` #8). Cite `file:line` for every reference. Do NOT paste full exploit walkthroughs, full OWASP explanations, or full diffs — write the full finding to your role-scoped file and reference the path.
+- **Message size discipline**: Every SendMessage payload capped at **5 lines / ~80 words** (see `shared/principles.md` #8). Cite `file:line` for every reference. Do NOT paste full exploit walkthroughs, full OWASP explanations, or full diffs into messages to teammates. **Your final report** is the one exception: you have no Write tool, so send it in full to the lead only, and the lead saves it to your role-scoped file (see `shared/team-mode.md` Rule 2).
 
 When NOT in a team, operate independently as usual.

@@ -20,7 +20,7 @@ These principles apply to all multi-agent skills and their spawned agents. Skill
 
 7. **Structured status reporting.** Use consistent format: `[TYPE]: [SUBJECT] | Details: [1-3 sentences] | Action needed: [yes/no]`
 
-8. **SendMessage payload cap: 5 lines / ~80 words.** Hard cap, not a target. Every message must cite `file:line` (or task ID) when referring to findings. Do NOT paste full reports, full diffs, or full agent outputs into SendMessage — if a teammate needs the full context, point them at the shared file path. Share extracts, not dumps.
+8. **SendMessage payload cap: 5 lines / ~80 words.** Hard cap, not a target. Every message must cite `file:line` (or task ID) when referring to findings. Do NOT paste full reports, full diffs, or full agent outputs into SendMessage — if a teammate needs the full context, point them at the shared file path. Share extracts, not dumps. **One exception:** a teammate whose agent has no `Write` tool sends its full final report to the lead, and to the lead only, because it has no file to point at. The lead saves it (see `team-mode.md` Rule 2).
 
 9. **Report blockers immediately.** If blocked, message the lead or responsible agent without delay. Never wait silently.
 
@@ -34,7 +34,7 @@ These principles apply to all multi-agent skills and their spawned agents. Skill
 
 12. **No concurrent writes to the same file.** When agents run in parallel (team mode), each agent writes ONLY to files scoped to its role. Only the lead writes to shared/aggregated output files, and only after parallel work completes.
 
-13. **Role-scoped file naming.** Agents save their work to `{feature}-{agent-role}.md` or similar role-scoped paths. This prevents write collisions and makes it clear who produced what.
+13. **Role-scoped file naming.** Agents save their work to `{feature}-{agent-role}.md` or similar role-scoped paths. This prevents write collisions and makes it clear who produced what. For an agent with no `Write` tool, the lead saves its delivered result to that path.
 
 ## Deadlock Protocol
 

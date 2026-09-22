@@ -24,9 +24,29 @@
 # Prints the path on stdout; returns 1 when no readable template exists, which
 # every caller must treat as "skip the template-dependent check", never as a
 # fatal error.
+#
+# Three places, in order. CLAUDE_PLUGIN_ROOT first, so a caller that has it
+# (a hook, a test) can point anywhere. Then the tree this library lives in:
+# the function runs inside a Bash tool call, where Claude Code does NOT export
+# CLAUDE_PLUGIN_ROOT (CL-120) — the skill preamble found this file by the
+# substituted plugin root, and templates/ sits two directories above it, so
+# the library's own location is the one fact that is always true here. The
+# ~/.claude fallback last, for a local/dev copy that was installed by hand.
 artifact_template_path() {
-  if [[ -r "${CLAUDE_PLUGIN_ROOT:-}/templates/configuration.yml" ]]; then
-    printf '%s\n' "${CLAUDE_PLUGIN_ROOT}/templates/configuration.yml"
+  local here root
+  here="${BASH_SOURCE[0]%/*}"
+  root="${here%/shared/config}"
+  # `-n` first: with the variable unset the old test stat'ed the literal
+  # `/templates/configuration.yml`, so a file at the filesystem root would
+  # have outranked the plugin's own template.
+  if [[ -n "${CLAUDE_PLUGIN_ROOT:-}" && -r "$CLAUDE_PLUGIN_ROOT/templates/configuration.yml" ]]; then
+    printf '%s\n' "$CLAUDE_PLUGIN_ROOT/templates/configuration.yml"
+  # Absolute only. Every shipped caller sources this library by an absolute
+  # path, and a relative `source ./shared/config/artifacts.sh` would make
+  # `root` "." — the working directory, where a repository-controlled
+  # templates/configuration.yml would seed the generated configuration.
+  elif [[ "$root" != "$here" && "$root" == /* && -r "$root/templates/configuration.yml" ]]; then
+    printf '%s\n' "$root/templates/configuration.yml"
   elif [[ -r "$HOME/.claude/templates/configuration.yml" ]]; then
     printf '%s\n' "$HOME/.claude/templates/configuration.yml"
   else

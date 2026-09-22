@@ -10,7 +10,7 @@ These conventions prevent file write collisions when multiple agents work in par
 
 | Writer | Allowed Files | Example |
 |--------|--------------|---------|
-| Individual agent | Role-scoped files only | `context/{feature}-{role}.md`, `qa-{role}.md` |
+| Individual agent | Role-scoped files only — the lead saves them for agents with no `Write` tool | `context/{feature}-{role}.md`, `qa-{role}.md` |
 | Team lead only | Shared/aggregated files, final outputs | `{feature}-TECHNICAL_REQUIREMENTS.md`, `qa-gate-report.md` |
 | Sequential negotiation | Shared contract files (NOT concurrent) | `api-contract.md` (one agent writes, then the other) |
 
@@ -29,7 +29,7 @@ Examples:
 
 ## Lead Aggregation Pattern
 
-1. Parallel agents write to their role-scoped files
+1. Parallel agents write to their role-scoped files. An agent with no `Write` tool sends its full final report to the lead instead, and the lead saves it to that agent's role-scoped file
 2. Lead waits for all parallel agents to complete
 3. Lead reads all role-scoped files
 4. Lead writes the consolidated output to a shared file
@@ -57,4 +57,4 @@ Skill leads continue to own `state.json` for all other fields and all non-`.upda
 
 ## When to Apply
 
-These rules apply when `execution_mode` is `"team"` (agents use TeamCreate + SendMessage). In `"subagent"` mode, agents are independent processes and cannot collide, but following these conventions is still recommended for consistency.
+These rules apply when `execution_mode` is `"team"` (agents use TeamCreate + SendMessage). What happens when the team cannot start, how each teammate reports, and how a silent teammate is recovered are in [`team-mode.md`](team-mode.md). In `"subagent"` mode, agents are independent processes and cannot collide, but following these conventions is still recommended for consistency.

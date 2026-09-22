@@ -320,7 +320,7 @@ execution_mode:
 | `pr_review` | `/pr-review` (remote and `--local` modes) | Step 4 review agents (code-reviewer, security-auditor, quality-guard; architect when the architecture gate fires) |
 | `review_plan` | `/review-plan` | Step 3 review agents (architect, quality-guard, optionally security-auditor) |
 
-All skills that use multiple agents support configurable execution mode (`"subagent"` or `"team"`).
+All skills that use multiple agents support configurable execution mode (`"subagent"` or `"team"`). `team` is the preferred mode, not a guarantee: if the team cannot start, the skill falls back to sub-agents and says so on its `**Mode**:` line. How each teammate reports and how a silent one is recovered are in `shared/team-mode.md`.
 
 **`storage.locations`** — Named storage backends. Each location has a `type` and a `path`. If `configuration.yml` is absent or a key is missing, skills/agents fall back to hardcoded defaults.
 

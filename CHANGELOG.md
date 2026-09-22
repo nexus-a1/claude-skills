@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.44.0] - 2026-09-22
+
+## What's Changed
+
+20 commits across two tickets: 5 feat, 12 fix, 3 docs. No breaking changes.
+
+### Features
+
+- **skills**: team-mode fallback and report-to-lead in `/implement`, `/create-requirements`, `/refactor`, `/update-documentation`, `/pr-review`, `/review-plan` and `/troubleshoot` — when team tools are unavailable the skill falls back to sub-agents and says so, and every dispatched agent reports back to the lead on completion — CL-121
+- **shared**: `team-mode.md`, the contract those seven skills follow (team-start fallback, report-back, silent-teammate recovery) — CL-121
+- **validators**: C11 pins the team-mode contract prose across the seven team-path skills — CL-121
+
+### Bug Fixes
+
+- **skills, agents**: `/configuration-init`, `/standup` and the security-auditor agent wrote the plugin root as `${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}`, which the loader does not substitute; on a healthy marketplace install the preamble fell through to a directory that does not exist and reported "plugin not found". All 15 sites now use the bare `${CLAUDE_PLUGIN_ROOT}` placeholder — CL-120
+- **config**: `artifact_template_path` had the same defect one level down and never found the shipped template on a marketplace install; it now resolves the template beside the library itself, requires an absolute root, and guards the empty-variable branch — CL-120
+- **validators**: new G10 check fails the build on any operator or braceless spelling of the plugin-root placeholder in skill and agent content, with an empty-run guard; G7's stale comment about the variable corrected — CL-120
+- **configuration-init**: the preamble's failure line names both locations tried and offers a remedy valid on a healthy install; the artifact-backfill preamble gets the guard line the other twelve carry; Step 2 describes the third template location — CL-120
+- **security**: reports are handed to the skeptic via a mktemp directory and the report-directory cleanup path is guarded — CL-121
+- **review**: silence is judged against independent roles only; QA and PR-review findings on the team-mode change addressed — CL-121
+
+### Other Changes
+
+- ADR-017 (team-mode fallback), the SendMessage probe record, and C11 in the docs — CL-121
+- Requirements and QA records for CL-121 under `.claude/work/`
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.43.0...v1.44.0
+
 ## [1.43.0] - 2026-09-20
 
 ## Two fixes for text that reaches a place where it is not treated as text
