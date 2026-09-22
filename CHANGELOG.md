@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.45.0] - 2026-09-22
+
+## What's Changed
+
+3 commits: 1 feat, 1 fix, 1 chore. No breaking changes.
+
+### Features
+
+- **models**: Fable and Mythos are now permitted pins (ADR-018, supersedes ADR-011 point 4). `claude-fable-5-1` and `claude-mythos-5-1` are current, their 5.0 IDs superseded. Both need 30-day data retention, so they fail for Zero Data Retention orgs unless an admin enables retention for the workspace; Mythos is invite-only. No component changes model in this release.
+- **tier tables**: the generator now fails loudly for a component on a tier it does not render, instead of silently leaving it out of the docs.
+
+### Bug Fixes
+
+- **models**: the now-empty exclusion list is expanded safely under `set -u` on bash < 4.4, so the A/B validators cannot die silently on older shells.
+
+### Other Changes
+
+- **models**: Opus tier bumped to `claude-opus-5-5` (Opus 5.5) across 15 skills and agents. Sonnet 5 and Haiku 4.5 unchanged.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.44.0...v1.45.0
+
 ## [1.44.0] - 2026-09-22
 
 ## What's Changed

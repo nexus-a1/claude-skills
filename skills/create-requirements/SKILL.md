@@ -1,7 +1,7 @@
 ---
 name: create-requirements
 category: planning
-model: claude-opus-5
+model: claude-opus-5-5
 userInvocable: true
 description: Run a multi-agent pipeline to produce detailed technical requirements and a ticket-ready summary. Creates a feature branch, persists session state, and supports resume. Optionally seeds from a prior brainstorm or meeting session, auto-fetches a known Jira ticket's description, or starts ticket-less via --no-ticket (reconcile with a real ticket later via the reconcile subcommand).
 argument-hint: "[--light] [--from-brainstorm <slug>] [--from-meeting <slug>] [--no-ticket] [feature-description] | reconcile <draft-id> <ticket-id> | --from-task <id> (handed off by /todo-work)"

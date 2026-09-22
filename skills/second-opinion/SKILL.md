@@ -1,6 +1,6 @@
 ---
 name: second-opinion
-model: claude-opus-5
+model: claude-opus-5-5
 category: analysis
 userInvocable: true
 description: Put a conclusion the session has already reached in front of a different model and report back what it says. Packages the claim, the rejected alternatives, and pointers to the primary sources into a neutral brief, dispatches the read-only second-reader agent (Fable by default), and reports the verdict without adopting it. Use after a decision is made and before acting on it.
@@ -59,12 +59,10 @@ closed enum, and the alias is the only thing the tool gets.
 
 > **Fable and Zero Data Retention.** Fable requires 30-day data retention and is
 > unavailable to Zero Data Retention organizations, where every request to it
-> fails outright. That is why no component in this plugin *pins* Fable in
-> frontmatter: frontmatter is one static string shipped to every installer.
+> fails outright unless their admin enables 30-day retention for the workspace.
 > (Maintainer note: in this plugin's source the policy is recorded in
-> `scripts/model-catalog.sh` and ADR-011; neither file ships with the plugin.)
-> A runtime override is different — it is chosen per invocation and can fall
-> back. So if the dispatch in Step 3 fails in a way that indicates the
+> `scripts/model-catalog.sh` and ADR-018; neither file ships with the plugin.)
+> This skill picks the model per invocation, so it can fall back. If the dispatch in Step 3 fails in a way that indicates the
 > model is unavailable to this organization, **do not retry it and do not
 > silently downgrade**. Report the failure as what it is, and offer
 > `--model opus` as the next-best option, noting that Opus shares this session's

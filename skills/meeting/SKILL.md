@@ -1,7 +1,7 @@
 ---
 name: meeting
 category: planning
-model: claude-opus-5
+model: claude-opus-5-5
 userInvocable: true
 description: Live meeting companion — capture notes as the meeting happens while background probes ground each topic against the Product Knowledge Base and the live codebase, surfacing relevant findings inline without stalling capture. On wrap it emits two distinct professional documents (a shareable summary and a technical changes/risks doc) as Markdown + printable HTML, stored under $MEETINGS_DIR/{YYYY-MM-DD-HHMM}-{slug}/ so records sort chronologically (pre-existing meetings under the legacy $MEETINGS_DIR/{slug}/ layout stay readable in place). Use at the START of a meeting; also has a one-shot mode for after-the-fact notes.
 argument-hint: "[--file <path>] [--dir <path>] [--resume [slug]] [--wrap [slug]] [--lite] [topic]"

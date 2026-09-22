@@ -1,6 +1,6 @@
 ---
 name: feedback
-model: claude-opus-5
+model: claude-opus-5-5
 category: analysis
 userInvocable: true
 description: Generate a retrospective report analyzing agent pipeline execution, duplication, scope adherence, and output quality from a completed work session.
