@@ -220,3 +220,129 @@ nexus_scan_forged_markers_tree() {
     rm -f "$listing"
     return "$found"
 }
+
+# Remove the pipeline's OWN boundary markers from one file, in place.
+#
+# Why this exists: /create-requirements wraps context/archivist.md and
+# context/product-expert.md (and their -summary.md forms) in an
+# UNTRUSTED-CONTENT pair, and the archivist's SEARCH output carries one
+# ARCHIVED-CONTENT pair per cited ticket. /archive-requirements copies context/
+# into the knowledge base as-is, and the archivist's pre-commit scan then flags
+# every one of those markers as forged — so any ticket with archivist or
+# product-expert output could not be archived without a person clearing it.
+#
+# Why removing them is safe: what a forged marker does is close a fence early.
+# Once no marker is left in the archived file there is nothing to close — not
+# SEARCH's ARCHIVED-CONTENT fence, and not any other reader's. The enclosed text
+# stays in the file and is still scanned afterwards. What IS lost is the in-file
+# record of which lines came from outside; every reader of the knowledge base
+# already treats the whole archived ticket as external (prompt-defense rule 7),
+# so that record told a reader nothing it did not already assume.
+#
+# Only the exact shape the pipeline writes is accepted, so that a forged marker
+# which breaks out of a real block cannot be stripped without trace:
+#   - every marker is a whole line, `<!-- KIND-CONTENT:START label -->` or
+#     `:END`, KIND UNTRUSTED or ARCHIVED, ASCII only, case exact;
+#   - at most one UNTRUSTED pair, its START the first marker line and its END
+#     the last, labelled with the file's own name minus any -summary suffix
+#     (archivist-summary.md is labelled archivist.md, the file it was distilled
+#     from);
+#   - ARCHIVED pairs only in archivist.md, never nested, each label used once —
+#     the archivist writes one pair per cited ticket.
+# A swapped END/START inside a wrapper produces either a second pair with the
+# same label or a mismatch, and is refused. Anything refused leaves the WHOLE
+# file untouched, and the scan that runs next reports it to a person.
+#
+# What is NOT refused: in archivist.md, a whole new ARCHIVED pair with an unused
+# label, placed between the real pairs rather than inside one. It closes
+# nothing, the text it encloses stays and is scanned, and it is removed like the
+# real ones — nothing checks a label against the tickets actually cited. The
+# guarantee is that nothing escapes a block, not that every forged line is kept.
+#
+# Nothing matched is printed, same rule as the scan: only the path and a count.
+#
+# Exit status:
+#   0  markers removed (path and pair count on stdout)
+#   1  nothing removed: no canonical markers, or not the pipeline's shape — the
+#      file is untouched and the scan decides
+#   2+ could not run (bad argument, symlink, unreadable or unwritable file, awk
+#      failure)
+nexus_strip_boundary_markers() {
+    local f base own tmp pairsf rc pairs
+
+    [ "$#" -eq 1 ] || return 2
+    f="$1"
+    # A symlink is refused, not followed: cp writes through it, so a linked
+    # context file would rewrite something outside the knowledge base.
+    [ -L "$f" ] && return 2
+    { [ -f "$f" ] && [ -r "$f" ] && [ -w "$f" ]; } || return 2
+
+    base="${f##*/}"
+    own="${base%-summary.md}"
+    [ "$own" = "$base" ] || own="$own.md"
+
+    tmp="$(mktemp)" || return 2
+    pairsf="$(mktemp)" || { rm -f "$tmp"; return 2; }
+
+    # One pass that buffers the file and decides at the end, so a file that is
+    # refused is never partly rewritten. Plain POSIX awk: no interval
+    # expressions and no three-argument match(), which differ between the mawk
+    # on dev machines and the gawk CI runs.
+    LC_ALL=C awk -v base="$base" -v own="$own" '
+        {
+            line[NR] = $0
+            if ($0 !~ /^<!-- (UNTRUSTED|ARCHIVED)-CONTENT:(START|END) [A-Za-z0-9._\/-]+ -->$/) next
+            split($2, part, ":")
+            kind = part[1]; dir = part[2]; label = $3
+            drop[NR] = 1
+            nm++
+            if (kind == "UNTRUSTED-CONTENT") {
+                if (label != own) bad = 1
+                if (dir == "START") {
+                    if (nm != 1 || wrap_open || wrap_seen) bad = 1
+                    wrap_open = 1; wrap_seen = 1
+                } else {
+                    if (!wrap_open || open != "") bad = 1
+                    wrap_open = 0; wrap_closed_at = nm; pairs++
+                }
+            } else {
+                if (base != "archivist.md" || wrap_closed_at) bad = 1
+                if (dir == "START") {
+                    if (open != "" || (label in used)) bad = 1
+                    open = label; used[label] = 1
+                } else {
+                    if (open != label) bad = 1
+                    open = ""; pairs++
+                }
+            }
+        }
+        END {
+            if (bad || open != "" || wrap_open) exit 11
+            if (pairs == 0) exit 10
+            for (i = 1; i <= NR; i++) if (!(i in drop)) print line[i]
+            print pairs > "/dev/stderr"
+        }
+    ' "$f" > "$tmp" 2> "$pairsf"
+    rc=$?
+
+    if [ "$rc" -eq 10 ] || [ "$rc" -eq 11 ]; then
+        rm -f "$tmp" "$pairsf"
+        return 1
+    fi
+    if [ "$rc" -ne 0 ]; then
+        rm -f "$tmp" "$pairsf"
+        return 2
+    fi
+
+    pairs="$(cat "$pairsf")"
+    # cp onto the existing file rather than mv: it keeps the file's own mode,
+    # where mktemp's would be 0600.
+    if ! cp "$tmp" "$f"; then
+        rm -f "$tmp" "$pairsf"
+        return 2
+    fi
+    rm -f "$tmp" "$pairsf"
+
+    printf 'STRIPPED_MARKER_FILE: %s\nSTRIPPED_MARKER_PAIRS: %s\n' "$f" "$pairs"
+    return 0
+}

@@ -370,7 +370,8 @@ place options or ticket keys are read from.
    ```
 
    **On a non-zero exit, stop** and show the message. Nothing is linked; the task
-   stays in progress, and `/todo done` closes it if the work is abandoned.
+   stays in progress, `/todo-work` offers it again, and `/todo done` closes it if
+   the work is abandoned.
 4. Set `{task_mode: true}`. `{ticket}` is the printed `TICKET` unless it is
    `none`, in which case ask the ticket prompt below. In task mode:
    - `--no-ticket`, `--light`, `--from-meeting` and `--from-brainstorm` do not

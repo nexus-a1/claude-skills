@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.46.0] - 2026-09-25
+
+## What's Changed
+
+4 commits across 2 pull requests: 1 feat, 2 fix, 1 docs. No breaking changes.
+
+### Features
+
+- **todo-work**: offer in-progress tasks alongside pending ones (#421). A task whose handoff never produced a requirements session is no longer dropped from the pick list; it is shown as `(in progress)` and can be handed off again. Promoted tasks stay out, since `/resume-work` continues them.
+
+### Bug Fixes
+
+- **archivist**: strip the pipeline's own boundary markers before the STORE scan (#424). `/archive-requirements` stopped before committing any ticket with archivist or product-expert output, because its forged-marker scan flagged the `UNTRUSTED-CONTENT` / `ARCHIVED-CONTENT` lines `/create-requirements` writes itself. The archived copy of `context/*.md` now has those lines removed first; the work directory keeps them.
+- **archivist**: accept only the pipeline's marker shape when stripping (#424). At most one `UNTRUSTED-CONTENT` pair, first and last, named after the file; `ARCHIVED-CONTENT` pairs only in `archivist.md`, not nested, one per ticket. Any other shape, including a forged pair that happens to balance, leaves the file untouched for the scan to report. Symlinked context files are refused.
+
+### Other Changes
+
+- **archivist**: state exactly what the marker strip guarantees (#424).
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.45.0...v1.46.0
+
 ## [1.45.0] - 2026-09-22
 
 ## What's Changed

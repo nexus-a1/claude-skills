@@ -435,14 +435,23 @@ _tasks_write_index() {
 }
 
 # The ordered list a user numbers from. `open` is every open task (/todo list);
-# `pending` is what /todo-work offers. A number always names a position in the
-# list the caller states, so the same N never means two different tasks.
+# `pending` is every task nobody has started; `workable` is what /todo-work
+# offers — pending plus in progress, so a task whose handoff went nowhere stays
+# visible instead of dropping out of the pick list. Promoted tasks are left out
+# of `workable`: they already have a requirements session, and /resume-work
+# continues it. A number always names a position in the list the caller states,
+# so the same N never means two different tasks.
 _tasks_list_json() {
-  local scope="${1}" open
+  local scope="${1}" open statuses
+  case "$scope" in
+    pending) statuses="$TASKS_PENDING_STATUSES" ;;
+    workable) statuses="$TASKS_PENDING_STATUSES in_progress" ;;
+    *) statuses="" ;;
+  esac
   open="$(_tasks_read_open)"
-  jq -c --arg scope "$scope" --arg pending "$TASKS_PENDING_STATUSES" "
+  jq -c --arg scope "$scope" --arg statuses "$statuses" "
     ($TASKS_SORT)
-    | map(select(\$scope == \"open\" or (.status as \$s | (\$pending | split(\" \")) | index(\$s))))
+    | map(select(\$scope == \"open\" or (.status as \$s | (\$statuses | split(\" \")) | index(\$s))))
     | to_entries | map(.value + {n: (.key + 1)})" <<< "$open"
 }
 
@@ -621,7 +630,7 @@ _tasks_op_list() {
       *) _tasks_die "$EXIT_REFUSED" "list: unknown option '${1}'" ;;
     esac
   done
-  case "$scope" in open|pending) : ;; *) _tasks_die "$EXIT_REFUSED" "list: --scope must be open or pending" ;; esac
+  case "$scope" in open|pending|workable) : ;; *) _tasks_die "$EXIT_REFUSED" "list: --scope must be open, pending or workable" ;; esac
   _tasks_resolve
   local list migrate=false archived=0 f
   list="$(_tasks_list_json "$scope")"
@@ -650,7 +659,7 @@ _tasks_op_show() {
       *) _tasks_die "$EXIT_REFUSED" "show: unknown option '${1}'" ;;
     esac
   done
-  case "$scope" in open|pending) : ;; *) _tasks_die "$EXIT_REFUSED" "show: --scope must be open or pending" ;; esac
+  case "$scope" in open|pending|workable) : ;; *) _tasks_die "$EXIT_REFUSED" "show: --scope must be open, pending or workable" ;; esac
   _tasks_resolve
   _tasks_pick "$id" "$n" "$scope"
   id="$TASKS_PICKED"

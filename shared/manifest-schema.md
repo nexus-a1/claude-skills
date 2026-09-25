@@ -228,8 +228,11 @@ the title, so two tasks with the same title never collide. Required: `id`,
 `title`, `status`, `priority`, `created_at`, `updated_at`, `path`.
 
 Statuses:
-- **pending** — `proposed`, `not_started`, `needs_discussion`; the only ones `/todo-work` offers for pickup
-- `in_progress` — handed off by `/todo-work`
+- **pending** — `proposed`, `not_started`, `needs_discussion`; not started yet
+- `in_progress` — handed off by `/todo-work`, not yet promoted or closed
+
+`/todo-work` offers pending and `in_progress` tasks (the `workable` list scope);
+picking an `in_progress` task again hands it off without a status change.
 - `promoted` — became a requirements session; `promoted_to` holds its identifier
 - `done` — archive only; never in the index
 
