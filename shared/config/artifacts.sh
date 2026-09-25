@@ -545,3 +545,111 @@ artifact_apply_location_rename() {
     | select(.value.location == strenv(o))
     | .key' "$cfg" 2>/dev/null)" ]]
 }
+
+# --- Global task store (CL-122) ----------------------------------------------
+
+# The form of a path a committed configuration should carry. A path under the
+# current user's home comes back as `~` or `~/rest`, so the file names no one
+# person's home; an absolute path elsewhere, or one already written `~/...`,
+# comes back unchanged. A relative path, a `..` segment or a shell
+# metacharacter fails: a shared task store must be the same directory from
+# every project, and the resolver refuses those shapes anyway.
+# SC2088 ("tilde does not expand in quotes") is disabled for the whole function
+# on purpose: the tilde here is text, not a path to expand. This function returns
+# the form a committed configuration carries, and the resolver expands it later,
+# for whoever runs a skill — expanding it here is the bug it exists to avoid.
+# shellcheck disable=SC2088
+artifact_home_relative() {
+  local p="$1" home="${HOME%/}"
+  [[ -n "$p" ]] || return 1
+  case "/$p/" in
+    */../*) return 1 ;;
+  esac
+  [[ "$p" != *[\'\"\`\$\\\;\|\&\<\>\*\?\(\)]* && "$p" != *$'\n'* ]] || return 1
+  case "$p" in
+    '~'|'~/'*) printf '%s\n' "$p"; return 0 ;;
+    /*) : ;;
+    *) return 1 ;;
+  esac
+  if [[ -n "$home" && "$home" == /* ]]; then
+    if [[ "$p" == "$home" ]]; then
+      printf '~\n'
+      return 0
+    fi
+    case "$p" in
+      "$home"/*) printf '~/%s\n' "${p#"$home"/}"; return 0 ;;
+    esac
+  fi
+  printf '%s\n' "$p"
+}
+
+# Put tasks in global mode: one location (a directory) and the tasks artifact
+# pointing at it with `mode: global`, plus project.name when one is given — all
+# in a single document-0 write, then verified.
+#
+# The location path must already be in its committed form: home-relative or an
+# absolute path outside the home directory. An expanded home path is refused
+# rather than silently converted, so a caller that forgot artifact_home_relative
+# finds out here instead of committing the user's home path.
+#
+# A location of that name that already exists with a different path or type is
+# refused rather than repointed: other artifacts may use it.
+#
+# Callers must check artifact_yq_preserves_comments and run
+# artifact_backup_once first, as for the other writers. This function checks
+# the first again because a comment-stripping yq would rewrite the whole file.
+artifact_apply_tasks_global() {
+  local cfg="$1" loc="$2" path="$3" sub="$4" project="${5:-}" committed have
+  [[ -r "$cfg" && -w "$cfg" ]] || return 1
+  artifact_key_is_safe "$loc" || return 1
+  artifact_subdir_is_safe "$sub" || return 1
+  [[ "$sub" != "." && "$sub" != "./" ]] || return 1
+  committed="$(artifact_home_relative "$path")" || return 1
+  [[ "$committed" == "$path" ]] || return 1
+  if [[ -n "$project" ]]; then
+    local LC_ALL=C
+    [[ "$project" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || return 1
+  fi
+  artifact_yq_preserves_comments || return 1
+
+  if artifact_config_has_location "$cfg" "$loc"; then
+    have="$(l="$loc" yq -r 'select(document_index == 0) | .storage.locations[strenv(l)] | (.type // "directory") + "|" + (.path // "")' "$cfg" 2>/dev/null)" || return 1
+    [[ "$have" == "directory|$path" ]] || return 1
+  fi
+
+  local expr='with(select(document_index == 0);
+      .storage.locations[strenv(l)] = {"type": "directory", "path": strenv(p)}
+      | .storage.artifacts.tasks = {"location": strenv(l), "subdir": strenv(s), "mode": "global"}'
+  if [[ -n "$project" ]]; then
+    expr="$expr
+      | .project.name = strenv(n)"
+  fi
+  expr="$expr)"
+  l="$loc" p="$path" s="$sub" n="$project" yq -i "$expr" "$cfg" || return 1
+
+  yq -e '.' "$cfg" >/dev/null 2>&1 || return 1
+  [[ "$(yq -r 'select(document_index == 0) | .storage.artifacts.tasks.mode // ""' "$cfg" 2>/dev/null)" == "global" ]] || return 1
+  [[ "$(l="$loc" yq -r 'select(document_index == 0) | .storage.locations[strenv(l)].path // ""' "$cfg" 2>/dev/null)" == "$path" ]] || return 1
+  if [[ -n "$project" ]]; then
+    [[ "$(yq -r 'select(document_index == 0) | .project.name // ""' "$cfg" 2>/dev/null)" == "$project" ]] || return 1
+  fi
+  return 0
+}
+
+# Locations whose path is an absolute path inside the current user's home, one
+# `name|path|suggested` line each. A committed configuration carrying one sends
+# every other user of it to this user's home directory; the suggestion is the
+# home-relative form that means the same thing for this user and the right
+# thing for everyone else. Returns 1 only when the file could not be read.
+artifact_home_absolute_locations() {
+  local cfg="$1" out name path suggested
+  [[ -r "$cfg" ]] || return 1
+  out="$(yq -r 'select(document_index == 0) | .storage.locations // {} | to_entries | .[] | .key + "|" + (.value.path // "")' "$cfg" 2>/dev/null)" || return 1
+  [[ -n "$out" ]] || return 0
+  while IFS='|' read -r name path; do
+    [[ "$path" == /* ]] || continue
+    suggested="$(artifact_home_relative "$path")" || continue
+    [[ "$suggested" != "$path" ]] || continue
+    printf '%s|%s|%s\n' "$name" "$path" "$suggested"
+  done <<< "$out"
+}

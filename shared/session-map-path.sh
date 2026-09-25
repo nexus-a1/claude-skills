@@ -1,6 +1,10 @@
 #!/bin/bash
 # session-map-path.sh — where the redaction session map lives.
 #
+# Also provides nexus_main_checkout, the repository-identity helper the task
+# store (shared/tasks/tasks.sh) uses to name a project the same way from its
+# checkout and every linked worktree.
+#
 # `redact-output.sh` assigns a placeholder and writes the pair into the map;
 # `reverse-substitute.sh` reads that map back to turn the placeholder into the
 # value again. The two must land on the SAME FILE for the same repository, and
@@ -38,6 +42,42 @@
 # set of values barely widens; what widens is the number of sessions writing
 # into one file. See "Also worth noting" in CL-110.
 
+# The main checkout of the repository containing <dir> (default: the current
+# directory), printed as an absolute path. Every linked worktree of a
+# repository answers with the same one. Also used by the task store, to name a
+# project the same way from its checkout and from each of its worktrees.
+#
+# Returns 1 when <dir> is not inside a repository, and 2 when it is but the main
+# checkout cannot be confirmed (a `--separate-git-dir` or bare repository, or a
+# submodule, whose git directory does not sit inside a checkout of its own).
+nexus_main_checkout() {
+    local dir="${1:-.}" root common main
+
+    root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
+    [ -n "$root" ] || return 1
+
+    # --git-common-dir is the ONE directory every linked worktree of a
+    # repository shares. It answers relative to the directory git ran in
+    # (".git" in the main checkout, "../.git" one level down) and absolutely
+    # from a linked worktree, so resolve it rather than trusting its shape.
+    common="$(git -C "$dir" rev-parse --git-common-dir 2>/dev/null || true)"
+    [ -n "$common" ] && common="$(cd "$dir" 2>/dev/null && cd "$common" 2>/dev/null && pwd -P || true)"
+    [ -n "$common" ] || return 2
+
+    # The main checkout is the parent of its own .git. That holds for an
+    # ordinary repository and not for `--separate-git-dir` or a bare one, so it
+    # is checked rather than assumed: a parent that does not carry a `.git` of
+    # its own is not the main worktree.
+    main="${common%/*}"
+    [ -n "$main" ] || main="/"
+    [ -d "$main" ] && [ -e "$main/.git" ] || return 2
+    # Same directory reached by two spellings (a symlinked path, say): keep the
+    # one `--show-toplevel` gave, so an answer does not move under a caller that
+    # is already using it.
+    if [ "$main" -ef "$root" ] 2>/dev/null; then main="$root"; fi
+    printf '%s' "$main"
+}
+
 # Absolute path of the directory the session map and its audit log belong in,
 # for the repository containing the current working directory. Outside a
 # repository: a subdirectory of the user's own ~/.claude — that subdirectory
@@ -47,7 +87,7 @@
 # Prints the directory; never creates it. Callers create it with the umask and
 # the .gitignore they need.
 nexus_redaction_state_dir() {
-    local root common main
+    local root main
 
     root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
     if [ -z "$root" ]; then
@@ -55,30 +95,12 @@ nexus_redaction_state_dir() {
         return 0
     fi
 
-    # --git-common-dir is the ONE directory every linked worktree of a
-    # repository shares. It answers relative to the CURRENT DIRECTORY (".git"
-    # in the main checkout, "../.git" one level down) and absolutely from a
-    # linked worktree, so resolve it rather than trusting its shape.
-    common="$(git rev-parse --git-common-dir 2>/dev/null || true)"
-    [ -n "$common" ] && common="$(cd "$common" 2>/dev/null && pwd -P || true)"
-
-    if [ -n "$common" ]; then
-        # The main checkout is the parent of its own .git. That holds for an
-        # ordinary repository and not for `--separate-git-dir` or a bare one,
-        # so it is checked rather than assumed: a parent that does not carry a
-        # `.git` of its own is not the main worktree, and the fallback is the
-        # per-worktree behaviour this file exists to replace — narrower than
-        # correct, never wider.
-        main="${common%/*}"
-        [ -n "$main" ] || main="/"
-        if [ -d "$main" ] && [ -e "$main/.git" ]; then
-            # Same directory reached by two spellings (a symlinked path, say):
-            # keep the one `--show-toplevel` gave, so the map does not move
-            # under a session that is already using it.
-            if [ "$main" -ef "$root" ] 2>/dev/null; then main="$root"; fi
-            printf '%s' "$main/.claude/session-state"
-            return 0
-        fi
+    # The fallback, when the main checkout cannot be confirmed, is the
+    # per-worktree behaviour this file exists to replace — narrower than
+    # correct, never wider.
+    if main="$(nexus_main_checkout .)"; then
+        printf '%s' "$main/.claude/session-state"
+        return 0
     fi
 
     printf '%s' "$root/.claude/session-state"

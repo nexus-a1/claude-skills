@@ -131,7 +131,7 @@ For `all`, run each artifact type sequentially (or report results for each). For
 **Special cases:**
 - `requirements` → Delegate to `/rebuild-requirements-index` skill
 - `product-knowledge` → Delegate to `product-expert` agent
-- `tasks` → Delegate to `shared/tasks/tasks.sh` (see Rebuild: Tasks). Step 2's git sync and Step 3.5's commit do not apply: the task store is local only.
+- `tasks` → Delegate to `shared/tasks/tasks.sh` (see Rebuild: Tasks). Step 2's git sync and Step 3.5's commit do not apply: the task store is never git-backed — it lives in the project, or in a shared directory outside every repository (global mode), and neither is synced or committed.
 
 ---
 

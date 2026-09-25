@@ -3,7 +3,7 @@ name: todo
 model: claude-haiku-4-5
 category: project-setup
 description: Add a task to the project's task store with priority, category and scope through a short wizard. Also lists open tasks, closes one (done), and imports an existing TODO.md once (migrate).
-argument-hint: "[title of a new task] | list | done <number|id> | migrate"
+argument-hint: "[title of a new task] | list [--all] | done <number|id> | migrate [--from <dir>]"
 userInvocable: true
 allowed-tools: "Write, AskUserQuestion, Bash(bash:*)"
 ---
@@ -29,6 +29,13 @@ configuration. One script, `shared/tasks/tasks.sh`, owns every read and write:
 this skill asks the questions, puts what the user typed into files, runs the
 script and shows what it prints. It never edits task files itself.
 
+**Two modes.** By default the store travels with the repository (`local`). With
+`mode: global` on the `tasks` artifact the store is one shared list outside every
+repository, and each task records its **project** — so lists show the current
+project unless `--all` asks for every project. The script reports the mode (`mode`)
+and, in global mode, the current project (`project`) in its output; this skill
+branches on those, never on its own guess. `/configuration-init` sets the mode up.
+
 ## When to Use
 
 - Capturing a new feature idea, bug, improvement or decision
@@ -44,15 +51,20 @@ script and shows what it prints. It never edits task files itself.
 ## Arguments
 
 ```text
-/todo [title]            add a task (asks for the title when omitted)
-/todo list               list open tasks, numbered
-/todo done <number|id>   close an open task
-/todo migrate            import TODO.md into the store, once
+/todo [title]                 add a task (asks for the title when omitted)
+/todo list                    list open tasks, numbered
+/todo list --all              global mode: every project's open tasks
+/todo done <number|id>        close an open task
+/todo migrate                 import what this project has into the store, once
+/todo migrate --from <dir>    global mode: name the old store to move in
 ```
 
 **Choosing the mode.** Look at the whole argument text:
 - exactly `list` → **List**
+- exactly `list --all` → **List**, all projects. `--all` after `list` is always
+  this flag — never part of a title.
 - exactly `migrate` → **Migrate**
+- `migrate --from` followed by a path → **Migrate**, with that path as the old store
 - `done` followed by one number or one task id and nothing else → **Done**
 - anything else, including empty → **Add**, with the text as the title
 
@@ -89,8 +101,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op list --scope open
 On a non-zero exit, show the message and stop — nothing has been asked yet, so
 nothing is lost. On success, remember:
 - `total`: whether the store already holds tasks (for Step A7);
+- `mode` and, in global mode, `project`: say once, before the questions,
+  `Adding to the shared task list as project {project}.`
 - `migrate_available`: when `true`, tell the user once, before the questions:
   `A TODO.md exists here and the task store is empty — run /todo migrate to import it. Nothing is imported automatically.`
+  In global mode "empty" means empty of this project's tasks.
 
 ### Step A2: Title
 
@@ -214,6 +229,7 @@ On exit `0` or `10`, show:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Title:    {title}
+Project:  {project from Step A1 — omit this line in local mode}
 Priority: {priority}
 Category: {category}
 Scope:    {scope}
@@ -226,16 +242,46 @@ Id:       {id from the output}
 
 ## List
 
+For `list`:
+
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op list --scope open
 ```
 
-Print the tasks in the order given, one per line, using `n` as the number:
+For `list --all`:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op list --scope open --project all
+```
+
+Print the tasks in the order given, one per line, using `n` as the number.
+
+In local mode (`mode` is `local`), exactly as before:
 
 ```
 Open tasks ({total}):
 {n}. [{priority}] {title} — {status}{ → promoted_to, when set}
 ```
+
+In global mode, for `list` (only the current project's tasks come back):
+
+```
+Open tasks for {project} ({total}):
+{n}. [{priority}] {title} — {status}{ → promoted_to, when set}
+
+Showing {project} only — /todo list --all shows every project.
+```
+
+In global mode, for `list --all`, put each task's project in front:
+
+```
+Open tasks, all projects ({total}):
+{n}. [{task project}] [{priority}] {title} — {status}{ → promoted_to, when set}
+```
+
+where `{task project}` is the task's `project`, or `untagged` when it is null, or
+`invalid` when it reads `invalid`. With `--all` in local mode, print the local
+list and add: `--all only applies to a shared task list; this project's tasks are all shown.`
 
 With no tasks, print `No open tasks. Use /todo to add one.` When
 `migrate_available` is `true`, add:
@@ -245,18 +291,52 @@ With no tasks, print `No open tasks. Use /todo to add one.` When
 
 ## Done
 
-The number refers to the `/todo list` order. Create an input directory:
+The number refers to the `/todo list` order — in global mode, the current
+project's list. First, learn the mode:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op resolve
+```
+
+Then create an input directory:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op input-dir
 ```
 
-**Write** the number or id, exactly as the user typed it, to `{input_dir}/ref`.
-Then:
+**Write** the number or id, exactly as the user typed it, to the file `ref` in
+the input directory.
+
+**Local mode** (`mode` is `local`) — close it directly:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op done --input "{input_dir}"
 ```
+
+**Global mode** — show it back and confirm first, because a shared list holds
+other projects' tasks too:
+
+1. Resolve the reference:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op show --input "{input_dir}"
+   ```
+
+   On a non-zero exit, show the message and stop; nothing was changed.
+2. Call the printed `task.id` `{task_id}`. Use AskUserQuestion:
+   - header: "Close task"
+   - question: `Close [{task.project}] {task.title} ({task_id})?` — and when
+     `task.project` is not the current `project`, add on its own line:
+     `This task belongs to project {task.project}, not {project}.`
+   - options:
+     - "Close it" / "Archive the task; it is no longer listed"
+     - "Keep it open" / "Change nothing"
+   - multiSelect: false
+3. On "Keep it open", stop with `Nothing was closed.` On "Close it":
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op done --id "{task_id}"
+   ```
 
 On exit `0` or `10`: `Closed task {id}. It is archived and no longer listed.`
 On exit `20`, show the message — it names the number or id it could not find, and
@@ -265,6 +345,55 @@ nothing was changed.
 ---
 
 ## Migrate
+
+First, learn the mode:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op resolve
+```
+
+**Local mode** (`mode` is `local`): `--from` does not apply — if it was given,
+say `--from only applies when tasks are kept in a shared list (global mode).` and
+stop. Otherwise go to **Import TODO.md** below.
+
+**Global mode** imports two things, in this order, and reports each:
+
+1. **The old per-repository store.** With `--from <dir>`, create an input
+   directory:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op input-dir
+   ```
+
+   and **Write** the path, exactly as typed, to the file `from` in it. Then:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op migrate-store --input "{input_dir}"
+   ```
+
+   Without `--from`:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op migrate-store
+   ```
+
+   Report:
+
+   ```
+   Moved from the old task store ({source, or "none"}) into the shared list as {project}
+     Open tasks:      {copied}
+     Archived (done): {archived}
+     Already present: {skipped}
+   ```
+
+   Then print `note` when present — it says when there was no old store, or when
+   the store belongs to the whole workspace and how to move it. The old store is
+   never changed; say so.
+2. **This project's TODO.md** — go to **Import TODO.md**. If it answers that
+   there is no TODO.md, print `No TODO.md in this project — nothing more to import.`
+   and stop; that is not an error here.
+
+### Import TODO.md
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op migrate
@@ -293,7 +422,7 @@ print `line {line} (section "{section}"): not part of any entry — not imported
 
 | Situation | What to show |
 |-----------|--------------|
-| Exit 20 | The script's message, unchanged. For a shared (git) location it explains that tasks need a local location. |
+| Exit 20 | The script's message, unchanged. For a git location it explains that tasks need a local directory; in global mode it names what is wrong with the shared list's directory and the fix. |
 | Exit 30 | The script's message; nothing further. |
 | Exit 10 | The success message plus: `The task index could not be updated — run /rebuild-index tasks.` |
 | Empty title twice | `Cannot add a task without a title. Try again with: /todo [your title]` |
@@ -302,4 +431,5 @@ print `line {line} (section "{section}"): not part of any entry — not imported
 
 - **One owner:** every read and write goes through `shared/tasks/tasks.sh`. The store layout is documented in `shared/manifest-schema.md` ("Tasks").
 - **Zero setup:** with no configuration the store is local to the project.
+- **Global mode:** a shared list outside every repository, tagged by project; set up with `/configuration-init`. Adding a task there never changes a file in the repository.
 - **Never modifies `TODO.md`:** migrate reads it and keeps one backup.

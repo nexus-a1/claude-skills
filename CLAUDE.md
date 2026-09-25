@@ -327,7 +327,7 @@ All skills that use multiple agents support configurable execution mode (`"subag
 | Key | Type | Purpose |
 |-----|------|---------|
 | `type` | `git` or `directory` | `git` locations are synced (pull) before reads; `directory` locations are plain local paths |
-| `path` | Absolute or relative path | Base path for the location. Git locations should use absolute paths. |
+| `path` | Absolute or relative path | Base path for the location. Git locations should use absolute paths. May start with `~/` (or be bare `~`), expanded to `$HOME` per user. |
 
 **`storage.artifacts`** — Maps logical artifact names to storage locations. Each artifact specifies a `location` (reference to a `storage.locations` key) and a `subdir` within that location.
 
@@ -337,7 +337,7 @@ All skills that use multiple agents support configurable execution mode (`"subag
 | `brainstorms` | `local` | `brainstorm` | `/brainstorm` |
 | `meetings` | `local` | `meetings` | `/meeting` |
 | `refactoring` | `local` | `work/refactoring-sessions` | `refactorer` agent |
-| `tasks` | `local` | `tasks` | `/todo`, `/todo-work`, `/rebuild-index tasks` — local only; a git-typed location is refused |
+| `tasks` | `local` | `tasks` | `/todo`, `/todo-work`, `/rebuild-index tasks` — `mode: global` shares one store across projects; a git-typed location is refused either way |
 | `proposals` | `local` | `proposals` | `/create-proposal` |
 | `requirements` | `local` | `requirements` | `/archive-requirements`, `/search-requirements`, `archivist` agent |
 | `product-knowledge` | `local` | `.` | `product-expert` agent |
@@ -371,6 +371,20 @@ Workspace mode is auto-detected — no configuration needed:
 - Plain directory with git repos as subdirs → **multi mode** (per-service worktrees via `git worktree add`)
 
 Define `workspace.services` only to limit which repos are included. If omitted, all git repos in immediate subdirectories are auto-discovered.
+
+### Global task store
+
+`storage.artifacts.tasks.mode: global` points every project configured the
+same way at one shared task store outside every repository, instead of the
+default per-repository store. The location's `path` must be home-relative
+(`~/…`) or absolute so it resolves the same for everyone, and it must already
+exist — `/configuration-init` sets it up (`--op init-store`), which is the only
+op allowed to create it. Every task then carries the `project` it was written
+from (`project.name`, else the repository's main-checkout folder name); `/todo`
+defaults to the current project and `/todo list --all` shows every project's.
+`/todo migrate` moves an existing per-repository store into the shared one
+(`tasks.sh --op migrate-store`), then imports a `TODO.md`. See the
+"Tasks" section of [manifest-schema.md](shared/manifest-schema.md).
 
 ### How It Works
 

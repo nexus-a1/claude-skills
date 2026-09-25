@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.47.0] - 2026-09-25
+
+## What's Changed
+
+21 commits: 11 feat, 6 fix, 1 docs, 1 chore, 2 merges. No breaking changes. One feature, CL-122: an opt-in **global task store**. `/todo` can now keep one shared task list outside every repository, so adding a task never changes a repository file. Without the setting, nothing changes.
+
+### Features
+
+- **config**: expand a leading `~/` in storage location paths — a committed configuration can name a per-user directory without carrying anyone's home path — CL-122
+- **tasks**: global mode for the task store (`storage.artifacts.tasks.mode: global`), with safety gates — the store must be private, outside every git work tree, and a directory of its own; every failure refuses rather than falling back to the repository — CL-122
+- **tasks**: tag every task in a shared store with its project (the same name from a repository's root, a subdirectory or a worktree) — CL-122
+- **tasks**: publish new task files exclusively, so projects adding at the same moment never overwrite each other — CL-122
+- **tasks**: list the current project by default in a shared store; `--all` shows every project — CL-122
+- **tasks**: hand off only the current project's tasks to `/create-requirements` — CL-122
+- **tasks**: import a project's `TODO.md` into a shared store, keyed per project — CL-122
+- **tasks**: `migrate-store` moves an existing per-repository store into the shared one — CL-122
+- **todo**: `/todo list --all`, confirm-before-close in a shared list, and `/todo migrate` moving the old store then `TODO.md` — CL-122
+- **config**: helpers that write global task mode in its committed (`~/`) form — CL-122
+- **configuration-init**: always asks where tasks live, explains both answers, sets up the shared list, and offers to move existing tasks — CL-122
+
+### Bug Fixes
+
+- **review**: address the QA panel's findings — CL-122
+- **configuration-init**: every setup path now reaches the Jira and task-location questions — CL-122
+- **tasks**: quote the path in the missing-store fix command — CL-122
+- **tasks**: address the `/pr-review` findings (an empty default store no longer fails a fresh setup; migrate counts only new entries) — CL-122
+- **ci**: test job timeout raised to 30 minutes; literal tildes marked for shellcheck — CL-122
+- **tasks**: two guards written as `if` statements (SC2015) — CL-122
+
+### Other Changes
+
+- **docs**: global task mode, project tags and the two migrations; ADR-019 amends ADR-016 — CL-122
+- **config**: this repository maps a requirements knowledge base — CL-122
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.46.0...v1.47.0
+
 ## [1.46.0] - 2026-09-25
 
 ## What's Changed

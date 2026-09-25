@@ -90,6 +90,49 @@ _reject_shell_metacharacters() {
   return 0
 }
 
+# A location path written home-relative (CL-122). `~` or `~/rest` becomes
+# "$HOME" or "$HOME/rest"; anything else is printed unchanged. This is how a
+# committed configuration names a per-user directory — `path: ~/.nexus` — without
+# carrying one person's absolute home path to everyone who clones the repository.
+#
+# Before this, `~` was not a shell metacharacter here, so `~/x` passed every
+# check and was anchored to WORKSPACE_ROOT: a literal directory named `~` inside
+# the project. Expanding it is therefore a fix for every artifact, not only tasks.
+#
+# Deliberately narrow:
+#   * only a LEADING `~` or `~/` — a tilde anywhere else is an ordinary character;
+#   * never `~user` — that would need a password-database lookup, and a
+#     configuration that names another account's home is not something to honour;
+#   * no `..` segment after the prefix — `~/../x` would become an absolute path,
+#     and absolute paths skip the traversal rule, so it would leave $HOME;
+#   * `$HOME` stays refused by the metacharacter check: `~/` is the one spelling.
+# Parameter expansion only: nothing here is evaluated (E6).
+#
+# Prints the path; exits 1 (with the reason on stderr) when it must be refused.
+_expand_home_path() {
+  local value="$1" keyname="$2" rest=""
+  case "$value" in
+    '~')   rest="" ;;
+    '~/'*) rest="${value:2}" ;;
+    *)     printf '%s' "$value"; return 0 ;;
+  esac
+  if [[ -z "${HOME:-}" || "$HOME" != /* ]]; then
+    echo "resolve-config: ${keyname} is home-relative ('${value}') but \$HOME is empty or not absolute" >&2
+    return 1
+  fi
+  case "/$rest/" in
+    */../*)
+      echo "resolve-config: ${keyname} must not contain a '..' path segment, got '${value}' — it would resolve outside the home directory" >&2
+      return 1
+      ;;
+  esac
+  if [[ -z "$rest" ]]; then
+    printf '%s' "$HOME"
+  else
+    printf '%s/%s' "${HOME%/}" "$rest"
+  fi
+}
+
 # --- Containment of configured path fragments (CL-52) ---
 #
 # `configuration.yml` is project-controlled input. In a plugin environment it is
@@ -235,6 +278,9 @@ resolve_artifact() {
     # `..` involved at all. Never let either half be empty.
     [[ -n "$_BASE" && "$_BASE" != "null" ]] || _BASE="$default_base"
     [[ -n "$_SUB"  && "$_SUB"  != "null" ]] || _SUB="$default_subdir"
+    # A home-relative location path (CL-122) becomes absolute before any check
+    # below reads it, so the absolute-path rules are the ones that apply.
+    _BASE=$(_expand_home_path "$_BASE" "storage.locations.${_LOC}.path") || _BASE="$default_base"
 
     # Containment (CL-52). An absolute LOCATION path is legitimate and
     # documented ("Git locations should use absolute paths"), so only the
@@ -289,6 +335,9 @@ resolve_artifact_typed() {
     # `..` involved at all. Never let either half be empty.
     [[ -n "$_BASE" && "$_BASE" != "null" ]] || _BASE="$default_base"
     [[ -n "$_SUB"  && "$_SUB"  != "null" ]] || _SUB="$default_subdir"
+    # A home-relative location path (CL-122) becomes absolute before any check
+    # below reads it, so the absolute-path rules are the ones that apply.
+    _BASE=$(_expand_home_path "$_BASE" "storage.locations.${_LOC}.path") || _BASE="$default_base"
     [[ -n "$_TYPE" && "$_TYPE" != "null" ]] || _TYPE="directory"
 
     # Containment (CL-52) — same advisory fallback as resolve_artifact.
@@ -388,6 +437,10 @@ resolve_artifact_strict() {
 
   _SUB=$(yq -r ".storage.artifacts.${artifact}.subdir // \"${default_subdir}\"" "$CONFIG" 2>/dev/null)
   _TYPE=$(yq -r ".storage.locations.${_LOC}.type // \"directory\"" "$CONFIG" 2>/dev/null)
+
+  # A home-relative location path (CL-122) becomes absolute first; a refusal
+  # here is a broken configuration, like every other one this resolver meets.
+  _BASE=$(_expand_home_path "$_BASE" "storage.locations.${_LOC}.path") || return 5
 
   # Containment (CL-52). The strict resolver REFUSES rather than falling back:
   # it gates writes, and quietly substituting a default would send a commit

@@ -200,7 +200,9 @@ Layout under `{TASKS_DIR}`:
 | `manifest.json` | Live index of open tasks — a **rebuildable cache** |
 | `items/{id}.json` | One file per open task — the source of truth |
 | `archive/{id}.json` | Done tasks, outside the index |
-| `migration/TODO.md.bak` | The one backup `/todo migrate` takes, never overwritten |
+| `store.json` | Marker written by `--op init-store`; present only on a shared (`mode: global`) store — `{"mode":"global","version":1}` |
+| `migration/TODO.md.bak` | Per-repository store: the one backup `/todo migrate` takes, never overwritten |
+| `migration/{project}/TODO.md.bak` | Shared store: same backup, one per project that has migrated its `TODO.md` in |
 
 Index item:
 
@@ -211,6 +213,7 @@ Index item:
   "status": "proposed|not_started|needs_discussion|in_progress|promoted",
   "priority": "emergency|high|medium|low|unknown",
   "category": "Improvement",
+  "project": null,
   "created_at": "2026-09-12T20:35:00Z",
   "updated_at": "2026-09-12T20:35:00Z",
   "promoted_to": null,
@@ -218,10 +221,25 @@ Index item:
 }
 ```
 
+`project` is `null` in a per-repository (`local`, the default) store and on a
+task written before CL-122. In a shared (`mode: global`) store it holds the
+project name the task was written from.
+
 Detail file (`items/{id}.json`, and `archive/{id}.json` with `status: "done"`)
 carries the index fields plus `scope`, `description`, `related`, `ticket_key`
-(plain text or `null` — nothing syncs with a tracker) and `migrated_from`
-(`{"source", "line", "fingerprint"}` or `null`).
+(plain text or `null` — nothing syncs with a tracker) and `migrated_from`.
+
+`migrated_from` takes one of three shapes, or `null` for a task added directly:
+
+- **Imported from `TODO.md`** (`/todo migrate`): `{"source": "TODO.md", "line",
+  "fingerprint"}`, plus `"todo_key"` in a shared store — the fingerprint
+  composed with the project, so the same entry migrated from two projects'
+  `TODO.md` files is not mistaken for a duplicate of itself.
+- **Copied from a per-repository store into a shared one** (`/todo
+  migrate-store`): `{"source": "store", "original_id", "source_key",
+  "migrated_at"}`, plus `"fingerprint"`/`"todo_key"` when the copied task was
+  itself a `TODO.md` import — carried forward so the same entry is not
+  imported twice regardless of which migration runs first.
 
 Unique key: `id`, generated as `YYYYMMDD-HHMMSS-xxxx` (hex), never derived from
 the title, so two tasks with the same title never collide. Required: `id`,
@@ -248,9 +266,21 @@ lists `items/` minus any id present in `archive/`, reports and removes such a
 leftover item file, and list reads apply the same rule to index entries — so an
 interrupted `/todo done` leaves exactly one copy.
 
-**Local only.** The `tasks` artifact is refused on a git-typed location, and
-refused when its resolved path is, contains or equals another artifact's
-directory, or is at or above the configuration directory.
+**Two modes.** `storage.artifacts.tasks.mode` is `local` (default) or `global`.
+`local` keeps one store per repository, as above, and carries no `project`.
+`global` points every project configured the same way at one store outside
+every repository (a home-relative or absolute `storage.locations.<name>.path`,
+typically `~/something`), and every task in it carries `project` — the
+configured `project.name`, else the repository's main-checkout folder name.
+`/todo list`/`show`/`done` default to the current project in global mode
+(`--project all` shows every project's tasks); a global-mode store not marked
+with `store.json` (written by `--op init-store`), or a `local`-mode config
+pointed at a store that already carries the marker, is refused. `/todo
+migrate` still imports a `TODO.md`, keyed per project in a shared store;
+in global mode it first moves the project's per-repository store into the
+shared one (`tasks.sh --op migrate-store`). In both modes, the `tasks` artifact is refused on a git-typed
+location, and refused when its resolved path is, contains or equals another
+artifact's directory, or is at or above the configuration directory.
 
 ## Update Operations
 

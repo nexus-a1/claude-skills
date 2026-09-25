@@ -49,7 +49,7 @@ If `$ARGUMENTS` contains "validate":
 3. If no config found → error: "No configuration file found to validate. Run `/configuration-init` to create one."
 
 If `$ARGUMENTS` contains "migrate":
-1. Jump directly to **Step 10: Migrate Legacy Formats**. No interactive wizard is run.
+1. Jump directly to **Step 10: Migrate Legacy Formats**. No interactive wizard is run: the only questions are Step 10's apply confirmation and — only when the configuration has never chosen where tasks live — Step 5c's task-location question, offered after the migration (10.3).
 
 ### Step 1: Check Existing Configuration
 
@@ -204,7 +204,8 @@ Use AskUserQuestion:
   - ".claude-data" / "Alternative location — keeps .claude/ for config only"
 - multiSelect: false
 
-The user can type a custom path via the built-in "Other" option. Store the selected value as `LOCAL_PATH` (e.g., `.claude`, `.claude-data`, or a custom value). Then skip to Step 6.
+The user can type a custom path via the built-in "Other" option. Store the selected value as `LOCAL_PATH` (e.g., `.claude`, `.claude-data`, or a custom value). Then skip to Step 5b — Jira and the task-location question
+are asked on every path.
 
 ### Step 5: Collect Repository Details
 
@@ -329,7 +330,7 @@ Use AskUserQuestion:
   - "Yes" / "Enable Jira integration and run a quick acli check"
 - multiSelect: false
 
-**If "No"** — set `JIRA_ENABLED=""` (omit the `jira:` block entirely in Step 6; `jira.enabled` already defaults to `true` when absent, so this only means the wizard skips asking about write access — it does not disable `/jira`). Skip to Step 6.
+**If "No"** — set `JIRA_ENABLED=""` (omit the `jira:` block entirely in Step 6; `jira.enabled` already defaults to `true` when absent, so this only means the wizard skips asking about write access — it does not disable `/jira`). Skip to Step 5c.
 
 **If "Yes"** — run the check and report results before asking about write access:
 
@@ -380,6 +381,149 @@ Use AskUserQuestion:
 - multiSelect: false
 
 Set `JIRA_WRITE_ENABLED` to `"true"` or `"false"` accordingly.
+
+### Step 5c: Ask Where Tasks Live
+
+**Always asked** — on every setup and every reconfigure, whatever was answered
+above. Also reached from Step 10 (see 10.3) when a configuration has never
+chosen. `/todo` and `/todo-work` keep tasks in a store, and this is the one
+question that decides where it is.
+
+Use AskUserQuestion:
+- header: "Tasks"
+- question: "Where should /todo keep this project's tasks?"
+- options:
+  - "In this repository (default)" / "Tasks go in .claude/tasks inside the project and travel with it. Adding a task changes a file in the repository, which then needs committing and pushing if that folder is tracked."
+  - "Shared list in my home directory" / "One task list outside every repository, shared by every project set up this way. Adding a task never changes a repository file. Each task is tagged with its project; /todo list shows this project, /todo list --all shows every project."
+- multiSelect: false
+
+**If "In this repository":** set `TASKS_CHOICE=local`. Nothing else changes —
+Step 6 maps `tasks` to `.claude/tasks` exactly as before. Continue to Step 6.
+
+**If "Shared list in my home directory":** set `TASKS_CHOICE=global` and work
+through 5c.1–5c.3. Nothing is written until Step 7b.
+
+#### 5c.1 Where the shared list lives
+
+Use AskUserQuestion:
+- header: "Shared list"
+- question: "Where should the shared list live? It must be outside every repository. It is saved in the configuration as ~/…, so for anyone else using this configuration it points into their own home directory, never yours."
+- options:
+  - "~/.nexus/tasks (Recommended)" / "A hidden folder in your home directory"
+  - "Somewhere else" / "Type the path in the text field; a path inside your home directory is saved as ~/…"
+- multiSelect: false
+
+The chosen path never enters a shell command. Create an input directory:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op input-dir
+```
+
+It prints `{"ok":true,"input_dir":"..."}`; call that path `{input_dir}` for the
+rest of this step and Step 7b. **Write** the path — `~/.nexus/tasks`, or exactly
+what was typed — to `{input_dir}/path`. Then work out the form the configuration
+will carry, the project name, and what this project already has:
+
+```bash
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
+source "$NEXUS_SHARED/resolve-config.sh"
+source "$NEXUS_SHARED/config/artifacts.sh"
+
+WIZ="{input_dir}"
+case "$WIZ" in
+  "$HOME"/.claude/tmp/tasks-input.*) : ;;
+  *) echo "ERROR: not a task input directory: $WIZ" >&2; exit 1 ;;
+esac
+
+# The committed form: ~/… for a path in this user's home, never the expanded
+# home path — that would send every teammate into this user's home directory.
+RAW="$(cat "$WIZ/path")"
+RAW="${RAW%/}"
+COMMITTED="$(artifact_home_relative "$RAW")" || COMMITTED=""
+if [ -z "$COMMITTED" ]; then
+  echo "PATH_OK=false"
+  echo "That path cannot be used: give an absolute path or one starting with ~/, with no .. and no shell metacharacters."
+  exit 0
+fi
+LOCATION_PATH="${COMMITTED%/*}"
+SUBDIR="${COMMITTED##*/}"
+if [ -z "$LOCATION_PATH" ] || [ "$LOCATION_PATH" = "$COMMITTED" ] || [ -z "$SUBDIR" ]; then
+  echo "PATH_OK=false"
+  echo "Name a folder inside a directory (for example ~/.nexus/tasks), not a top-level or home directory itself."
+  exit 0
+fi
+printf '%s' "$LOCATION_PATH" > "$WIZ/location"
+printf '%s' "$SUBDIR" > "$WIZ/subdir"
+
+# An old per-repository store somewhere other than .claude/tasks, recorded so
+# Step 7b can offer it too. Only this directory's own configuration is asked:
+# one found higher up belongs to a parent workspace, and its store is the whole
+# workspace's, not this project's.
+OLD_CUSTOM=none
+if [ -n "${CONFIG:-}" ] && [ "$CONFIG" -ef "$PWD/.claude/configuration.yml" ]; then
+  OLD="$(bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op resolve 2>/dev/null | jq -r 'select(.mode == "local") | .dir // empty' 2>/dev/null || true)"
+  if [ -n "$OLD" ] && [ -d "$OLD" ] && ! [ "$OLD" -ef "$PWD/.claude/tasks" ]; then
+    printf '%s' "$OLD" > "$WIZ/from"
+    OLD_CUSTOM="$OLD"
+  fi
+fi
+
+echo "PATH_OK=true"
+echo "TASKS_LOCATION_PATH=$LOCATION_PATH"
+echo "TASKS_SUBDIR=$SUBDIR"
+echo "OLD_STORE_CUSTOM=$OLD_CUSTOM"
+```
+
+**If `PATH_OK=false`:** show the message and ask 5c.1 once more. A second
+unusable path falls back to `TASKS_CHOICE=local`: say `Keeping tasks in the
+repository — re-run /configuration-init to try another path.`
+
+What this project already has — an old store, a TODO.md — is counted in Step
+7b, once the shared list exists: counting now would read whatever configuration
+the directory walk finds, which below a parent workspace is the parent's, not
+this project's.
+
+#### 5c.2 Project name
+
+Not asked here. The task store decides the name itself — the main checkout's
+folder name in a repository (the same from a subdirectory or a worktree), each
+repository's own folder name below a parent workspace configuration — and
+Step 7b shows the name it chose and offers to change it, once the shared list
+exists and the store can say.
+
+#### 5c.3 Show exactly what will be written
+
+Print the block below with the values filled in. A project name, if one is set
+in Step 7b, is added as `project.name`:
+
+```yaml
+storage:
+  locations:
+    home:
+      type: directory
+      path: "<TASKS_LOCATION_PATH printed above>"
+  artifacts:
+    tasks:
+      location: home
+      subdir: "<TASKS_SUBDIR printed above>"
+      mode: global
+```
+
+Add: `~ stands for the home directory of whoever runs a task command — nothing
+personal is written. The folder is created, private to you, when the file is
+written.`
+
+Use AskUserQuestion:
+- header: "Confirm"
+- question: "Write this into .claude/configuration.yml?"
+- options:
+  - "Write it" / "Tasks go to the shared list; the folder is created after the file is written"
+  - "Keep tasks in the repository" / "Change nothing about tasks"
+- multiSelect: false
+
+On "Keep tasks in the repository", set `TASKS_CHOICE=local`.
 
 ### Step 6: Build Configuration
 
@@ -531,8 +675,12 @@ LOCAL_PATH=$(yq -r 'select(document_index == 0) | .storage.locations.local.path 
 # LOCAL_PATH is the one value here the user typed freely, and it prefixes every
 # mkdir below. A config arriving with a cloned repo could carry an absolute or
 # traversing path; fall back rather than create directories outside the project.
-if [[ "$LOCAL_PATH" == /* || "$LOCAL_PATH" == *".."* ]]; then
-  echo "Refusing storage path '${LOCAL_PATH}' — must be relative and must not traverse. Using .claude." >&2
+# A leading ~ is refused as well: the resolver now reads `~/x` as $HOME/x, and
+# mkdir here would make a literal `./~/x` — two readers, two directories. A
+# location in the home directory is for the shared task list (Step 5c), not for
+# the project's own local storage.
+if [[ "$LOCAL_PATH" == /* || "$LOCAL_PATH" == *".."* || "$LOCAL_PATH" == "~"* ]]; then
+  echo "Refusing storage path '${LOCAL_PATH}' — must be relative to the project, must not traverse, and must not start with ~. Using .claude." >&2
   LOCAL_PATH=".claude"
 fi
 
@@ -546,6 +694,191 @@ mkdir -p .claude
 ```
 
 `artifact_local_dirs` already skips artifacts pointing at any non-local location, and skips a `subdir` of `.` (the location root, which exists by definition).
+
+### Step 7b: Put Tasks in the Shared List
+
+Only when Step 5c ended with `TASKS_CHOICE=global`. Step 7 wrote the file with
+tasks inside the repository; this step switches them over, and puts the file
+back exactly as Step 7 wrote it if anything fails — a configuration left in
+global mode with no usable store would refuse every task command.
+
+**1. Write the setting** — backed up first, then one verified write:
+
+```bash
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
+source "$NEXUS_SHARED/resolve-config.sh"
+source "$NEXUS_SHARED/config/artifacts.sh"
+
+WIZ="{input_dir}"
+case "$WIZ" in
+  "$HOME"/.claude/tmp/tasks-input.*) : ;;
+  *) echo "ERROR: not a task input directory: $WIZ" >&2; exit 1 ;;
+esac
+CFG=".claude/configuration.yml"
+if ! artifact_yq_preserves_comments; then
+  artifact_yq_refusal_message "$CFG" >&2
+  echo "APPLIED=false"
+  exit 0
+fi
+TS="$(date +%Y%m%d-%H%M%S)"
+artifact_backup_once "$CFG" "$TS" || { echo "APPLIED=false"; exit 0; }
+printf '%s' "$CFG.bak-$TS" > "$WIZ/backup"
+PROJECT=""
+[ -f "$WIZ/project" ] && PROJECT="$(cat "$WIZ/project")"
+if artifact_apply_tasks_global "$CFG" home "$(cat "$WIZ/location")" "$(cat "$WIZ/subdir")" "$PROJECT"; then
+  echo "APPLIED=true"
+else
+  cp -p -- "$CFG.bak-$TS" "$CFG"
+  echo "APPLIED=false"
+fi
+```
+
+**If `APPLIED=false`:** the file is as Step 7 wrote it, with tasks in the
+repository. Say so. The likely causes: a comment-stripping `yq` (the message
+says), a project name outside letters, digits, dot, underscore and dash (ask
+5c.2 again), or a `home` location already in the configuration with a different
+path (rename that location, or choose its path). Skip to the cleanup in point 4.
+
+**2. Create the store.** The store's own checks run here — outside every
+repository, private to you, a directory of its own — and the folder is made
+with mode 700 at every level:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op init-store
+```
+
+**On any non-zero exit,** show the message (it names what is wrong and the fix)
+and put the configuration back:
+
+```bash
+WIZ="{input_dir}"
+case "$WIZ" in
+  "$HOME"/.claude/tmp/tasks-input.*) : ;;
+  *) echo "ERROR: not a task input directory: $WIZ" >&2; exit 1 ;;
+esac
+BAK="$(cat "$WIZ/backup")"
+case "$BAK" in
+  .claude/configuration.yml.bak-*) cp -p -- "$BAK" .claude/configuration.yml && echo "RESTORED=true" ;;
+  *) echo "RESTORED=false — restore .claude/configuration.yml from its .bak- copy by hand" ;;
+esac
+```
+
+Then say `Tasks stay in the repository for now.` and skip to point 4 — except
+when the message names `project.name` and `in_repository` would be true (a
+folder name with a space, say, or a main checkout that cannot be confirmed):
+then ask for a name as in point 2b first, and run `init-store` once more before
+putting the configuration back.
+
+**2b. Confirm the project name.** `init-store` prints `project` (the name the
+store will tag tasks with), `in_repository` and `project_named`.
+
+**If `in_repository` is false**, ask nothing: this configuration is not one
+repository's. Say `Tasks added in this folder are tagged {project}; each
+repository below it tags its tasks with its own folder name.`
+
+**Otherwise** use AskUserQuestion:
+- header: "Project name"
+- question: "Tasks from this project are tagged {project} on the shared list. Keep that name?"
+- options:
+  - "Keep {project}" / "Nothing more is written — the name comes from the repository"
+  - "Set a different name" / "Type it in the text field: letters, digits, dot, underscore and dash; it is saved as project.name"
+- multiSelect: false
+
+On "Set a different name", **Write** the name to `{input_dir}/project`, then:
+
+```bash
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
+source "$NEXUS_SHARED/resolve-config.sh"
+source "$NEXUS_SHARED/config/artifacts.sh"
+
+WIZ="{input_dir}"
+case "$WIZ" in
+  "$HOME"/.claude/tmp/tasks-input.*) : ;;
+  *) echo "ERROR: not a task input directory: $WIZ" >&2; exit 1 ;;
+esac
+if artifact_apply_tasks_global ".claude/configuration.yml" home "$(cat "$WIZ/location")" "$(cat "$WIZ/subdir")" "$(cat "$WIZ/project")"; then
+  echo "NAMED=true"
+else
+  echo "NAMED=false"
+fi
+```
+
+On `NAMED=false` the name was not usable: say so and ask once more. On
+`NAMED=true`, run the `init-store` call from point 2 again — it checks the name
+and reports the new `project`.
+
+**3. Offer to move what exists.** Now the shared list exists and the
+configuration names this project, the task store can count what a move would
+copy, by its own rules (archive wins, anything already imported skipped). When
+5c printed an `OLD_STORE_CUSTOM` path, count that store:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op migrate-store --count --input "{input_dir}"
+```
+
+Otherwise count the project's `.claude/tasks`:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op migrate-store --count
+```
+
+Then this project's TODO.md:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op migrate --count
+```
+
+The first reports `copied` (open) and `archived` (done) for the project's old
+`.claude/tasks`, or a `note` when there is none — or when the configuration sits
+above several repositories, where that store belongs to the whole workspace. The
+second reports `new` — the entries in this project's TODO.md not yet in the
+store (`entries` is the total, `already_imported` the rest). When either count is above
+zero, use AskUserQuestion:
+- header: "Move tasks"
+- question: "This project already has {copied} open and {archived} done tasks in its old store, and {new} entries in TODO.md not yet imported. Move them into the shared list now?"
+- options:
+  - "Move them" / "Copy every task and TODO.md entry into the shared list, tagged with this project. The old store and TODO.md are left exactly as they are."
+  - "Later" / "Move nothing now; run /todo migrate whenever you like"
+- multiSelect: false
+
+On "Move them", the old store first — its tasks may include TODO.md entries
+imported earlier, and the TODO.md import recognises those. With an
+`OLD_STORE_CUSTOM` path (this call removes the input directory, so it runs last
+of the calls that use it):
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op migrate-store --input "{input_dir}"
+```
+
+Otherwise:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op migrate-store
+```
+
+Only when `copied` or `archived` was above zero. Then, when `new` was above
+zero:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op migrate
+```
+
+Report each the way `/todo migrate` does: copied, archived, already present,
+and any note. Neither the old store nor TODO.md is changed.
+
+**4. Clean up** the input directory, if it is still there:
+
+```bash
+WIZ="{input_dir}"
+case "${WIZ#"$HOME"/.claude/tmp/tasks-input.}" in
+  "$WIZ"|''|*[!A-Za-z0-9]*) exit 0 ;;
+esac
+[ -d "$WIZ" ] && [ ! -L "$WIZ" ] && rm -rf -- "$WIZ"
+```
 
 ### Step 8: Show Summary
 
@@ -579,6 +912,13 @@ STORAGE LOCATIONS
 ARTIFACTS
 ────────────────────────────────────────────────
   ${one row per artifact in the written config}
+
+TASKS
+────────────────────────────────────────────────
+  where:     in this repository (.claude/tasks)          # TASKS_CHOICE=local
+  where:     shared list at ${TASKS_LOCATION_PATH}/${TASKS_SUBDIR}   # global
+  project:   ${project from init-store's output}                    # global
+  moved in:  ${counts from Step 7b, or "nothing yet — run /todo migrate"}  # global
 
 REQUIREMENTS BEHAVIOR
 ────────────────────────────────────────────────
@@ -778,6 +1118,20 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
    → Report, never fail: a config shared across a team is legitimately valid on
      a machine where the current user has not logged in yet. The point is that
      the failure surfaces here rather than mid-pipeline.
+
+8. tasks location (CL-122)
+   → Run the task store's own resolution, which reads and creates nothing:
+       bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op resolve
+     Success → PASS ("tasks: {mode}, {dir}" — plus ", project {project}" in
+     global mode). A refusal → FAIL with the script's message unchanged: in
+     global mode it names what is wrong with the shared list's directory
+     (missing, inside a repository, writable by others) and the fix.
+   → No `mode` key on storage.artifacts.tasks → PASS ("tasks: in this
+     repository") and suggest re-running /configuration-init to choose.
+   → For each line `artifact_home_absolute_locations "$EXISTING_CONFIG"`
+     prints (name|path|suggested): WARN ("storage.locations.{name}.path is
+     {path}, inside your home directory — everyone who uses this configuration
+     would be sent there; write it as {suggested}")
 ```
 
 **Output format:**
@@ -1257,6 +1611,12 @@ If any step fails, stop and report which action failed. The user can retry after
   rewritten configuration passes validation.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+**Where tasks live.** When the configuration has a `tasks` entry with no
+`mode`, it has never chosen between the repository and a shared list. After the
+summary, go to **Step 5c** and then **Step 7b** — the file already exists, so
+Step 7's write is skipped and Step 7b switches it in place. Step 5c's first
+answer, "In this repository", changes nothing.
 
 **Scope note:** This migration only handles known-historical format changes. Unknown legacy formats are left untouched — the user can file an issue if they encounter a case this skill misses.
 

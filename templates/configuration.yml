@@ -76,6 +76,8 @@ storage:
   #   path: absolute or relative path
   #     - git locations should use absolute paths
   #     - "directory" locations can be relative to project root
+  #     - a path may start with ~/ (or be bare ~) — expanded to $HOME per user,
+  #       so a committed config never carries one person's absolute home path
   #
   # You can define as many locations as needed. Common patterns:
   #   - Single team repo for all shared artifacts
@@ -89,6 +91,9 @@ storage:
     local:
       type: directory                              # local project directory
       path: .claude                                # relative to project root
+    # home:
+    #   type: directory
+    #   path: ~/.nexus                              # shared task store (see tasks below)
 
   # ---------------------------------------------------------------------------
   # Artifact Types
@@ -112,9 +117,13 @@ storage:
   #                       /create-proposal, /brainstorm promote, and any skill
   #                       that keeps a resumable session (16 components total)
   #   refactoring       — refactorer agent
-  #   tasks             — /todo, /todo-work, /rebuild-index tasks. Local only: a
-  #                       git-typed location is refused, and so is a path that is,
-  #                       contains or equals another artifact's directory
+  #   tasks             — /todo, /todo-work, /rebuild-index tasks. A git-typed
+  #                       location is refused, and so is a path that is,
+  #                       contains or equals another artifact's directory.
+  #                       `mode: global` (default `local`) points several
+  #                       projects at one shared store outside every
+  #                       repository, tagging each task with its project — see
+  #                       the commented example below
   # ---------------------------------------------------------------------------
   artifacts:
     requirements:      { location: team-knowledge, subdir: requirements }
@@ -125,6 +134,7 @@ storage:
     work:              { location: local, subdir: work }
     refactoring:       { location: local, subdir: work/refactoring-sessions }
     tasks:             { location: local, subdir: tasks }
+    # tasks:           { location: home, subdir: tasks, mode: global }
 
 
 # -----------------------------------------------------------------------------
@@ -137,9 +147,16 @@ storage:
 #                this value directly.
 #
 #   Supported values: php-symfony, php, react, node, go, java, python
+#
+#   name         Names this project on a shared (mode: global) task list, so
+#                every task written from here is tagged with it. Optional —
+#                without it: in a repository, the main checkout's folder name;
+#                outside every repository, this folder's name. Repositories
+#                below a parent configuration always use their own folder name.
 # -----------------------------------------------------------------------------
 # project:
 #   ecosystem: php-symfony
+#   name: my-project
 
 
 # -----------------------------------------------------------------------------

@@ -3,7 +3,7 @@ name: todo-work
 model: claude-sonnet-5
 category: project-setup
 description: Pick a pending or in-progress task from the task store, mark it in progress, and hand it off to /review-plan, /create-requirements or /implement. A task promoted to /create-requirements is linked to the session it becomes.
-argument-hint: "[task number]"
+argument-hint: "[task number] [--all]"
 userInvocable: true
 allowed-tools: Read, Bash, AskUserQuestion, EnterWorktree, Skill
 ---
@@ -44,17 +44,22 @@ never edits task files.
 ## Arguments
 
 ```text
-/todo-work [task number]
+/todo-work [task number] [--all]
 ```
 
 **task number** (optional): the position in the list printed by this skill. When given, the pick question is skipped.
+
+**--all** (optional, global mode): list every project's tasks rather than the
+current project's. `--all` is always this flag — never a task number or title.
+Another project's task can be looked at from here, but only handed off from its
+own project (Step 3).
 
 Exit codes from `tasks.sh`:
 - `0`: done.
 - `10`: the change was made, and only the index cache is stale. Carry on, and mention `/rebuild-index tasks`.
 - `20`: refused. Show the message exactly and stop — except from `--op show
-  --for-handoff`, whose `20` (`marker_scan: found`) still prints the task, and
-  Step 3 says what to do with it.
+  --for-handoff`, whose `20` (`marker_scan: found`, or a `project_check` other
+  than `current`) still prints the task, and Step 3 says what to do with it.
 - `30`: system error. Show the message exactly and stop — with the same
   exception for `--for-handoff`'s `30` (`marker_scan: failed`).
 
@@ -64,11 +69,21 @@ Exit codes from `tasks.sh`:
 
 ### Step 1: List workable tasks
 
+Without `--all`:
+
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op list --scope workable
 ```
 
-On a non-zero exit, show the message and stop.
+With `--all`:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op list --scope workable --project all
+```
+
+On a non-zero exit, show the message and stop. The output carries `mode`, and in
+global mode `project` — the current project, whose tasks come back unless
+`--all` was given.
 
 If `migrate_available` is `true`, say once:
 `A TODO.md exists here and the task store is empty — run /todo migrate to import it. Nothing is imported automatically.`
@@ -102,6 +117,10 @@ entry whose `n` is N. Skip the question.
    {n}. [{priority}] {title}
    ```
 
+   In global mode the heading is `Tasks for {project} ({total}):`, or
+   `Tasks, all projects ({total}):` with `--all` — and then each line starts
+   with the task's `[{project}]` (`[untagged]` when it is null).
+
    Append ` (in progress)` to the line of every task whose `status` is
    `in_progress`, so unfinished work is told apart from work not yet started.
 
@@ -129,9 +148,16 @@ bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op show --id "{task_id}" --
 ```
 
 The output carries `store` (the absolute path of the task store), `marker_scan`,
-and `task`. Keep `store` as `{task_store}` — it is resolved **here, before any
-worktree exists**: inside a worktree the store could resolve somewhere else, and
-the link must land in the store the task was picked from.
+`project_check`, and `task`. Keep `store` as `{task_store}` — it is resolved
+**here, before any worktree exists**: inside a worktree the store could resolve
+somewhere else, and the link must land in the store the task was picked from.
+
+**If `project_check` is `other`, `null` or `invalid`:** the store refused this
+handoff with exit `20`. Show the task (below), then stop — before any status
+change, worktree or handoff — with the script's message. For `other` it names the
+project the task belongs to; add: `Run /todo-work from {task.project} to start
+it.` A handoff creates a requirements session and branch in the current
+repository, and another project's work does not belong here.
 
 An exit of `20` with `marker_scan: "found"`, or `30` with `"failed"`, still prints
 the task. Show it, and remember that neither handoff — `/review-plan` or
