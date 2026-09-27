@@ -59,7 +59,7 @@ Using the inventory as your map (do NOT re-inventory endpoints/services), invest
 5. Historical context clues (TODOs, comments, workarounds)
 6. Modification risks - what could break
 
-**Maximum output: 150 lines.** Cut by removing findings already in discovery.json, entity-schema details (data-modeler's domain), and architecture decisions (architect's domain).
+Leave out findings already in discovery.json, entity-schema details (data-modeler's domain), and architecture decisions (architect's domain).
 
 Return concise findings with file paths and line numbers.
 
@@ -88,7 +88,7 @@ Do NOT design an implementation. Focus exclusively on constraints:
 5. Anti-patterns or fragile areas to avoid
 6. Feasibility checklist for evaluating any approach
 
-Return: architectural constraints manifest (~1000 tokens). File paths and line numbers for each rule cited.
+Return: architectural constraints manifest. File paths and line numbers for each rule cited.
 
 ---
 
@@ -119,7 +119,7 @@ Analyze:
 
 **Input scope:** Use discovery.json as your only context. Do NOT re-read other agents' outputs.
 
-**Maximum output: 150 lines.** Cut by removing findings already in discovery.json or outside the scope fence above.
+Leave out findings already in discovery.json or outside the scope fence above.
 
 Return schema analysis and migration requirements.
 
@@ -199,7 +199,7 @@ Analyze:
 4. Security boundaries and constraints
 5. Audit logging needs
 
-Return security requirements (~1500 tokens).
+Return security requirements.
 
 ---
 
@@ -224,7 +224,7 @@ Search for:
 3. Lessons learned and gotchas
 4. Related tickets
 
-Return historical context and recommendations (~1500 tokens).
+Return historical context and recommendations.
 
 ---
 
@@ -249,7 +249,7 @@ Research:
 3. Business rules and constraints documented in the KB
 4. Existing patterns to follow with KB-documented rationale
 
-**Maximum output: 150 lines.** If your only net-new content is a small business-decisions table or a handful of KB pointers, output ONLY that — do not pad.
+If your only net-new content is a small business-decisions table or a handful of KB pointers, output only that.
 
 Return product context.
 ```

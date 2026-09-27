@@ -17,7 +17,7 @@ Step 5.1's fallback rule applies and the classic path runs instead.
 
 Step A is a review. Step B is an edit. Only the review moves.
 
-| Stage | Where it runs after this change |
+| Stage | Where it runs on this path |
 |---|---|
 | `### 3. Analyze for Issues` | lead, unchanged — one reviewer produces the initial list |
 | `### 4. Offer to Apply Fixes` | lead, unchanged — it is a question, and a script cannot ask one |
@@ -31,7 +31,7 @@ condition too, and the round cap is the one part of this stage a reader must be 
 without reading JavaScript. The script answers one question — *does the current state of these
 files pass?* — and the lead decides whether to fix and go again.
 
-### One change of substance, not a mechanical move
+### Where the two paths differ
 
 In the classic Step A, `test-writer` is told to **add tests**: "Add tests for any logic paths
 that lost coverage due to structural changes." That is a file write, and this script fans its
@@ -40,8 +40,9 @@ constraints exist to prevent, and `test-writer` writing them while `code-reviewe
 same tree makes the review's own subject move underneath it.
 
 So on this path `test-writer` **reports coverage gaps and writes nothing**. Authoring the
-tests it names is the lead's job, in Step B alongside the `refactorer` edit — which is
-already the step where writes happen and already runs sequentially for the same reason.
+tests it names is the lead's job, at `Loop Exit`'s PASS branch — not in Step B, which runs
+only on `fail` and so would miss the usual case of a sound refactoring with one coverage gap
+(see "What the lead does with it", item 6).
 
 This is a real behavioural difference between the two paths, not a detail: on the classic
 path a coverage gap may be silently closed by the reviewer that found it; here it is reported
@@ -538,8 +539,8 @@ return {
   ok: true,
   timestamp, iteration,
   verdict: 'pass' | 'fail' | 'unverified',
-  findings,          // survived verification, each with verified:true and its verdicts
-  blocking,          // the subset that decides the verdict
+  findings,          // not dropped; each with `verified` (false = not every challenger judged it) and its verdicts
+  blockingCount,     // how many verified blocking findings decided the verdict
   dropped,           // two or more refutations, every lens's reason kept
   coverage,          // per dimension: produced findings, or did not run
   bodies,            // each dimension's prose, for the report
@@ -553,8 +554,11 @@ Three verdict values, and they are not interchangeable:
 | Verdict | Meaning | What the lead does |
 |---|---|---|
 | `pass` | no blocking finding survived, and both panels were complete | exit the loop |
-| `fail` | at least one blocking finding survived | Step B, then another round if under the cap |
-| `unverified` | a panel was short — **nothing was tallied** | say so; do not report it as a pass |
+| `fail` | at least one **verified** blocking finding survived | Step B, then another round if under the cap |
+| `unverified` | a panel was short (**nothing was tallied**), or some finding was not judged by every challenger | say so; do not report it as a pass |
+
+When no review dimension returns at all, the script returns `ok: false` instead, and the
+lead takes the classic path (SKILL.md 5.1.0).
 
 `unverified` is the one that must not be collapsed. A gate that reports `pass` because the
 challengers never answered has told the user the refactoring is sound on the strength of a

@@ -83,12 +83,10 @@ echo "BRAINSTORM_WORKFLOW_ENABLED=$BRAINSTORM_WORKFLOW_ENABLED"
 echo "WORK_DIR=$WORK_DIR"
 ```
 
-Use `$BRAINSTORM_DIR` instead of hardcoded `.claude/brainstorm` throughout this workflow.
-
-**Important:** All brainstorm content paths in this skill MUST use
-`$BRAINSTORM_DIR`. The only permitted `$WORK_DIR` uses are the
-`.active-sessions` registry and the legacy read fallback. Never use hardcoded
-paths.
+Shell variables do not survive this Bash call; later steps use the printed values.
+Brainstorm content lives under the printed `BRAINSTORM_DIR` (`$BRAINSTORM_ROOT` in later
+fences, re-derived there), never a hardcoded `.claude/brainstorm`. The work directory is used
+only for the `.active-sessions` registry and the legacy read fallback.
 
 **Reading an existing session** (resume, promote, active-session listing): look
 under `$BRAINSTORM_DIR` first, then `$LEGACY_BRAINSTORM_DIR/{slug}/state.json`
@@ -154,30 +152,17 @@ If `$ARGUMENTS` begins with `promote`, handle the promote flow instead of normal
    legacy work manifest, then set `status` to `"promoted"` and add
    `promoted_to`.
 
-7. Announce:
+7. Announce the promotion and the command that continues it, then stop — do not
+   run the brainstorm phases:
    ```
    Brainstorm '{slug}' promoted → {ticket-id}
 
-   Launching /create-requirements with brainstorm context pre-loaded...
-   ```
-
-8. Continue directly into Stage 1 of the `create-requirements` workflow with:
-   - `--from-brainstorm {slug}` flag effectively active
-   - `{ticket-id}` pre-filled when provided: create-requirements' Stage 1.1 now
-     scans `$ARGUMENTS` for a token matching `[A-Z]+-[0-9]+` and uses it directly,
-     skipping its own prompt. If `{ticket-id}` wasn't provided, Stage 1.1 asks as
-     usual — this is expected, not an error.
-   - Brainstorm context loaded per Stage 1.3b
-
-   To achieve this, output the following instruction and stop — do not run the full brainstorm phases:
-   ```
    Run: /create-requirements --from-brainstorm {slug} {ticket-id}
    ```
    **Omit the trailing `{ticket-id}` token entirely if it wasn't provided** — never
-   substitute `{slug}` in its place; create-requirements will then ask for the
-   ticket normally.
-
-   Then stop. The user will run this, or you may invoke the create-requirements workflow inline if the tool allows it.
+   substitute `{slug}` in its place. `/create-requirements` Stage 1.1 takes a
+   `[A-Z]+-[0-9]+` token from its arguments as the ticket and asks for one when
+   there is none; Stage 1.3b loads the brainstorm context.
 
 ---
 
@@ -185,7 +170,7 @@ If `$ARGUMENTS` begins with `promote`, handle the promote flow instead of normal
 
 If `$ARGUMENTS` begins with `--light`, strip the flag and enable lightweight mode:
 
-- Output to user: "Lightweight mode enabled: all agents use Sonnet."
+- Output to user: "Lightweight mode enabled: business-analyst runs on Sonnet; other agents are unchanged."
 - **Explore agent**: unchanged
 - **business-analyst**: spawn with model **sonnet** (ALWAYS Opus in standard mode — the only meaningful downgrade here)
 - **Plan agent**: unchanged
@@ -193,6 +178,8 @@ If `$ARGUMENTS` begins with `--light`, strip the flag and enable lightweight mod
 - All orchestration flow and output formats remain identical
 
 This reduces cost for exploratory brainstorming where deep reasoning is less critical than in requirements or implementation.
+
+The list above is the classic path. The orchestrated path (Phase 3.1) sets no model override, so `--light` does not change it: every agent runs on its pinned model. Say that instead of the message above when the orchestrated path runs.
 
 ---
 
@@ -284,8 +271,7 @@ Questions:
 1. What's the business driver?
    - New customer requirement
    - Compliance/regulatory need
-   - Performance issue
-   - User experience improvement
+   - Performance or user-experience improvement
    - Technical debt reduction
 
 2. What's the urgency?
@@ -462,7 +448,8 @@ skipped on this branch, so this is the only place its fields are ever seen:
   does not exist, or a value that was not an array. That is a bug in *this skill's* call,
   not in the feature, and it is the likeliest reason a `generate` stage came back empty.
 - **`judgeIntegrity.rejected`** on a `judge` failure names every judge whose rows were
-  discarded and why — `off-scale`, `malformed`, or `unknown-approach-id`. Three rejections
+  discarded and why — `off-scale`, `malformed`, `unknown-approach-id`, or
+  `contradictory-duplicate`. Three rejections
   out of three is a panel that did not follow the scoring contract at all, which is worth
   reporting as a defect rather than absorbing silently into the classic path.
 
@@ -505,7 +492,7 @@ Provide:
 
 Save output to `$BRAINSTORM_ROOT/{slug}/context/architecture-validation.md`.
 
-**IMPORTANT: Wait for both 3.1 (Plan agent) and 3.1b (architect) to complete before proceeding.** After both complete: Annotate each approach from 3.1 with architect constraints from 3.1b. Flag any approach that violates identified constraints. Add feasibility rating: Recommended / Feasible / Risky / Not Recommended.
+When both 3.1 (Plan agent) and 3.1b (architect) have returned, annotate each approach from 3.1 with architect constraints from 3.1b. Flag any approach that violates identified constraints. Add feasibility rating: Recommended / Feasible / Risky / Not Recommended.
 
 #### 3.1z Consume the orchestrated result (orchestrated path only)
 
@@ -535,15 +522,15 @@ Skip this step entirely on the classic path.
    line, because it casts doubt on its other attributions.
 8. **`judgeIntegrity.rejected` is the one to say out loud.** Each entry names a judge whose
    rows were discarded **in full** — every approach, not just the one it fumbled — and why.
-   A judge is rejected when it scored off the 1-5 scale, returned a non-number, or scored an
-   approach nobody generated. Discarding it everywhere is what keeps the remaining totals
+   A judge is rejected when it scored off the 1-5 scale, returned a non-number, scored an
+   approach nobody generated, or gave one approach two different scores. Discarding it everywhere is what keeps the remaining totals
    means over one panel rather than a mix; keeping its good rows was tried four times and each
    version decided a winner the panel had not chosen.
 9. **Do not call the result undistorted.** A smaller panel is a *commensurable* comparison,
    not an unbiased one: judges are not interchangeable, and a harsh judge's absence lifts every
    approach it would have marked down. Say who is missing, why, and that a full panel might
-   have ranked differently. `rowTriage.duplicate` is minor by comparison — the first row per
-   approach won and nothing was lost.
+   have ranked differently. `rowTriage.duplicate` is minor by comparison — it counts identical
+   repeats only, so nothing was lost.
 10. **`rankingComparable: false` means the totals are means over different panels** — judged
     by *which* judges, not how many, so two approaches with two judges each and none in common
     counts as uneven. `judgePanels` names the panel behind each. Rejection cannot cause this
@@ -574,10 +561,11 @@ Which approach interests you most?
 2. {Approach 2 name}
 3. {Approach 3 name}
 4. Combination of approaches
-5. None - need different options
-
-Or provide specific feedback on what you like/dislike.
 ```
+
+At most 4 options. With more than three candidates (the orchestrated path returns up to four
+approaches plus the synthesis), offer the synthesis and the highest-ranked originals. The
+tool's free-text **Other** covers "none of these" and specific feedback.
 
 Update state with selected approach: `"selected_approach": "{approach_name}", "phases.approaches": "completed"`.
 
@@ -906,31 +894,7 @@ Write a comprehensive summary document:
 
 Update state: `"status": "completed", "updated_at": "{ISO_TIMESTAMP}"`.
 
----
-
-## Key Features
-
-### Interactive & Iterative
-- Asks questions to understand context
-- Presents options, gets feedback
-- Refines based on user input
-- Doesn't commit prematurely
-
-### Multiple Perspectives
-- Business analyst view (why?)
-- Architect view (how?)
-- Explorer view (what exists?)
-- Planning view (trade-offs?)
-
-### Output Formats
-- **Markdown files** - Easy to read and version control
-- **Visual diagrams** - ASCII art showing relationships
-- **Work breakdowns** - Ready to convert to tickets
-
-### Smooth Transitions
-- Can feed into `/create-requirements`
-- Can scale up to `/epic` for large efforts
-- Can lead directly to implementation
+Then clear the session registry:
 
 ```bash
 # A wrong or missing substitution must fail here, not write next to `/`.
@@ -982,15 +946,3 @@ Business Request
       ├─→ /create-proposal (formal proposal needed)
       └─→ Direct implementation (simple, well-understood)
 ```
-
----
-
-## Tips for Success
-
-1. **Start broad** - Don't commit to details too early
-2. **Explore options** - Consider at least 2 approaches
-3. **Ask questions** - Better to clarify than assume
-4. **Think trade-offs** - Every approach has pros and cons
-5. **Stay flexible** - Willing to pivot based on findings
-6. **Document decisions** - Record why you chose an approach
-7. **Involve stakeholders** - Use this as basis for discussion

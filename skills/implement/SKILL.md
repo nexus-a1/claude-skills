@@ -34,7 +34,7 @@ Read `.claude/configuration.yml` for project-specific paths. If the file doesn't
 | `execution_mode` | `"team"` | QA phase execution mode (reads `qa_review` phase override) |
 | `implement.deviation_checkpoint.enabled` | `true` | Phase 3.2b plan-vs-diff sanity check after each chunk commit; set `false` to opt out |
 | `implement.playwright_scoping.enabled` | `true` | Phase 4.0 yes/no/scope question before writing Playwright E2E tests for a project with no existing Playwright config; set `false` to opt out (reverts to `implement.playwright_scoping.default`) |
-| `implement.playwright_scoping.default` | `"heuristic"` | Only consulted when `enabled: false`. `"heuristic"` keeps the prior silent file-extension detection; `"skip"` never runs `playwright-engineer` for this project regardless of files touched |
+| `implement.playwright_scoping.default` | `"heuristic"` | Only consulted when `enabled: false`. `"heuristic"` uses the file-extension detection without asking; `"skip"` never runs `playwright-engineer` for this project regardless of files touched |
 
 ```bash
 # Source resolve-config: marketplace installs get ${CLAUDE_PLUGIN_ROOT} substituted
@@ -52,13 +52,14 @@ WORK_DIR=$(resolve_artifact work work)
 QA_EXEC_MODE=$(resolve_exec_mode qa_review team)
 QA_WORKFLOW_ENABLED=$(resolve_implement_workflow_enabled)
 echo "QA_WORKFLOW_ENABLED=$QA_WORKFLOW_ENABLED"
+echo "QA_EXEC_MODE=$QA_EXEC_MODE"
 echo "WORK_DIR=$WORK_DIR"
 ```
 
 Use `$WORK_DIR` instead of a hardcoded `.claude/work` — but only inside this block. Each later block is its own Bash tool call and does not inherit the variable, so those substitute the value printed above instead.
-Use `$QA_EXEC_MODE` to determine team vs sub-agent behavior in Phase 4 (QA).
+Use the printed `QA_EXEC_MODE` to determine team vs sub-agent behavior in Phase 4 (QA).
 
-**Important:** All path references in this skill MUST use `$WORK_DIR`. Never use hardcoded `.claude/work/` paths.
+Never hardcode `.claude/work/`: use `$WORK_DIR` inside the block above, and the printed value everywhere else.
 
 ---
 
@@ -83,7 +84,7 @@ If `$ARGUMENTS` begins with `--light`, strip the flag and enable lightweight mod
 - Output to user: "Lightweight mode enabled: execution agents use Sonnet. Quality gates unchanged."
 - **Explore agent**: unchanged
 - **Plan agent**: spawn with model **sonnet**
-- **architect**: unchanged — its frontmatter already pins Sonnet, so there is nothing to downgrade
+- **architect**: unchanged — runs on its own frontmatter tier
 - **code-reviewer**: unchanged (ALWAYS Opus — quality gate)
 - **security-auditor**: unchanged (ALWAYS Opus — quality gate)
 - **quality-guard**: unchanged (ALWAYS Opus — quality gate)
@@ -92,7 +93,7 @@ If `$ARGUMENTS` begins with `--light`, strip the flag and enable lightweight mod
 - **git-operator**: unchanged
 - All orchestration flow, quality gates, and deadlock protocols remain identical
 
-This reduces cost for the planning/architecture phases while maintaining full-strength quality assurance.
+This reduces cost for the planning phase while maintaining full-strength quality assurance.
 
 ---
 
@@ -260,12 +261,23 @@ Extract:
 #### 0.2b Enter Worktree (Conditional)
 
 ```bash
-WORKTREE_ENABLED=$(resolve_worktree_enabled)
+# Its own Bash call, so the library is sourced again: without it
+# resolve_worktree_enabled is undefined and the value is empty.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
+echo "WORKTREE_ENABLED=$(resolve_worktree_enabled)"
+echo "WORKSPACE_MODE=$WORKSPACE_MODE"
 ```
 
-Skip this step if `WORKTREE_ENABLED == "false"`.
+Skip this step if the printed `WORKTREE_ENABLED` is `false`.
 
-**If WORKTREE_ENABLED == "true":** Read `references/worktree-setup.md` for the single-mode and multi-mode worktree creation flows plus the `state.json` schema for `worktree`. Apply the procedure that matches `WORKSPACE_MODE`.
+**If the printed `WORKTREE_ENABLED` is `true`:** Read `references/worktree-setup.md` for the single-mode and multi-mode worktree creation flows plus the `state.json` schema for `worktree`. Apply the procedure that matches `WORKSPACE_MODE`.
 
 ---
 
@@ -677,10 +689,6 @@ Include a **Test Impact** section in the plan listing:
 - New fixtures needed for new code paths (happy path, opt-out, edge cases such as warm-start state)
 
 If a signature change has zero fixture callers, state so explicitly. Do not skip the section.
-
-When the implementation plan spans 2+ independent services (no shared write targets),
-recommend parallel chunk execution. Note which chunks are independent and can be
-implemented by separate agents simultaneously.
 ```
 
 #### 2.3 Architecture Validation
@@ -1039,7 +1047,7 @@ Continue to next chunk? [y/n/review]
 
 **Goal**: Ensure implementation quality through tests and review.
 
-**Execution mode**: Determined by `$QA_EXEC_MODE` (from configuration).
+**Execution mode**: Determined by `QA_EXEC_MODE` (from configuration).
 
 ---
 
@@ -1047,9 +1055,9 @@ Continue to next chunk? [y/n/review]
 
 Before running QA agents, determine whether the implementation includes frontend changes that warrant Playwright E2E testing.
 
-**Check spec.md for an explicit decision first (AC-6.2), falling back to
-the file-change heuristic only when it's absent (AC-6.3 — pre-existing work
-from before this AC shipped). Both checks run in one fence** — a value set
+**Check spec.md for an explicit decision first, falling back to the
+file-change heuristic only when it's absent (a spec with no `AC-E2E-SCOPE`
+line). Both checks run in one fence** — a value set
 in one `Bash` call does not survive into the next tool call, so splitting
 this into separate fenced blocks would silently make the fallback always
 win:
@@ -1107,7 +1115,7 @@ IMPLEMENTED_FILES_EOF
 fi
 ```
 
-**If `$PLAYWRIGHT_CONFIG_EXISTS == "true"`**: the project already opted into Playwright — behavior is unchanged from before. If `FRONTEND_CHANGED=true`, a `playwright-engineer` Task is added to the parallel QA block in Step 4.1 with no further question.
+**If `$PLAYWRIGHT_CONFIG_EXISTS == "true"`**: the project already uses Playwright. If `FRONTEND_CHANGED=true`, a `playwright-engineer` Task is added to the parallel QA block in Step 4.1 with no further question.
 
 **If `$PLAYWRIGHT_CONFIG_EXISTS == "false"` and `FRONTEND_CHANGED=true`** (frontend files were touched, but the project has no existing Playwright setup): this is a project that has never adopted Playwright — don't silently start generating E2E tests. Resolve the gate:
 
@@ -1122,7 +1130,7 @@ PLAYWRIGHT_SCOPING_DEFAULT=$(resolve_playwright_scoping_default)
 ```
 
 - `PLAYWRIGHT_SCOPING_DEFAULT == "skip"` (`implement.playwright_scoping.default: skip`) — set `FRONTEND_CHANGED=false` unconditionally; `playwright-engineer` never runs for this project regardless of which files were touched.
-- Otherwise (`"heuristic"`, the default when `default` is absent or unrecognized) — fall back to the prior silent-detection behavior: keep `FRONTEND_CHANGED` as the file-extension heuristic already computed it, and `playwright-engineer` runs.
+- Otherwise (`"heuristic"`, the default when `default` is absent or unrecognized) — use the file-change heuristic without asking: keep `FRONTEND_CHANGED` as the file-extension heuristic already computed it, and `playwright-engineer` runs.
 
 If `PLAYWRIGHT_SCOPING_ENABLED == "true"` (the default), ask via `AskUserQuestion`:
 
@@ -1141,7 +1149,7 @@ Set `FRONTEND_CHANGED=false` if "No, skip for now" is chosen (drops `playwright-
 
 #### 4.0b Architecture Review Gate
 
-`architect` validated the **plan** back in Phase 2.3 — but it never sees the **built code**, which may have drifted from the intended design. This gate adds a design-drift review of the actual diff, but only when the change touches structure (mirrors the conditional in Phase 2.3 and `/pr-review`). Decide `INCLUDE_ARCHITECT` (true/false) by inspecting `{git_diff}` and `{implemented_files}`:
+`architect` validated the **plan** back in Phase 2.3 — but it never sees the **built code**, which may have drifted from the intended design. This gate adds a design-drift review of the actual diff, but only when the change touches structure (the same conditional `/pr-review` uses). Decide `INCLUDE_ARCHITECT` (true/false) by inspecting `{git_diff}` and `{implemented_files}`:
 
 **Include `architect` when the diff does any of:**
 - Adds or moves modules/packages, or changes directory/layer boundaries
@@ -1152,7 +1160,7 @@ Set `FRONTEND_CHANGED=false` if "No, skip for now" is chosen (drops `playwright-
 
 **Skip `architect` when the diff is** localized bug fixes, copy/string/config tweaks, test-only changes, dependency bumps, or edits contained within a single existing module that follow its established pattern.
 
-When in doubt on a non-trivial diff, include it. State the gate decision and reason in one line (e.g. `Architecture review: INCLUDED — adds a new shared HttpClient consumed across services`). If `INCLUDE_ARCHITECT=true`, an `architect` Task is added to the parallel QA block in Step 4.1.
+Include it too when the diff is non-trivial and you cannot rule out a structural change. State the gate decision and reason in one line (e.g. `Architecture review: INCLUDED — adds a new shared HttpClient consumed across services`). If `INCLUDE_ARCHITECT=true`, an `architect` Task is added to the parallel QA block in Step 4.1.
 
 ---
 
@@ -1160,7 +1168,7 @@ When in doubt on a non-trivial diff, include it. State the gate decision and rea
 
 **Design principle**: QA agents work autonomously, validate each other's findings, and resolve issues among themselves before presenting results to the user. The user reviews a consolidated, pre-validated report — not raw agent output.
 
-**If `$QA_EXEC_MODE` = `"subagent"`:**
+**If `QA_EXEC_MODE` = `"subagent"`:**
 
 ##### Step 0: Path selection
 
@@ -1247,6 +1255,8 @@ Focus on:
 - Performance issues (N+1 queries, missing indexes)
 - Code quality
 
+This is the terminal review before PR — report all severities; do not suppress medium/low findings.
+
 ---
 
 Task 3: subagent_type: "security-auditor"
@@ -1259,6 +1269,8 @@ Check for:
 - PII/secrets exposure
 - Input validation gaps
 - Injection risks
+
+This is the terminal review before PR — report all severities; do not suppress medium/low findings.
 
 ---
 
@@ -1415,7 +1427,7 @@ Issue final verdict.
 
 ---
 
-**If `$QA_EXEC_MODE` = `"team"` (default):**
+**If `QA_EXEC_MODE` = `"team"` (default):**
 
 Read `references/qa-team-mode.md` for team mode QA execution details (team-start fallback, TeamCreate, task assignment, report-back, cross-pollination, collection, shutdown). In team mode, the quality-guard joins as a teammate and challenges findings via SendMessage in real-time rather than in sequential steps.
 
@@ -2072,7 +2084,7 @@ ARCHIVED_STATUS=$(jq -r '.phases.archived.status // "pending"' "<WORK_DIR printe
 echo "ARCHIVE_ON_PR=$ARCHIVE_ON_PR ARCHIVED_STATUS=$ARCHIVED_STATUS"
 ```
 
-**If `ARCHIVE_ON_PR` is not `true`**: skip silently. No offer, no archivist dispatch (AC-4.2).
+**If `ARCHIVE_ON_PR` is not `true`**: skip silently. No offer, no archivist dispatch.
 
 **If `ARCHIVED_STATUS` is `completed`**: skip silently — already archived this run.
 
@@ -2096,7 +2108,7 @@ Then apply the **negative-consent rule** in §5.3c below before acting on any an
 
 Recording `completed` for an archive that did not happen is the failure mode this branch exists to prevent: Phase 6.3 would then skip silently and the user would be told nothing was wrong.
 
-**On a decline**: write nothing. Leave `phases.archived.status` at `pending` so Phase 6.3 can offer once more at completion — a materially different occasion, not a repeat of this one. The knowledge base must be byte-identical to its pre-offer state (AC-3.5, AC-SEC-5).
+**On a decline**: write nothing. Leave `phases.archived.status` at `pending` so Phase 6.3 can offer once more at completion — a materially different occasion, not a repeat of this one. The knowledge base must be byte-identical to its pre-offer state.
 
 #### 5.3c Negative consent — the offer must fail closed
 
@@ -2117,7 +2129,7 @@ This rule applies at **both** trigger points (5.3b and 6.3) and exists because a
 
 The unavailable-tool row is not hypothetical. Measured on Claude Code 2.1.235: under `claude -p`, `AskUserQuestion` is **absent from the toolset entirely** — a `ToolSearch` for it returns "No matching deferred tools found" — and an agent that finds no tool will otherwise improvise a prose question that nobody answers, then carry on with the run reporting success. Tool absence does not by itself produce a safe default; this table is what produces one.
 
-**A user who wants archival in unattended runs opts in through configuration, never through a defaulted-yes prompt.** Note that `auto_archive` and `archive_on_pr` govern *whether to offer*, not whether consent may be presumed — neither is standing consent (AC-4.1, AC-SEC-6).
+**A user who wants archival in unattended runs opts in through configuration, never through a defaulted-yes prompt.** Note that `auto_archive` and `archive_on_pr` govern *whether to offer*, not whether consent may be presumed — neither is standing consent.
 
 #### 5.3d Publish the archive into the open PR
 
@@ -2151,7 +2163,7 @@ git push
 
 **Both** Phase 5.3b and Phase 6.3 write this; it is stated once here and referenced from both so the two cannot drift. Only the skill lead writes `state.json` — the archivist never does.
 
-Write it **immediately after the archivist returns**, before attempting any publish. If the write is skipped, `phases.archived.status` stays `pending`, Phase 6.3 reads `pending`, and the user is offered archival a second time and a second archivist STORE runs for the same ticket in the same run — precisely the double-ask the two-site design exists to prevent (AC-3.3).
+Write it **immediately after the archivist returns**, before attempting any publish. If the write is skipped, `phases.archived.status` stays `pending`, Phase 6.3 reads `pending`, and the user is offered archival a second time and a second archivist STORE runs for the same ticket in the same run — precisely the double-ask the two-site design exists to prevent.
 
 ```json
 {
@@ -2347,7 +2359,7 @@ ARCHIVED_STATUS=$(jq -r '.phases.archived.status // "pending"' "<WORK_DIR printe
 echo "AUTO_ARCHIVE=$AUTO_ARCHIVE ARCHIVED_STATUS=$ARCHIVED_STATUS"
 ```
 
-**If `AUTO_ARCHIVE` is not `true`**: skip silently (AC-4.2).
+**If `AUTO_ARCHIVE` is not `true`**: skip silently.
 
 **If `ARCHIVED_STATUS` is `completed`**: skip **silently** — 5.3b already archived this run.
 
@@ -2359,9 +2371,9 @@ Read nothing but the flag — the same no-path-resolution rule as 5.3b applies h
 
 Present the same offer, then apply §5.3c's negative-consent rule.
 
-**On an affirmative selection**: dispatch `Task(archivist, "STORE ...")`. No publish step follows here — Phase 5's push is long past — so the archive is **local-only**. Say so plainly in the report (AC-1.5): name what was preserved, state that it is committed locally and reaches the team through the operator's normal review-and-merge flow, and warn that an unmerged archive commit is discarded if its branch is later abandoned. Do not describe it as "shared" or "durable" without that qualification.
+**On an affirmative selection**: dispatch `Task(archivist, "STORE ...")`. No publish step follows here — Phase 5's push is long past — so the archive is **local-only**. Say so plainly in the report: name what was preserved, state that it is committed locally and reaches the team through the operator's normal review-and-merge flow, and warn that an unmerged archive commit is discarded if its branch is later abandoned. Do not describe it as "shared" or "durable" without that qualification.
 
-**On a decline**: write nothing; the knowledge base stays byte-identical (AC-3.5, AC-SEC-5).
+**On a decline**: write nothing; the knowledge base stays byte-identical.
 
 **Record the outcome** exactly as specified in §5.3e — same fields, same rules. `published` is always `false` here: no publish step follows Phase 6.
 
@@ -2369,7 +2381,7 @@ Present the same offer, then apply §5.3c's negative-consent rule.
 
 An archive failure at either trigger MUST NOT block completion. Report it plainly and continue to a normal finish.
 
-**Name the manual retry explicitly: `/archive-requirements {identifier}`.** This matters more than it looks. Phase 5.6 already wrote `status: "completed"` to `state.json` **before** Phase 6 runs, and `/resume-work` filters out completed items — so an interrupted or failed 6.3 is **not reachable through resume**. The single-ticket skill is the only path back, and it is explicitly designed for this case. A user who is not told the command has no way to discover it (AC-3.6, AC-5.1).
+**Name the manual retry explicitly: `/archive-requirements {identifier}`.** This matters more than it looks. Phase 5.6 already wrote `status: "completed"` to `state.json` **before** Phase 6 runs, and `/resume-work` filters out completed items — so an interrupted or failed 6.3 is **not reachable through resume**. The single-ticket skill is the only path back, and it is explicitly designed for this case. A user who is not told the command has no way to discover it.
 
 ---
 
@@ -2387,7 +2399,7 @@ Read `references/error-handling.md` for error recovery procedures (no work found
 
 ## Branch Safety Rules
 
-Read `references/branch-safety-rules.md` for the complete branch safety rules. **CRITICAL**: These rules are enforced at Phase 0.2, Phase 3, and Phase 5.1 — read the reference before each enforcement point.
+Read `references/branch-safety-rules.md` for the branch safety rules. They apply at Phase 0.2, Phase 3 and Phase 5.1.
 
 ---
 

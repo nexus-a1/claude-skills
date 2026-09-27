@@ -101,10 +101,6 @@ if [[ "$_TYPE" == "git" ]]; then
 fi
 ```
 
-`$_BASE` is gone with it: it existed only to hold `dirname "$REPO"` for a later
-call, and nothing reads it — a value carried across a boundary that no longer
-exists.
-
 **Everything after this point takes `REPO` and `TYPE` as the literal values this
 block printed**, substituted into the command, never as shell variables. That is
 the same rule `/rebuild-requirements-index` states for the same two values, and
@@ -400,13 +396,6 @@ Shows side-by-side comparison:
 
 ### Option 4: Export
 
-This one is meant to be run, so it stays tagged `bash` and keeps its G1-G3
-coverage. Two things changed to make that true rather than nominal:
-`/path/to/requirements-repo/` was a stand-in for a path Step 1 already resolved
-and printed, and `${identifier}` was a placeholder written in shell-variable
-syntax — indistinguishable from a real read, and unbound, so every path built
-from it started at the filesystem root.
-
 `{identifier}` is the value the user selected in Step 2; `<REPO printed above>`
 is the requirements-repo path Step 1 resolved and echoed. Both are substituted
 into the command before it runs — neither is a shell variable, and nothing here
@@ -532,14 +521,6 @@ Use load-requirements to build understanding of:
 - **Technology choices** - What works, what doesn't
 - **Implementation strategies** - Proven approaches
 - **Common pitfalls** - What to avoid
-
-## Performance
-
-**Loading times:**
-- Quick summary: < 1 second (index + metadata only)
-- Full requirements: 1-2 seconds (reads spec.md + plan.md + tasks.md, or requirements.md for legacy)
-- Specific section: < 1 second (targeted read)
-- Agent outputs: 1-2 seconds (reads context files)
 
 ## See Also
 

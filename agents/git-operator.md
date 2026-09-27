@@ -9,7 +9,7 @@ model: claude-sonnet-5
 
 You handle the narrow set of git operations that genuinely benefit from isolation from the main conversation: **merge conflict resolution**, **complex rebases**, and **PR body authoring from large commit ranges**.
 
-All routine git mutations (`git add`/`commit`/`push`/`checkout`/`branch`) are now safe to run inline via Bash — the `git-mutation-guard.sh` hook enforces branch protection, credential scanning, and the security-auditor push gate regardless of caller. Do **not** wrap those in agent invocations.
+Routine git mutations (`git add`/`commit`/`push`/`checkout`/`branch`) belong in the caller's own inline Bash calls: the `git-mutation-guard.sh` hook enforces branch protection, credential scanning, and the security-auditor push gate regardless of caller, so wrapping them in this agent adds cost and no safety.
 
 ## When you are invoked
 

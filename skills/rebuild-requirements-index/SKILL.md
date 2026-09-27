@@ -24,20 +24,6 @@ Fix corrupted, outdated, or missing index.json file that enables fast search of 
 - After repository cleanup or archival
 - As part of maintenance routine
 
-## How It Works
-
-The index provides fast search without reading all requirement files:
-
-**Without index:**
-- Search must read 100+ requirements.md files
-- Slow (10+ seconds)
-- High memory usage
-
-**With index:**
-- Search reads single index.json file
-- Fast (< 100ms)
-- Low memory usage
-
 ## What Gets Rebuilt
 
 The index contains:
@@ -754,7 +740,7 @@ with the operator's normal review-and-merge flow.
 push must lead its own call, so it cannot carry a `cd` — which means it inherits
 whatever cwd is current, and on this path that `cd` may be many steps and a user
 pause earlier. A drifted cwd sends a double-bypass push at the host project's own
-trunk. Verify first, and only push if the root matches `<REPO printed above>`:
+trunk. Verify first, and push only if every line below passes:
 
 ```bash
 [ -n "<REPO printed above>" ] || exit 1
@@ -801,19 +787,6 @@ The rebuild process validates:
 - No duplicate ticket IDs
 - All dates parseable
 - Arrays are arrays (not strings)
-
-## Performance
-
-**Rebuild time:**
-- ~1 second per 100 requirements
-- 25 requirements: ~0.25 seconds
-- 500 requirements: ~5 seconds
-- 1000 requirements: ~10 seconds
-
-**Scales well:**
-- Linear performance
-- Low memory usage
-- Can handle 1000+ requirements
 
 ## Troubleshooting
 
@@ -897,30 +870,6 @@ How to proceed? [fix/archive/skip]
 - Missing recent requirements
 - Duplicate results
 - Search errors
-
-## Advanced Usage
-
-### Rebuild with Custom Path
-
-If multiple requirements repositories:
-```bash
-# Configure alternate repository temporarily
-# Then rebuild
-/rebuild-requirements-index
-```
-
-### Rebuild After Migration
-
-After migrating from old structure:
-```bash
-# Migrate old requirements to new format
-# Then rebuild index
-/rebuild-requirements-index
-```
-
-### Scheduled Rebuilds
-
-For periodic rebuilds, invoke the skill manually or set up a script that calls the rebuild logic from `resolve-config.sh`.
 
 ## See Also
 

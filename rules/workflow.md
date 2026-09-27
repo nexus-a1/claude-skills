@@ -4,48 +4,33 @@ description: Workflow orchestration principles for effective Claude Code task ex
 
 # Workflow Orchestration
 
-### 1. Plan Mode Default
+### 1. Re-plan When Things Go Sideways
 
-- Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)
-- If something goes sideways, STOP and re-plan immediately — don't keep pushing
-- Use plan mode for verification steps, not just building
-- Write detailed specs upfront to reduce ambiguity
+- If an approach stops working, stop and re-plan rather than pushing on.
 
 ### 2. Subagent Strategy
 
-- Use subagents liberally to keep main context window clean
-- Offload research, exploration, and parallel analysis to subagents
-- For complex problems, throw more compute at it via subagents
+- Use a subagent for large, independent work (a wide multi-file investigation, a genuinely parallel track), where keeping its reads out of the main context repays the cost of briefing it and reading its report. Do lookups and small edits yourself (§7).
 - One task per subagent for focused execution
 - Pass purpose, not just a query — see [`plugin/shared/subagent-context-discipline.md`](../shared/subagent-context-discipline.md)
 
-### 3. Self-Improvement Loop
+### 3. Capturing Lessons
 
-- After ANY correction from the user: update the project's `CLAUDE.md` or memory file with the pattern
-- Write rules for yourself that prevent the same mistake
-- Ruthlessly iterate on these lessons until mistake rate drops
-- Review lessons at session start for relevant project
+- When the user corrects something that will come up again in this project, offer to record it, with its reason, in the project's `CLAUDE.md` or memory file.
 
-### 4. Verification Before Done
+### 4. Done Means Done
 
-- Never mark a task complete without proving it works
-- Diff behavior between main and your changes when relevant
-- Ask yourself: "Would a staff engineer approve this?"
-- Run tests, check logs, demonstrate correctness
+- Report a task complete only when it is done. If part of it could not be finished or checked, do the rest and say plainly what is missing and why.
 
-### 5. Demand Elegance (Balanced)
+### 5. Simplicity
 
-- For non-trivial changes: pause and ask "is there a more elegant way?"
-- If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"
-- Skip this for simple, obvious fixes — don't over-engineer
-- Challenge your own work before presenting it
+- Make every change as simple as possible and touch only what the task needs.
+- Fix root causes rather than patching symptoms.
 
 ### 6. Autonomous Bug Fixing
 
-- When given a bug report: just fix it. Don't ask for hand-holding
-- Point at logs, errors, failing tests — then resolve them
-- Zero context switching required from the user
-- Go fix failing CI tests without being told how
+- Given a bug report, a failing test or a CI failure, investigate and fix it without asking for step-by-step direction.
+- Stay at the scope that was asked for: if the real fix is larger or different, say so in a sentence and carry on with the task as asked.
 
 ### 7. Orchestration Discipline
 
@@ -54,7 +39,7 @@ description: Workflow orchestration principles for effective Claude Code task ex
 - **Challenge plan vs. current behavior** — before implementing a plan, compare its stated behavior against the existing code. If the plan changes how the system currently works, surface the discrepancy: "The plan says X, but the current code does Y — which is intended?"
 - **Producer-first rule** — when researching service chains (Service → SQS → Lambda → Service), trace the producer first. Extract the consumer identifier (queue name, endpoint URL) from its output, then search for the consumer. Never search for downstream consumers in parallel with tracing the producer when the consumer's identity depends on the producer's output.
 - **Direct tool for targeted lookups** — once you have a specific filename, queue name, or pattern, use Glob/Grep directly. Don't delegate single-query lookups to subagents. A Glob resolves in <1s; a subagent takes 30-200s for the same result.
-- **Proactive save after research** — after completing a multi-round research session that produces substantial output (workflow maps, pipeline docs, context documents), save to brainstorm or context storage without waiting for a manual prompt.
+- **Offer to save after research** — after a multi-round research session that produces substantial output (workflow maps, pipeline docs, context documents), offer to save it to brainstorm or context storage.
 
 ### 8. Phase Handoff
 
@@ -117,22 +102,3 @@ Compaction collapses the conversation window when it grows too large. Knowing *w
 - Any context that lives only in the conversation thread
 
 **Practical implication:** before a natural compaction point, flush ephemeral findings — write key file paths to `TodoWrite`, commit work-in-progress, or save a context snapshot to `state.json`. After compaction, use `/load-context` or `/resume-work` to rebuild structured context rather than re-reading files from scratch.
-
----
-
-## Task Management
-
-1. **Plan First**: Write plan using the TodoWrite tool with checkable items
-2. **Verify Plan**: Check in before starting implementation
-3. **Track Progress**: Mark items complete as you go
-4. **Explain Changes**: High-level summary at each step
-5. **Document Results**: Add review notes to the todo list when done
-6. **Capture Lessons**: Update the project's `CLAUDE.md` or memory file after corrections
-
----
-
-## Core Principles
-
-- **Simplicity First**: Make every change as simple as possible. Impact minimal code.
-- **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
-- **Minimal Impact**: Changes should only touch what's necessary. Avoid introducing bugs.

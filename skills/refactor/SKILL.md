@@ -37,9 +37,13 @@ fi
 REFACTOR_EXEC_MODE=$(resolve_exec_mode refactor team)
 REFACTOR_WORKFLOW_ENABLED=$(resolve_refactor_workflow_enabled)
 echo "REFACTOR_WORKFLOW_ENABLED=$REFACTOR_WORKFLOW_ENABLED"
+echo "REFACTOR_EXEC_MODE=$REFACTOR_EXEC_MODE"
+echo "WORKTREE_ENABLED=$(resolve_worktree_enabled)"
+echo "WORKSPACE_MODE=$WORKSPACE_MODE"
 ```
 
-Use `$REFACTOR_EXEC_MODE` to determine team vs sub-agent behavior in Steps 3 and 5.1.
+Shell variables do not survive this Bash call; later steps use the printed values.
+Use the printed `REFACTOR_EXEC_MODE` to determine team vs sub-agent behavior in Step 5.1.
 Use the printed `REFACTOR_WORKFLOW_ENABLED` to decide whether Step 5.1 attempts the
 orchestrated path.
 
@@ -58,7 +62,7 @@ See `${CLAUDE_PLUGIN_ROOT}/shared/write-safety.md` (or `~/.claude/shared/write-s
 
 ## Worktree Isolation (Conditional)
 
-If `resolve_worktree_enabled` returns `"true"`, enter a worktree before making changes:
+If the printed `WORKTREE_ENABLED` is `true`, enter a worktree before making changes:
 
 **Single mode** (`WORKSPACE_MODE == "single"`):
 - Call `EnterWorktree(name: "refactor-{short_slug}")` before Step 5 (Apply Fixes)
@@ -68,7 +72,18 @@ If `resolve_worktree_enabled` returns `"true"`, enter a worktree before making c
 **Multi mode** (`WORKSPACE_MODE == "multi"`):
 - Before Step 5, create per-service worktrees for affected services only (identified during analysis):
 ```bash
+# Its own Bash call, so the library is sourced again: without it both
+# resolve_* calls are undefined, WT_ROOT is empty and the mkdir lands at /.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
 WT_ROOT=$(resolve_worktree_root)
+[ -n "$WT_ROOT" ] || { echo "ERROR: no worktree root resolved" >&2; exit 1; }
 REFACTOR_WORKSPACE="${WT_ROOT}/refactor-{short_slug}"
 mkdir -p "$REFACTOR_WORKSPACE"
 # Create worktree only for services that need changes
@@ -323,7 +338,7 @@ Applied: {description}
 
 After fixes are applied, enter a review→fix loop (max 3 iterations) to ensure quality.
 
-**Execution mode**: Determined by `$REFACTOR_EXEC_MODE`.
+**Execution mode**: Determined by `REFACTOR_EXEC_MODE`.
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -392,7 +407,7 @@ protocol.
 
 #### Iteration Step A — Review
 
-**If `$REFACTOR_EXEC_MODE` = `"subagent"`:**
+**If `REFACTOR_EXEC_MODE` = `"subagent"`:**
 
 **Execute in a single message with multiple Task tool calls:**
 
@@ -457,9 +472,9 @@ Produce a Quality Review Gates report.
 
 ---
 
-**If `$REFACTOR_EXEC_MODE` = `"team"` (default):**
+**If `REFACTOR_EXEC_MODE` = `"team"` (default):**
 
-**Team-start fallback (attempt-and-observe).** If `TeamCreate` or any `TaskCreate` below fails, for any reason, the team did not start. `TeamDelete` any team that was created, run the sub-agent path above with the same agents, and record the mode as `subagent (fallback: team start failed at {TeamCreate|TaskCreate})`. Set `$REFACTOR_EXEC_MODE = "subagent"` for the rest of the run, so a later round does not try the team again. Do not check for the tools in advance and do not read the error to guess why it failed. The full contract is in `${CLAUDE_PLUGIN_ROOT}/shared/team-mode.md` (or `~/.claude/shared/team-mode.md` for local/dev copies).
+**Team-start fallback (attempt-and-observe).** If `TeamCreate` or any `TaskCreate` below fails, for any reason, the team did not start. `TeamDelete` any team that was created, run the sub-agent path above with the same agents, and record the mode as `subagent (fallback: team start failed at {TeamCreate|TaskCreate})`. Set `REFACTOR_EXEC_MODE = "subagent"` for the rest of the run, so a later round does not try the team again. Do not check for the tools in advance and do not read the error to guess why it failed. The full contract is in `${CLAUDE_PLUGIN_ROOT}/shared/team-mode.md` (or `~/.claude/shared/team-mode.md` for local/dev copies).
 
 Create a team for the quality gate review:
 
@@ -580,7 +595,9 @@ Quality Gate Result
 
 Iterations: {count}/3
 Verdict: {PASS | NEEDS_ATTENTION}
+Path: {orchestrated | classic}
 Mode: {team | team (partial: {roles}) | subagent | subagent (fallback: team start failed at {step})}   (classic path only)
+Dropped findings: {each with the lenses that refuted it, or "none"}   (orchestrated path only)
 
 Code Review:
   Original issues resolved: {count}/{total}

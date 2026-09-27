@@ -509,7 +509,7 @@ function dive(spec, peers) {
     + '    must account for. One fact per finding.\n'
     + '  - `evidence` MUST be file:line followed by that line quoted VERBATIM. A claim you\n'
     + '    cannot cite that way is dropped before the analyst sees it, so do not pad the\n'
-    + '    list — fewer real findings score better.\n'
+    + '    list — a few real findings are worth more than many weak ones.\n'
     + '  - `confidence` is high ONLY for something you read, never for something inferred.\n'
     + '  - `area` is the subsystem the claim is about.\n'
     + '  - An empty findings array is a valid answer.\n'
@@ -818,13 +818,13 @@ function synthPrompt(extra) {
     + '               user-facing surface a person could exercise, "not-required" when\n'
     + '               every outcome is internal. It is a judgement about the feature, not\n'
     + '               a default.\n'
-    + '               Budget ~1500 tokens.\n'
-    + '  plan       — HOW. Mechanisms, each grounded in a finding id. ~2500 tokens.\n'
+    + '  plan       — HOW. Mechanisms, each grounded in a finding id.\n'
     + '  tasks      — EXECUTION. Every task cites the AC ids it covers; every AC in the\n'
-    + '               spec is covered by at least one task. ~1200 tokens.\n'
-    + '  jiraTicket — the derived summary view. ~800 tokens.\n'
+    + '               spec is covered by at least one task.\n'
+    + '  jiraTicket — the derived summary view, short enough to paste.\n'
     + 'These are prose documents in their own fields. There are no BEGIN/END markers and\n'
-    + 'nothing is split out of a single blob.\n\n'
+    + 'nothing is split out of a single blob. Match each one\'s length to what this feature\n'
+    + 'needs: cover the substance, with no filler sections, restated summaries or boilerplate.\n\n'
     + '`flags` is where you report what you could NOT resolve: a contradiction you could not\n'
     + 'settle, a coverage gap where no agent looked, an assumption you had to make. Each\n'
     + 'names the agent that should answer it and ONE specific question. An empty array is a\n'
@@ -1266,8 +1266,6 @@ What the lead does with it, in order:
    architecture verdict of `concerns`, and any `unresolved` flag go to `AskUserQuestion`
    exactly as the classic path does.
 
-Four states the report must keep apart:
-
 `ok: false` also covers the case where no finding carried a verbatim citation: there is no
 triad to write, so the classic path runs rather than the lead synthesising from nothing.
 
@@ -1276,6 +1274,8 @@ found by a short panel is still `conditional`; `unverified` means no blocking ga
 found *and* the panel was short, which is not approval. `gates.architecture.verdict` has
 four values — `approved`, `concerns`, `unavailable` (the agent died) and `skipped` (the
 plan triggered nothing) — and only the first is a pass.
+
+States the report must keep apart:
 
 | State | Meaning |
 |---|---|

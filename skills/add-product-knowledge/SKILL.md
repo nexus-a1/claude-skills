@@ -110,8 +110,8 @@ The emptiness test is not optional: **`git -C ""` is a documented no-op**, so an
 empty substitution would run `git pull` in whatever repository the session is
 currently in — and `2>/dev/null || true` would hide it.
 
-Run it **only when the printed `TYPE` is `git`**. Decide that from the Step 1
-output, not from a shell test: `$_TYPE` is unset here, so
+Run it **only when the printed `TYPE` is `git`**. Decide that from the Configuration
+block's output, not from a shell test: `$_TYPE` is unset here, so
 `[[ "$_TYPE" == "git" ]]` is always false and a git-backed KB would never be
 pulled before the write — silently.
 
@@ -141,7 +141,9 @@ find "<KB_PATH printed above>" -mindepth 1 -maxdepth 1 -type d -not -name '.*' \
   | xargs -I% basename % | sort
 ```
 
-Use `AskUserQuestion` with the list as options plus "other":
+Use `AskUserQuestion` with up to 4 existing categories as options. The tool shows
+no more than 4 and always adds its own free-text "Other" field, so do not spend a
+slot on "other"; with more than 4 categories, name the rest in the question text:
 
 > If the user picks "other" and types a category, it is free text like the
 > title. Require `[a-z0-9-]` before it is used as a path component — reject
@@ -154,11 +156,10 @@ Category for "{title}":
 2. api
 3. business-rules
 4. data-models
-... (existing categories)
-N. other (enter a new category name)
+(Other: type a category, existing or new)
 ```
 
-Store as `{category}`. If "other", ask for the new category name.
+Store as `{category}`. A name typed in the free-text field is the category.
 
 ### Step 3: Gather content
 
@@ -212,7 +213,7 @@ echo "SLUG=$SLUG"
 > wrong answer rather than an error. It is deleted after the slugify reads it,
 > not before.
 
-> `SLUG=$(echo "{title}" | …)` was the shape this replaces. Substituted into a
+> Never build the slug as `SLUG=$(echo "{title}" | …)`. Substituted into a
 > double-quoted string, a title of `a";id;"` closes the quote and runs `id`; one
 > containing `$(…)` or backticks is executed by the very command substitution
 > that was supposed to be slugifying it. The heredoc delimiter is quoted for
@@ -316,7 +317,7 @@ fi
 
 ### Step 8: Commit (git locations only)
 
-If the `TYPE` printed by Step 1 is `git`, follow the sanctioned KB-write
+If the `TYPE` printed by the Configuration block is `git`, follow the sanctioned KB-write
 pattern in full:
 [`${CLAUDE_PLUGIN_ROOT}/shared/kb-write-pattern.md`](../../shared/kb-write-pattern.md).
 **Both** `git commit` (Call 2) and `git push` (Call 3) must **lead their own
@@ -361,8 +362,7 @@ git commit -F "$HOME/.claude/tmp/pk-commit-msg.txt" && rm -f "$HOME/.claude/tmp/
 own call and therefore carries no `cd`, so it inherits whatever cwd is current —
 and there is a user pause between these calls. A drifted cwd sends a
 double-bypass push at the user's own repository, with branch protection AND the
-audit gate disabled. This is the call the pattern above requires and this file
-previously omitted:
+audit gate disabled. The pattern above requires this call:
 
 ```bash
 [ -n "<KB_PATH printed above>" ] || exit 1

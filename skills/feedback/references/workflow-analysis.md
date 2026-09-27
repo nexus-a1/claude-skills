@@ -9,8 +9,8 @@ Phase 5 (writing the report), Phase 6 (the summary) and Phase 7 (the GitHub issu
 in the lead. Phase 7 is a mutation gated by its own question at `#### 7.1 Determine intent`;
 nothing in this script can reach it, and nothing in this script asks the user anything.
 
-The classic prose path stays exactly as it is. This file is additive — if anything here
-fails, the fallback rule at the end applies and the classic path runs in full.
+The classic prose path in SKILL.md is the fallback: if anything here fails, the fallback rule
+at the end applies and the classic path runs in full.
 
 ---
 
@@ -115,8 +115,7 @@ the cost of closing the boundary from inside it. It matches the marker token thr
 dashes and invisible characters rather than rewriting the text to make the match work, so an
 artifact reaches the analysts byte-for-byte apart from the marker runs actually replaced.
 
-**It is not a proof that the boundary cannot be closed, and an earlier draft of this file said
-it was.** The keywords are matched as ASCII letters, so a marker written with a Cyrillic `Е`
+**It is not a proof that the boundary cannot be closed.** The keywords are matched as ASCII letters, so a marker written with a Cyrillic `Е`
 (U+0415) or fullwidth `ＥＮＤ` is not caught. Closing that means confusable-folding the keyword
 letters, which is a materially larger change: a folding table pushes this function back toward
 rewriting the text, which is the exact tension the `defuse`/`fold` split exists to resolve, and
@@ -485,10 +484,12 @@ var LENSES = [
     key: 'citation',
     agentType: 'nexus:security-auditor',
     effort: 'low',
-    question: 'Is the citation admissible? Open the cited artifact, find the cited line, and compare '
-            + 'what it says against the claim. Refute if the quoted text does not appear where it is '
-            + 'cited, if the line does not concern the subject named, or if it CONTRADICTS the claim. '
-            + 'This is a mechanical check of citation against claim, not a judgment of importance.',
+    question: 'Is the citation admissible? Find the cited line in the SESSION ARTIFACTS below — the '
+            + 'paths are relative to the session directory, not to the repository, so read them there '
+            + 'rather than from disk — and compare what it says against the claim. The script has '
+            + 'already checked that the quote sits within two lines of the cited line. Refute if the '
+            + 'line does not concern the subject named, or if it CONTRADICTS the claim. This is a '
+            + 'check of citation against claim, not a judgment of importance.',
   },
   {
     key: 'rubric',

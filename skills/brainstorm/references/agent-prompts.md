@@ -138,10 +138,10 @@ Suggest improvements if needed.
 Prompt: Challenge this implementation picture for '{feature_description}'.
 
 Read these files:
-- $WORK_DIR/{slug}/implementation-picture.md
-- $WORK_DIR/{slug}/context/architecture-validation.md
-- $WORK_DIR/{slug}/context/approaches.md
-- $WORK_DIR/{slug}/context/exploration.md (if exists)
+- $BRAINSTORM_ROOT/{slug}/implementation-picture.md
+- $BRAINSTORM_ROOT/{slug}/context/architecture-validation.md
+- $BRAINSTORM_ROOT/{slug}/context/approaches.md
+- $BRAINSTORM_ROOT/{slug}/context/exploration.md (if exists)
 
 Review:
 1. Is the selected approach architecturally sound? Does it match the architectural constraints found in the codebase?

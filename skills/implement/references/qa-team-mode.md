@@ -1,10 +1,10 @@
 # QA Team Mode (Phase 4.1)
 
-When `$QA_EXEC_MODE` = `"team"`, create a QA team where agents can read each other's findings, cross-pollinate, and challenge each other's work. This is more expensive but produces higher-quality results — code-reviewer can suggest tests, test-writer can flag issues found during test design, security-auditor can inform both, and quality-guard challenges everyone.
+When `QA_EXEC_MODE` = `"team"`, create a QA team where agents can read each other's findings, cross-pollinate, and challenge each other's work. This is more expensive but produces higher-quality results — code-reviewer can suggest tests, test-writer can flag issues found during test design, security-auditor can inform both, and quality-guard challenges everyone.
 
 ## Step 1: Create the team and task list
 
-**Team-start fallback (attempt-and-observe).** If `TeamCreate` or any `TaskCreate` below fails, for any reason, the team did not start. `TeamDelete` any team that was created, run the sub-agent path (Phase 4.1 Steps 1-3 in `SKILL.md`) with the same agents, and record the mode as `subagent (fallback: team start failed at {TeamCreate|TaskCreate})`. Set `$QA_EXEC_MODE = "subagent"` for the rest of the run, so a later round does not try the team again. Do not check for the tools in advance and do not read the error to guess why it failed. The full contract is in `${CLAUDE_PLUGIN_ROOT}/shared/team-mode.md` (or `~/.claude/shared/team-mode.md` for local/dev copies).
+**Team-start fallback (attempt-and-observe).** If `TeamCreate` or any `TaskCreate` below fails, for any reason, the team did not start. `TeamDelete` any team that was created, run the sub-agent path (Phase 4.1 Steps 1-3 in `SKILL.md`) with the same agents, and record the mode as `subagent (fallback: team start failed at {TeamCreate|TaskCreate})`. Set `QA_EXEC_MODE = "subagent"` for the rest of the run, so a later round does not try the team again. Do not check for the tools in advance and do not read the error to guess why it failed. The full contract is in `${CLAUDE_PLUGIN_ROOT}/shared/team-mode.md` (or `~/.claude/shared/team-mode.md` for local/dev copies).
 
 ```
 Use TeamCreate tool:
@@ -29,6 +29,7 @@ TaskCreate: "Review implementation code" (T2)
     Diff: {git_diff}
     Categorize issues as CRITICAL/IMPORTANT/MINOR.
     Focus on logic errors, performance, code quality.
+    Terminal review before PR — report all severities; do not suppress medium/low findings.
     Coordinate with test-writer — suggest specific test cases for issues found.
     Report to the lead: when done, SendMessage your full final report to the lead only
     (you have no Write tool, so the lead saves it to $WORK_DIR/{identifier}/context/qa-code-reviewer.md).
@@ -37,6 +38,7 @@ TaskCreate: "Security review and PII scan" (T3)
   description: |
     Diff: {git_diff}
     Check for vulnerabilities, PII/secrets exposure, input validation, injection risks.
+    Terminal review before PR — report all severities; do not suppress medium/low findings.
     Share findings with code-reviewer — security issues may have broader code quality implications.
     Report to the lead: when done, SendMessage your full final report to the lead only
     (you have no Write tool, so the lead saves it to $WORK_DIR/{identifier}/context/qa-security-auditor.md).
@@ -62,7 +64,10 @@ TaskCreate (only if FRONTEND_CHANGED=true): "Write Playwright E2E tests" (T1b)
 
 TaskCreate: "Challenge and validate QA findings" (T4) — depends on T1, T2, T3{if FRONTEND_CHANGED: , T1b}{if INCLUDE_ARCHITECT: , T3b}
   description: |
-    Requirements: $WORK_DIR/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md
+    Spec (acceptance criteria — verify each AC ID): $WORK_DIR/{identifier}/spec.md
+    Plan (intended approach): $WORK_DIR/{identifier}/plan.md
+    Tasks (expected coverage): $WORK_DIR/{identifier}/tasks.md
+    (Fallback: $WORK_DIR/{identifier}/{identifier}-TECHNICAL_REQUIREMENTS.md if the triad is absent.)
     Implementation diff: {git_diff}
     Wait for test-writer, code-reviewer, security-auditor{if INCLUDE_ARCHITECT: , and architect}{if FRONTEND_CHANGED: , and playwright-engineer} to complete their initial findings.
     Their full reports are saved at $WORK_DIR/{identifier}/context/qa-*.md; the lead messages you when they are ready. Read those files.
@@ -132,6 +137,7 @@ SendMessage(type="shutdown_request", recipient="qa-tester", message="QA complete
 SendMessage(type="shutdown_request", recipient="qa-reviewer", message="QA complete. Shut down.")
 SendMessage(type="shutdown_request", recipient="qa-security", message="QA complete. Shut down.")
 [only if INCLUDE_ARCHITECT=true] SendMessage(type="shutdown_request", recipient="qa-architect", message="QA complete. Shut down.")
+[only if FRONTEND_CHANGED=true] SendMessage(type="shutdown_request", recipient="qa-e2e", message="QA complete. Shut down.")
 SendMessage(type="shutdown_request", recipient="qa-skeptic", message="QA complete. Shut down.")
 TeamDelete()
 ```

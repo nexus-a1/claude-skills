@@ -122,13 +122,11 @@ expect(handleClick).toHaveBeenCalledTimes(1);
 
 ### Mock API Calls (MSW)
 ```typescript
-import { rest } from 'msw';
+import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 
 const server = setupServer(
-  rest.get('/api/users', (req, res, ctx) => {
-    return res(ctx.json([{ id: 1, name: 'John' }]));
-  })
+  http.get('/api/users', () => HttpResponse.json([{ id: 1, name: 'John' }]))
 );
 
 beforeAll(() => server.listen());
@@ -143,7 +141,7 @@ it('loads users', async () => {
 // Override for specific test
 it('handles error', async () => {
   server.use(
-    rest.get('/api/users', (req, res, ctx) => res(ctx.status(500)))
+    http.get('/api/users', () => new HttpResponse(null, { status: 500 }))
   );
   render(<UserList />);
   expect(await screen.findByText('Error loading users')).toBeInTheDocument();

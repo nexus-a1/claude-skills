@@ -257,10 +257,9 @@ See: ${CLAUDE_PLUGIN_ROOT}/templates/requirements-repo/README.md (or ~/.claude/t
 ```bash
 # The path is typed by the user, so it is free text: it reaches the shell
 # through a QUOTED heredoc and is read back into a variable, never substituted
-# onto a command line where a quote or $( ) in it would break out. This also
-# binds USER_PATH in the call that tests it — before, it was bound in no call,
-# so every test below ran against an empty path and reported "not found"
-# whatever the user typed.
+# onto a command line where a quote or $( ) in it would break out. It also
+# binds USER_PATH in the same call that tests it; bound anywhere else, every
+# test below would run against an empty path.
 umask 077
 mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
 set -C   # refuse to write through a pre-planted symlink
@@ -398,7 +397,7 @@ Use AskUserQuestion:
 - multiSelect: false
 
 **If "In this repository":** set `TASKS_CHOICE=local`. Nothing else changes —
-Step 6 maps `tasks` to `.claude/tasks` exactly as before. Continue to Step 6.
+Step 6 maps `tasks` into the local location like every other artifact. Continue to Step 6.
 
 **If "Shared list in my home directory":** set `TASKS_CHOICE=global` and work
 through 5c.1–5c.3. Nothing is written until Step 7b.
@@ -548,8 +547,7 @@ TEMPLATE=$(artifact_template_path) || TEMPLATE=""
 # Bind TEAM_LOCATION HERE. Step 5 decided it, but that was a different shell,
 # so nothing carries it into this block. Set it to team-knowledge if Step 4
 # answered Yes, and to the empty string otherwise — an accidental empty value
-# would silently remap every shared artifact to local, which is the
-# higher-impact half of the defect this ticket fixes.
+# would silently remap every shared artifact to local.
 TEAM_LOCATION=""          # or: TEAM_LOCATION="team-knowledge"
 LOCAL_PATH="${LOCAL_PATH:-.claude}"   # likewise: whatever Step 4/5 selected
 
@@ -675,7 +673,7 @@ LOCAL_PATH=$(yq -r 'select(document_index == 0) | .storage.locations.local.path 
 # LOCAL_PATH is the one value here the user typed freely, and it prefixes every
 # mkdir below. A config arriving with a cloned repo could carry an absolute or
 # traversing path; fall back rather than create directories outside the project.
-# A leading ~ is refused as well: the resolver now reads `~/x` as $HOME/x, and
+# A leading ~ is refused as well: the resolver reads `~/x` as $HOME/x, and
 # mkdir here would make a literal `./~/x` — two readers, two directories. A
 # location in the home directory is for the shared task list (Step 5c), not for
 # the project's own local storage.
@@ -1029,19 +1027,17 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
        artifact_missing_names "$EXISTING_CONFIG" "$TEMPLATE"
      WARN ("missing artifact: {name} — defined in the current template but
      absent from this config; run /configuration-init migrate to add it")
-   → A missing artifact is not a syntax error, which is why nothing caught it
-     before: resolution silently falls back to a guessed path, and that guess
+   → A missing artifact is not a syntax error, so no other check reports
+     it: resolution silently falls back to a guessed path, and that guess
      is wrong whenever the local base is not the conventional one, or the
      artifact belongs in a shared location.
    → If $TEMPLATE is empty, skip this check with an explanatory line.
 
-4c. storage.artifacts resolution (CL-92)
+4c. storage.artifacts resolution
    → For each configured artifact, resolve it and ask what the resolved path
      actually IS. Checks 3 and 4 do not cover this: 3 tests the LOCATION's base
      path and 4 tests that the location is defined, so an artifact whose base
      exists and whose location is valid passes both while resolving to nothing.
-     That is precisely how this repository shipped a `requirements` artifact
-     pointing at `.claude/requirements`, a directory that does not exist.
    → Resolve with:
        resolve_artifact_strict "{name}" "{default_subdir_for_that_artifact}"
      and split the "PATH|TYPE" result on `|`. Use the STRICT resolver: the
@@ -1077,7 +1073,7 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
      a path that swallows the configuration directory is always wrong and puts
      session state in front of an agent.
 
-2b. execution_mode team runtime (CL-92)
+2b. execution_mode team runtime
    → If the resolved mode for any phase is "team", check whether the team
      runtime is actually switched on:
        [ -n "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" ]
@@ -1090,7 +1086,7 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
      cannot provide it degrades silently, so the user believes they are getting
      cross-pollination they are not.
 
-7. legacy configuration.json alongside configuration.yml (CL-92)
+7. legacy configuration.json alongside configuration.yml
    → If `.claude/configuration.json` exists next to the `.yml` → WARN
      ("orphaned .claude/configuration.json — nothing reads it (resolve-config.sh
      looks only for configuration.yml) and it holds a conflicting older schema;
@@ -1113,7 +1109,7 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
      false, so jira.write.enabled: true has no effect — both jira.sh and
      jira-write.sh refuse the master switch before checking write access")
 
-6b. jira flags against reality (CL-92)
+6b. jira flags against reality
    → If jira.enabled is true (or absent — it is opt-out, so absent means on),
      check the tool the flag promises is actually usable:
        command -v acli >/dev/null 2>&1
@@ -1205,8 +1201,8 @@ succeeded and then having `validate` immediately name the same remedy again.
 Step 0 routes `migrate` straight here, skipping Step 1, so nothing has sourced
 the shared libraries on this path. `resolve_artifact` below is called with
 stderr silenced and a hardcoded fallback, which means an undefined function
-looks like a successful default — every project with a customized work location
-has been migrating against the wrong directory. Load the libraries first. As in
+looks like a successful default — a project with a customized work location
+would be migrated against the wrong directory. Load the libraries first. As in
 Step 9, this block asks nothing, so the "no interactive wizard" contract holds.
 
 The preamble and the plan build must be **one** block: `TIMESTAMP` and `PLAN` are shell state, and a separate block would start a fresh shell without them.
@@ -1224,11 +1220,8 @@ PROJECT_ROOT=$(pwd)
 PLAN=()
 
 # 1. configuration.json — convert it, or retire it when a .yml already exists.
-#
-# `! -f .yml` used to be part of the same condition, which left the both-present
-# case unhandled and the .json orphaned permanently (CL-92). That is not an
-# exotic shape: it is what you get whenever someone hand-writes the .yml, which
-# is exactly how this project reached it.
+# Both files present is a common shape: it is what you get whenever someone
+# hand-writes the .yml.
 #
 # An orphan is worse than no file. Nothing reads it — resolve-config.sh looks
 # only for configuration.yml — so it cannot affect behaviour, but it holds a
@@ -1251,10 +1244,9 @@ LEGACY_STATE_NAMES=(
   "epic-state.json:epic"
 )
 
-# Now that the preamble above defines resolve_artifact, call it the way every
-# other skill does. The old `2>/dev/null || echo ".claude/work"` form silenced
-# the undefined-function error and substituted a hardcoded default, so the
-# breakage was invisible; resolve_artifact already falls back on its own.
+# The preamble above defines resolve_artifact, so call it the way every other
+# skill does, with no stderr silencing and no hardcoded fallback:
+# resolve_artifact already falls back on its own.
 WORK_DIR=$(resolve_artifact work work)
 for dir in "$WORK_DIR"/*/; do
   [[ -d "$dir" ]] || continue
@@ -1358,7 +1350,7 @@ This phase runs in a fresh shell, and the `AskUserQuestion` gate sits between it
 - **`TIMESTAMP`** — set it to the *literal string already printed in the plan*, e.g. `TIMESTAMP=20260423-160500`. Do **not** re-run `date`: a fresh value would put backups at a suffix other than the one the user was shown, and the confirmation lines would name files that do not exist.
 - **`PLAN`** — re-derive it by re-running the Step 10.1 detection, or carry the confirmed entries forward literally. It must match what the user approved; if re-derivation produces a different set, stop and re-plan rather than applying a plan nobody confirmed.
 
-**Always back up through `artifact_backup_once`, never a bare `cp`, and always check its return value.** The run computes one `TIMESTAMP` and every verb writes `<file>.bak-${TIMESTAMP}`. Until backfill existed, each verb targeted a distinct file so a plain `cp` was safe; now two verbs can target `configuration.yml` in the same run, and the second `cp` would overwrite the first verb's backup with the already-rewritten intermediate, leaving no copy of the original. `artifact_backup_once` keeps the earliest copy. This applies to every verb, not just the new one — a guard on backfill alone still loses the original when backfill runs first. It returns non-zero when it could not produce a real backup (the path is a symlink, a directory, or `cp` failed); proceeding past that would rewrite a file whose only "backup" does not exist.
+**Always back up through `artifact_backup_once`, never a bare `cp`, and always check its return value.** The run computes one `TIMESTAMP` and every verb writes `<file>.bak-${TIMESTAMP}`. Several verbs can target `configuration.yml` in the same run, and a second plain `cp` would overwrite the first verb's backup with the already-rewritten intermediate, leaving no copy of the original. `artifact_backup_once` keeps the earliest copy, which is why every verb uses it. It returns non-zero when it could not produce a real backup (the path is a symlink, a directory, or `cp` failed); proceeding past that would rewrite a file whose only "backup" does not exist.
 
 **Check the YAML tooling once, before any verb runs.** `rename-key`, `location-rename`, and `artifact-backfill` all rewrite `configuration.yml` with `yq -i`. Gating only one of them would still let the others strip every comment in the same run.
 
@@ -1444,9 +1436,8 @@ set -C   # refuse to write through a pre-planted symlink
 TIMESTAMP=<the literal timestamp printed in the plan>
 # The plan entry is text this skill printed and you substitute back. It goes
 # through a QUOTED heredoc, not straight onto a command line: the entry holds
-# user-configured paths, and a quote or $( ) in one would break out. This also
-# binds `entry` in the call that reads it — the previous `${plan_entry}` was
-# never bound anywhere, so every expansion below it was empty.
+# user-configured paths, and a quote or $( ) in one would break out. It also
+# binds `entry` in the same call that reads it.
 cat > "$HOME/.claude/tmp/config-init-entry.$$.txt" <<'PLAN_ENTRY_EOF' || exit 1
 {plan_entry}
 PLAN_ENTRY_EOF
@@ -1487,8 +1478,7 @@ source "$NEXUS_SHARED/config/artifacts.sh"
 # would put backups at a suffix the user never saw.
 TIMESTAMP=<the literal timestamp printed in the plan>
 # Same as the plan entry above: a path this skill printed, bound here through a
-# quoted heredoc rather than substituted onto the command line. `${file}` was
-# bound in no call, so both commands below ran against an empty path.
+# quoted heredoc rather than substituted onto the command line.
 umask 077
 mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
 set -C   # refuse to write through a pre-planted symlink
@@ -1517,8 +1507,7 @@ source "$NEXUS_SHARED/config/artifacts.sh"
 TIMESTAMP=<the literal timestamp printed in the plan>
 # The plan entry is text this skill printed and you substitute back — a
 # quoted heredoc, not a command line, because the entry holds
-# user-configured paths. It also BINDS `entry` in the call that reads it;
-# `${plan_entry}` was bound in no call, so every expansion below was empty.
+# user-configured paths. It also BINDS `entry` in the call that reads it.
 umask 077
 mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
 set -C   # refuse to write through a pre-planted symlink
@@ -1566,8 +1555,7 @@ TEMPLATE=$(artifact_template_path) || TEMPLATE=""
 TIMESTAMP=<the literal timestamp printed in the plan>
 # The plan entry is text this skill printed and you substitute back — a
 # quoted heredoc, not a command line, because the entry holds
-# user-configured paths. It also BINDS `entry` in the call that reads it;
-# `${plan_entry}` was bound in no call, so every expansion below was empty.
+# user-configured paths. It also BINDS `entry` in the call that reads it.
 umask 077
 mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
 set -C   # refuse to write through a pre-planted symlink

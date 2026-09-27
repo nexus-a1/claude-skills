@@ -256,7 +256,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op list --scope open --proj
 
 Print the tasks in the order given, one per line, using `n` as the number.
 
-In local mode (`mode` is `local`), exactly as before:
+In local mode (`mode` is `local`):
 
 ```
 Open tasks ({total}):

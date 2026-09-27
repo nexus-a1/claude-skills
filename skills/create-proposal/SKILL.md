@@ -48,7 +48,7 @@ echo "WORK_DIR=$WORK_DIR"
 
 Use `$WORK_DIR` and `$PROPOSALS_DIR` instead of hardcoded paths — but only inside this block. Each later block is its own Bash tool call and does not inherit them, so those substitute the values printed above instead.
 
-**Important:** All path references in this skill MUST use `$WORK_DIR` and `$PROPOSALS_DIR` variables. Never use hardcoded `.claude/work/` or `.claude/proposals/` paths.
+Never hardcode `.claude/work/` or `.claude/proposals/`: a project can relocate either through `configuration.yml`.
 
 ---
 
@@ -140,10 +140,9 @@ Identify the project's technology stack to tailor Phase 5 implementation guidanc
 
 **Read it from `configuration.yml` first, and auto-detect from project files only
 if it is not set there.** Both happen in the same block on purpose: `$CONFIG` is
-set by `resolve-config.sh`, sourced at the top of it. Reading the configuration
-in a block of its own — which is how this was written — left `"$CONFIG"` empty,
-so `yq` read nothing, `ECOSYSTEM` came back blank, and a project that *had*
-declared its ecosystem was auto-detected anyway.
+set by `resolve-config.sh`, sourced at the top of it. A separate block would see
+`"$CONFIG"` empty, `yq` would read nothing, and a project that declared its
+ecosystem would be auto-detected anyway.
 
 ```bash
 # Re-derived here: shell state does not survive between Bash tool calls, so a
@@ -503,7 +502,10 @@ $WORK_DIR/{identifier}/
 ├── state.json
 ├── context/
 │   ├── requirements.json
-│   └── approaches.json
+│   ├── exploration.md
+│   ├── approaches.json
+│   ├── architecture-validation.md
+│   └── quality-guard.md
 ├── notes/
 │   ├── requirements.md
 │   ├── questions.md
@@ -666,16 +668,6 @@ This skill integrates with `/resume-work`:
 ## Project Conventions
 
 Follow your project's established conventions. The exploration agent (Phase 1.1b) will map the existing patterns — use those as your reference. If no established patterns exist for this type of feature, define them explicitly in the proposal and get approval before implementing.
-
-## Tips for Success
-
-1. **Be thorough in Phase 1** - Better questions = better proposals
-2. **Don't rush to implementation** - Design first, code later
-3. **Iterate proposals** - Create proposal2.md, proposal3.md as needed
-4. **Document decisions** - Capture why choices were made
-5. **Follow conventions** - Consistency matters in codebases
-6. **Test thoroughly** - Plan testing from the start
-7. **Think about operations** - Logging, monitoring, cleanup tasks
 
 ## Examples of Good Proposals
 

@@ -36,7 +36,7 @@ In the classic path `doc-writer` **edits the documentation files directly** and 
 summary afterwards. On this path it returns a draft and writes nothing; the lead applies the
 drafts after the run.
 
-Two reasons, and the second is the one that motivated the ticket:
+Two reasons, and the second is the one this path exists for:
 
 1. A file write inside a `pipeline()` stage is a race — several drafts are in flight at once.
 2. **A documented claim that no longer matches the code gets caught before it is written.**
@@ -486,7 +486,7 @@ return {
   accepted: accepted,       // apply these
   rejected: rejected,       // do NOT apply; report with the unsupported claims
   unchanged: unchanged,     // the document was already accurate
-  unverified: unverified,   // drafted but never checked — do not apply silently
+  unverified: unverified,   // drafted but never checked — do NOT apply; report as unchecked
   consistency: consistency,
   pipelineIntegrity: pipelineIntegrity,
 }
@@ -515,10 +515,10 @@ Five outcomes per gap, and collapsing any two of them loses the thing this path 
 | `accepted` | drafted, and every claim checks out against the code | apply it |
 | `rejected` | a claim the code does not support, OR a draft that asserted no checkable claim at all | **do not apply**; report the claim and why |
 | `unchanged` | the document was already accurate | nothing, but say so |
-| `unverified` | drafted, verify never returned | do not apply silently; say it was not checked |
+| `unverified` | drafted, verify never returned | **do not apply**; say it was not checked |
 | in `pipelineIntegrity.failed` | the chain never produced a draft at all | report the file as not attempted |
 
-`rejected` is the bucket the ticket exists for. In the classic path that update is already
+`rejected` is the bucket this path exists for. In the classic path that update is already
 written to disk, and `5.1` would not catch it — that check compares documents against each
 other, not against code.
 

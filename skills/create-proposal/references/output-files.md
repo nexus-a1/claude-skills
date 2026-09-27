@@ -1,15 +1,18 @@
 # Output Files Summary
 
-Directory structure for an example proposal with identifier `AUTH-001` and name `user-authentication`.
+Directory structure for an example proposal with ticket `AUTH-001` and name `user-authentication`, so identifier `AUTH-001-user-authentication`.
 
 ## Work Directory (during development)
 
 ```
-$WORK_DIR/AUTH-001/
+$WORK_DIR/AUTH-001-user-authentication/
 ├── state.json       # State tracking for resume
 ├── context/
-│   ├── requirements.json     # Phase 1 agent output
-│   └── approaches.json       # Phase 2 agent output
+│   ├── requirements.json     # Phase 1 business-analyst output
+│   ├── exploration.md        # Phase 1 Explore output
+│   ├── approaches.json       # Phase 2 Plan output
+│   ├── architecture-validation.md  # Phase 2 architect output
+│   └── quality-guard.md      # Phase 3.5 review
 ├── notes/
 │   ├── requirements.md       # Human-readable requirements
 │   ├── questions.md          # Clarifications gathered

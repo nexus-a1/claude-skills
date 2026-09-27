@@ -62,7 +62,7 @@ For the feature's primary flow:
 
 ## Output Constraints
 
-- **Maximum output: 150 lines.** Hard cap, not a target. Use tables over prose.
+- **Target: about 150 lines.** A target, not a hard cap: a real finding always wins over brevity. Use tables over prose.
 - Cut by removing: findings already in discovery.json (`context-builder` output), analysis outside your domain (entity schemas → data-modeler, architecture decisions → architect), and context-setting preamble.
 - Only include findings **directly relevant to the feature**. Skip unrelated code.
 - Reference specific file paths and line numbers.

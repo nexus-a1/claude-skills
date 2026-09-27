@@ -235,8 +235,8 @@ carries the index fields plus `scope`, `description`, `related`, `ticket_key`
   "fingerprint"}`, plus `"todo_key"` in a shared store — the fingerprint
   composed with the project, so the same entry migrated from two projects'
   `TODO.md` files is not mistaken for a duplicate of itself.
-- **Copied from a per-repository store into a shared one** (`/todo
-  migrate-store`): `{"source": "store", "original_id", "source_key",
+- **Copied from a per-repository store into a shared one** (`/todo migrate`
+  in global mode, via `tasks.sh --op migrate-store`): `{"source": "store", "original_id", "source_key",
   "migrated_at"}`, plus `"fingerprint"`/`"todo_key"` when the copied task was
   itself a `TODO.md` import — carried forward so the same entry is not
   imported twice regardless of which migration runs first.
@@ -272,8 +272,8 @@ interrupted `/todo done` leaves exactly one copy.
 every repository (a home-relative or absolute `storage.locations.<name>.path`,
 typically `~/something`), and every task in it carries `project` — the
 configured `project.name`, else the repository's main-checkout folder name.
-`/todo list`/`show`/`done` default to the current project in global mode
-(`--project all` shows every project's tasks); a global-mode store not marked
+`tasks.sh`'s `list`, `show` and `done` ops default to the current project in
+global mode (`--project all` widens them; `/todo list --all` is the user-facing form); a global-mode store not marked
 with `store.json` (written by `--op init-store`), or a `local`-mode config
 pointed at a store that already carries the marker, is refused. `/todo
 migrate` still imports a `TODO.md`, keyed per project in a shared store;

@@ -2,12 +2,7 @@
 
 ## Parallel Execution
 
-**Always maximize parallelism for efficiency:**
-
-- Use multiple tool calls in a single message when operations are independent
-- Launch multiple Task agents simultaneously when tasks don't depend on each other
-- Read multiple files in parallel when gathering context
-- Run independent searches (Grep, Glob) concurrently
+When tool calls are independent of each other (file reads, searches, agents launched for separate tracks), issue them in the same message.
 
 ---
 
@@ -30,7 +25,7 @@
 - Resume handle: `/resume-work {TICKET}-{slug}`
 
 **Exceptions:**
-- `/brainstorm` is pre-ticket and uses slug-only directories (`$WORK_DIR/{slug}/`). On promotion (`/brainstorm promote`), the resulting requirements/proposal work uses the `{TICKET}-{slug}` form.
+- `/brainstorm` is pre-ticket and uses slug-only directories under the `brainstorms` artifact location (`$BRAINSTORM_DIR/{slug}/`). On promotion (`/brainstorm promote`), the resulting requirements/proposal work uses the `{TICKET}-{slug}` form.
 - `/meeting` uses `{YYYY-MM-DD-HHMM}-{slug}` under `$MEETINGS_DIR`, not `$WORK_DIR`. Meetings are unticketed and recur, so the local-time prefix — not a ticket ID — provides ordering and makes a directory listing sort chronologically. Meetings recorded before this format shipped keep their bare `{slug}` directory names and are never renamed or migrated.
 - Epic ticket subdirectories follow `$WORK_DIR/{EPIC-TICKET}-{slug}/{TICKET}-{slug}/`.
 - `/create-requirements --no-ticket` uses a provisional `DRAFT-{slug}` directory (no ticket prefix yet) with no branch created or pushed. Reconciling with a real ticket (`/create-requirements reconcile DRAFT-{slug} {TICKET-ID}`, or the reconcile offer in `/update-context`/`/resume-work`) renames it to the standard `{TICKET}-{slug}` form via the shared procedure in `plugin/shared/draft-reconcile/draft-reconcile.sh`.
@@ -41,13 +36,13 @@
 
 ## Agent Delegation
 
-**IMPORTANT**: Always delegate specialized tasks to agents. This improves quality and reduces context usage.
+The operations under Mandatory Agent Delegation below go to their designated agents. Outside those, use an agent when the work is large and separable enough to repay the cost of briefing it and reading its report; do lookups and small edits yourself.
 
-**CRITICAL — Agent name format**: Always invoke agents by their **plain name** (e.g., `git-operator`). Never use a namespace prefix like `nexus:git-operator`. Agents are resolved by plain name regardless of plugin context. Using a namespace prefix will cause an "unknown skill" error.
+**Agent name format**: in a `Task` call, pass the agent's plain name (`subagent_type: "git-operator"`), as every skill here does; a `nexus:`-prefixed `subagent_type` has failed with an "unknown skill" error. Workflow scripts are the exception: their `agentType` takes the prefixed form (`'nexus:git-operator'`), because the Workflow runtime does not resolve bare names.
 
 ### Mandatory Agent Delegation
 
-The following operations **MUST** always use their designated agents:
+The following operations **MUST** use their designated agents, except where a subsection names its own exception (doc-writer: one-line doc fixes):
 
 #### Git Operations → direct Bash (hook-enforced policy)
 
@@ -68,11 +63,11 @@ The following operations **MUST** always use their designated agents:
 - `NEXUS_KB_WRITE=1 git push …` — skip only branch protection, for the sanctioned direct-to-trunk push to a **git-backed KB repo** (requirements/product-knowledge remote, not this project). Credential scan and audit gate still run. See [`plugin/shared/kb-write-pattern.md`](shared/kb-write-pattern.md) for the full pattern (cd-not-`git -C`, separate Bash calls per command, combine with `SECURITY_AUDITOR_BYPASS=1`).
 - `CREDENTIAL_SCAN_BYPASS=1 git commit …` — skip **only** the credential scan, for a *confirmed* false positive. Branch protection and the audit gate still apply, the skip is announced on stderr, and the reason belongs in the commit body. It is scoped per repository and fails closed: another commit into the same repository without the prefix makes the scan run anyway.
 
-> `GIT_AUTHORIZED=1` was the previous full bypass and **no longer does anything** — the guard ignores it, so a command carrying it is gated normally. It was removed rather than deprecated because it turned off all three checks for callers who wanted to skip one, and because it was mostly used on `fetch`/`checkout`/`pull`, which the guard never gated in the first place.
+> `GIT_AUTHORIZED=1` has no effect: the guard ignores it, so a command carrying it is gated normally. Use the single-check bypasses above instead.
 
 ##### When to delegate to `git-operator` (narrow)
 
-The `git-operator` agent now exists only for operations where isolation from the main conversation is actually valuable:
+The `git-operator` agent exists only for operations where isolation from the main conversation is actually valuable:
 
 1. **Merge conflict resolution** — reading both sides, resolving semantically, staging.
 2. **Complex rebases / cherry-picks** — multi-commit interactive rebases, squashes with likely conflicts.
@@ -112,7 +107,7 @@ Prompt: Resolve the merge conflict in src/PaymentService.php (keeping both the n
 ```
 
 #### Documentation → `doc-writer`
-Every time documentation needs to be created or updated, delegate to the `doc-writer` agent via the **Task tool with `subagent_type: "doc-writer"`**.
+Delegate new documentation and substantial updates to the `doc-writer` agent via the **Task tool with `subagent_type: "doc-writer"`**. Make a one-line fix to existing docs (a typo, a renamed flag) yourself.
 ```
 Use Task tool with subagent_type: "doc-writer"
 Prompt: Document the {feature/component} including: {details}
@@ -163,25 +158,13 @@ Prompt: Scan staged changes for PII and sensitive data exposure
 | `quality-guard` | Adversarial validation of agent outputs | After QA agents complete — challenges findings, verifies claims, identifies gaps |
 | `code-reviewer` | Code quality + performance review | After writing code, reviewing PRs |
 | `security-auditor` | Security analysis + PII scanning | Reviewing auth, payments, sensitive data, **ALWAYS before commit** |
-| `doc-writer` | Technical + API documentation | **ALWAYS use for documentation** |
+| `doc-writer` | Technical + API documentation | New documentation and substantial updates |
 | `git-operator` | Merge conflicts, complex rebases, large-range PR authoring | Only for those three cases — routine mutations run inline (hook-guarded) |
 
 #### Standalone Agents
 | Agent | Use For | When to Use |
 |-------|---------|-------------|
 | `database-analyst` | Execute database queries & analyze data | **ALWAYS use when running database queries** - returns gist/summary only |
-
----
-
-## Efficiency Rules
-
-1. **Batch operations** - Combine related operations into single messages
-2. **Parallel reads** - Read all needed files at once
-3. **Parallel agents** - Run independent agents simultaneously
-4. **Minimize round-trips** - Complete tasks in fewer messages
-5. **Delegate expertise** - Use agents for specialized work
-6. **Explore before implementing** - Use `Explore` agent to understand codebase first
-7. **Review after writing** - Use `code-reviewer` agent after significant changes
 
 ---
 
@@ -193,7 +176,7 @@ Rules in `~/.claude/rules/` are automatically loaded based on project context.
 | Rule | File | Purpose |
 |------|------|---------|
 | PR Review | `rules/pr-review.md` | Code review standards, severity levels, feedback guidelines |
-| Workflow Orchestration | `rules/workflow.md` | Plan mode, subagents, self-improvement loop, verification standards |
+| Workflow Orchestration | `rules/workflow.md` | Re-planning, subagent use, orchestration discipline, phase handoff, external-data trust, stale state, compaction |
 
 ### PHP/Symfony (active in PHP projects)
 `rules/php/` — architecture, code-style, database, rest-api, security, symfony, testing

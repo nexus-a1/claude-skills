@@ -30,7 +30,7 @@ Follow your project's existing conventions. The exploration agent (Phase 1.1b) m
 
 ## 5.2 Create README.md
 
-After implementation, create comprehensive documentation:
+After implementation, create the documentation. Use the sections below that apply to this feature and leave out any that would only be filler:
 
 ```
 $WORK_DIR/{identifier}/README.md

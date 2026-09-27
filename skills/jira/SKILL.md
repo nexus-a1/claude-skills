@@ -174,7 +174,7 @@ before the wrong ticket is read.
   these"** — always present, never omitted.
 - Selecting a candidate chooses a **read target only**. The options must not
   name, imply, or offer any write, transition, comment or assignment action —
-  this command cannot perform one.
+  a write only ever happens through Step 2b's own confirmation.
 
 If the user declines, cancels, or picks "None of these", stop. Read nothing,
 and do not fall back to another candidate — a decline is a decision about the
@@ -354,10 +354,7 @@ approved in the exact confirmation above.
 
 ```bash
 # Each read is guarded: a `Write` that never happened, or produced nothing,
-# must stop here rather than post an empty comment or clear a field. The
-# heredoc could not fail this way — the value was inline, so it was always
-# there — so the guard is what closes the regression this change would
-# otherwise introduce.
+# must stop here rather than post an empty comment or clear a field.
 
 # comment-create — body written to this file by `Write`
 BODY_FILE="$HOME/.claude/tmp/jira-body.txt"
@@ -480,7 +477,7 @@ plainly rather than inventing a value.
 
 ## Scope
 
-Read is always available: view and comment-list, exactly as before.
+Read (view and comment-list) needs no opt-in; only `jira.enabled: false` turns it off.
 
 Write is add-a-comment, transition-a-status, assign/unassign, and create-a-new
 -work-item — off by default, and refused outright unless a project explicitly

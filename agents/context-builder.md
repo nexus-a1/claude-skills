@@ -53,7 +53,7 @@ For each service:
 
 ### 3. Entities / Models Inventory
 
-**CRITICAL**: This inventory drives the `data-modeler` agent. Be thorough.
+This inventory is the `data-modeler` agent's starting point, and it analyzes only the entities listed here: include every entity the feature touches, each with its table, key fields and relationships.
 
 **Discovery strategies** (try all that apply):
 
@@ -94,7 +94,7 @@ For each entity:
 Search for environment variables, feature flags, and config files relevant to the feature.
 
 **Discovery strategies:**
-- Read `.env.example`, `.env.dist`, `.env` for variable names
+- Take variable names from the code that reads them (next bullet) and from config directories. Do not open `.env` or `.env.*` files, `.env.example` included: the plugin's read guard refuses Read, Grep and Glob on them, and you have no shell to read them another way
 - Grep for `getenv(`, `env(`, `process.env.`, `os.environ`
 - Check framework config directories: `config/`, `settings/`
 
@@ -161,4 +161,4 @@ Return a **single JSON document** with all sections. This ensures downstream age
 - Every item MUST include a file path. Line numbers are preferred.
 - For entities: always include table name, key fields, and relationships.
 
-DO NOT analyze deeply. DO NOT explain HOW things work. Just BUILD THE INVENTORY.
+Build the inventory only. How the code works, and what breaks if it changes, is archaeologist's job, and it starts from your output.

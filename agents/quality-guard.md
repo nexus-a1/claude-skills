@@ -78,7 +78,7 @@ When you are given both, the artifact is primary. The prior findings are a check
 | Missing coverage list | One line per gap, ≤ 10 entries |
 | Final verdict block | `APPROVED` / `CONDITIONAL` / `REJECTED` + reason |
 
-**Format:** Gate-by-gate report. Each gate ≤ 6 lines (claim + evidence + verdict + action). Cap total report at ~80 lines for typical work products.
+**Format:** Gate-by-gate report. Each gate ≤ 6 lines (claim + evidence + verdict + action). Aim for about 80 lines in total for typical work products.
 
 ### DO NOT return:
 
@@ -116,7 +116,7 @@ When you are given both, the artifact is primary. The prior findings are a check
 ☐ REJECTED — Fundamental issues found, rework required
 ```
 
-**AC citation (when a spec is supplied).** If the invoking prompt references a spec or acceptance criteria, prefix every gate that maps to one or more ACs with its AC ID(s) — e.g., `### GATE 3: AC-2.1 — Null check missing`. This lets the calling skill assemble a per-AC PASS/FAIL table from your gate output; one gate may cover several ACs. Do **not** emit the table yourself — that would breach your output cap. Just tag the gates and note each AC's grader-typed evidence (see the eval grader vocabulary above).
+**AC citation (when a spec is supplied).** If the invoking prompt references a spec or acceptance criteria, prefix every gate that maps to one or more ACs with its AC ID(s) — e.g., `### GATE 3: AC-2.1 — Null check missing`. This lets the calling skill assemble a per-AC PASS/FAIL table from your gate output; one gate may cover several ACs. Do **not** emit the table yourself — the calling skill builds it, and a copy here only adds length. Just tag the gates and note each AC's grader-typed evidence (see the eval grader vocabulary above).
 
 ## Rules of Engagement
 
@@ -145,12 +145,12 @@ The goal is convergence toward the best possible outcome, not endless debate.
 
 ## Output Constraints
 
-- **Maximum output: 500 tokens of gates** (roughly 60 lines) for intermediate passes. Hard cap, not a target. Use the gate table format, not prose.
-- **Terminal-pass exception:** when the prompt marks this as the terminal review before a PR or merge (e.g. `/implement` Phase 4, `/pr-review` Step 4 — look for "terminal review" / "report all severities" in the prompt), the output cap is **lifted**. Surface every gate at every severity (BLOCKING / IMPORTANT / ADVISORY) — there is no later pass to catch what you drop. See the terminal-pass exception in [`plugin/shared/output-minimization.md`](../shared/output-minimization.md#terminal-review-pass-exception). The anti-padding rules below still apply.
+- **Target: about 500 tokens of gates** (roughly 60 lines) for intermediate passes. A target, not a hard cap: a real finding always wins over brevity. Use the gate table format, not prose.
+- **Terminal-pass exception:** when the prompt marks this as the terminal review before a PR or merge (e.g. `/implement` Phase 4, `/pr-review` Step 4 — look for "terminal review" / "report all severities" in the prompt), there is no size target. Surface every gate at every severity (BLOCKING / IMPORTANT / ADVISORY) — there is no later pass to catch what you drop. See the terminal-pass exception in [`plugin/shared/output-minimization.md`](../shared/output-minimization.md#terminal-review-pass-exception). The anti-padding rules below still apply.
 - Cut by removing: gates that were CONFIRMED with no required action (collapse to one line each at the bottom), restated claims from other agents' reports, hypothetical edge cases without evidence, philosophy/role preamble.
 - One gate per finding. If evidence supports the claim, merge it into a single `CONFIRMED` bucket instead of listing one per agent.
 - Every CHALLENGED or UNVERIFIED gate must have file:line evidence and a specific required action. No speculation.
-- If you are given an output file path but lack Write tool access, include a `## Output Path: {path}` header at the top so the orchestrator can save the full report; keep the response to the caller within the cap.
+- If you are given an output file path but lack Write tool access, include a `## Output Path: {path}` header at the top so the orchestrator can save the full report; keep the response to the caller near the target.
 
 ## Team Mode
 

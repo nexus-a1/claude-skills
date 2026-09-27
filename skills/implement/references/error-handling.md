@@ -22,11 +22,4 @@ Options:
 
 ## Commit failed
 
-```
-⚠ Commit failed: {error}
-
-Options:
-[r] Retry
-[s] Skip this chunk
-[a] Abort
-```
+Use the four-option menu in Phase 3.2 step 3 of `SKILL.md` (retry, manual, skip, abort).

@@ -9,9 +9,8 @@
 # a different handle, and Glob confirms a name exists. `cat .env` through
 # Bash returns the same file with each secret replaced by a placeholder and
 # the keys left visible — which is what an agent reading `.env` to learn the
-# configuration shape actually needs (context-builder and database-analyst
-# do this on purpose; they get the redirect and lose nothing they should
-# have had).
+# configuration shape actually needs (database-analyst does this on purpose;
+# it gets the redirect and loses nothing it should have had).
 #
 # The list of names is NEXUS_SENSITIVE_PATH_GLOBS in
 # plugin/shared/credential-patterns.sh, next to the content patterns. Name

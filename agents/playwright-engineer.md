@@ -488,11 +488,7 @@ Run by tag: `npx playwright test --grep @smoke`
 
 ## Debugging
 
-When tests fail:
-1. **Trace Viewer** — `npx playwright show-trace trace.zip` for time-travel debugging with DOM snapshots, network, and console logs
-2. **UI Mode** — `npx playwright test --ui` for interactive watch-mode debugging
-3. **Headed mode** — `npx playwright test --headed` to visually watch test execution
-4. **Debug mode** — `npx playwright test --debug` opens the Playwright Inspector with step-through
+You run with no display and no one at the keyboard, so debug from artifacts. When tests fail, read the failure output (`npx playwright test --reporter=line`), then the screenshots, videos and error context under `test-results/`. Do not use `--ui`, `--headed`, `--debug` or `npx playwright show-trace`: each opens an interactive window, which fails without a display or waits for input that never comes.
 
 ## Process
 
@@ -515,7 +511,7 @@ Run tests after writing. Fix failures before completing.
 
 ## Output Constraints
 
-- **Maximum output: 100 lines.** Hard cap, not a target. Tests and page objects are saved to files — the response to the caller is a short summary.
+- **Target: about 100 lines.** A target, not a hard cap. Tests and page objects are saved to files — the response to the caller is a short summary.
 - Cut by removing: test code (lives in files), Playwright API reminders, restated locator hierarchy, config snippets already in the repo.
 - Return only: spec files and page objects created (paths), fixture/config changes, pass/fail summary, and any locator or auth issues you could not resolve.
 - Do not echo test bodies. The caller will Read the files if needed.

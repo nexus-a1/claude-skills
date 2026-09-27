@@ -20,7 +20,7 @@ into a title and summary you can paste into your own tracker (Jira, Linear,
 GitHub Issues, whatever you use) — nothing more.
 
 **This command does not investigate the bug.** It performs no code
-discovery, proposes no fix, and makes no commit (AC-7.1). If you want the
+discovery, proposes no fix, and makes no commit. If you want the
 bug actually investigated and fixed, use `/troubleshoot` instead — that
 command reads the codebase and reasons about root cause. This one only
 reshapes what you already told it.
@@ -51,7 +51,7 @@ Produce exactly two pieces of text:
   no bold, no headers — plain text a tracker's title field will accept
   as-is). Describe the observable symptom, not the fix.
 - **Summary** — one paragraph covering what was expected, what actually
-  happened, and how to reproduce it (AC-7.1). No headers, no bullet list —
+  happened, and how to reproduce it. No headers, no bullet list —
   a single paragraph, since it is meant to be pasted as a ticket
   description, not rendered as a mini-document.
 
@@ -75,8 +75,7 @@ Offer — do **not** auto-run:
 
 Only invoke another skill on explicit confirmation. If confirmed, print a
 handoff banner naming the exact next command and **stop** (same shape as
-`.claude/skills/work-issue`'s planning-pipeline handoff and `/meeting`'s
-`/epic` handoff — never invoke the next skill directly):
+`/meeting`'s `/epic` handoff — never invoke the next skill directly):
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -91,7 +90,7 @@ you can reconcile it with a real ticket later once one exists.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-The stub text is directly usable as that command's input (AC-7.2) — no
+The stub text is directly usable as that command's input — no
 reformatting needed between what this command prints and what
 `--no-ticket` expects as a feature description.
 

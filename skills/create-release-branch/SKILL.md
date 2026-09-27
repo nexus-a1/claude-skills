@@ -125,7 +125,7 @@ Next:
 
 ## Important Notes
 
-- **Single message execution** — run all of the above in one assistant turn using parallel tool calls where independent.
+- **No extra round-trips** — run the steps straight through, pausing only for the confirmations they ask for; use parallel tool calls where independent.
 - **No per-step git invocations in prose** — every git/branch/version operation goes through the shell library. The library is the source of truth.
 - **Version normalization happens in the parser** — pass `$ARGUMENTS` to it raw; do not strip or add the `v` prefix yourself.
 - **Audit gate** — `record-audit.sh` must run *immediately before* the action script; do not run anything between them that could change HEAD or branch.

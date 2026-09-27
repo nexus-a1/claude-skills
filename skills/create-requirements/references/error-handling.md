@@ -1,6 +1,6 @@
 # Error Handling (Create Requirements)
 
-All error recovery MUST use AskUserQuestion to present options to the user.
+Recovery that needs a user decision presents its options through AskUserQuestion. Team-start and remote-push failures below need none: they fall back or warn, and the run continues.
 
 ## Git Branch Creation Fails
 

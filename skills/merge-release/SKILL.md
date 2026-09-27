@@ -37,7 +37,7 @@ Arguments provided: $ARGUMENTS
 
 ## Your Task
 
-Thin dispatcher over `${CLAUDE_PLUGIN_ROOT}/shared/release/pr-merge.sh`. Do not re-derive validation logic in prose — call the script and surface its structured output. Run all steps in a single message; no per-step reasoning rounds.
+Thin dispatcher over `${CLAUDE_PLUGIN_ROOT}/shared/release/pr-merge.sh`. Do not re-derive validation logic in prose — call the script and surface its structured output. Pause only for the confirmations the steps below ask for.
 
 ### Step 0 — Pre-flight: verify git repo
 
@@ -69,7 +69,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/shared/release/pr-merge.sh" --list --json
 
 If the array is empty, stop with: "No open release PRs found. Run /create-release first."
 
-Otherwise use AskUserQuestion to present each PR as an option (label: `#<n> <headRefName> → <baseRefName>`, description: title). The user picks one; remember its `headRefName` as `release_branch`.
+Otherwise use AskUserQuestion to present up to 4 PRs as options (label: `#<n> <headRefName> → <baseRefName>`, description: title) — the tool shows no more than 4; with more PRs, name the rest in the question text so the user can type one. The user picks one; remember its `headRefName` as `release_branch`.
 
 ### Step 3 — Plan: show PR state and gates
 
@@ -133,6 +133,6 @@ Next:
 
 ## Important Notes
 
-- **Single message execution** — run all steps in one assistant turn; use parallel tool calls where independent.
-- **No re-derived gh commands in prose** — every gh call goes through `pr-merge.sh` (or `gh pr list` in Step 2 when listing).
+- **No extra round-trips** — run the steps straight through, pausing only for the confirmations they ask for; use parallel tool calls where independent.
+- **No re-derived gh commands in prose** — every gh call goes through `pr-merge.sh`, including the Step 2 listing.
 - **No audit recording needed** — the merge and optional branch deletion are server-side via the GitHub API.

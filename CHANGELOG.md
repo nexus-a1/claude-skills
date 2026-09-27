@@ -1,5 +1,52 @@
 # Changelog
 
+## [1.47.2] - 2026-09-27
+
+## What's Changed
+
+3 commits since v1.47.1, all fixes, from one prompt audit of the whole plugin (#426). No breaking changes: no command, flag, configuration key or agent tool list changed. What changed is the text the skills and agents run on, plus a few shell blocks that were not doing what the text said.
+
+### Bug Fixes
+
+**Configuration values that never reached the model**
+- **pr-review, review-plan, troubleshoot, create-requirements, implement, refactor, update-documentation**: the configured `execution_mode` and workflow switch are now printed, so later steps can read them. They were set in one Bash call and then lost, so every run used the default whatever `configuration.yml` said.
+- **implement, troubleshoot, refactor, resume-work, todo-work**: the worktree blocks now load the config library before calling it. Until now `worktree.enabled: true` could not take effect in `/implement` and `/todo-work`, and `/refactor`'s multi-service mode could `mkdir` at `/`.
+- **feedback**: `feedback.plugin_repo` is printed for Phase 7's "skip if empty" check.
+
+**Review and QA**
+- **pr-review, review-plan**: the finding stages now ask for every issue, including uncertain ones, because the three-challenger verify stage already filters. The old text said "fewer findings score better".
+- **pr-review, implement**: code-reviewer and security-auditor are told when a pass is the terminal review, so they report every severity. Their agent files now include that exception.
+- **agents**: output limits are targets, not hard caps, matching `shared/output-minimization.md`.
+- **implement**: the team-mode QA skeptic reads `spec.md`/`plan.md`/`tasks.md`, not the legacy requirements file.
+- **review-plan**: the security heuristic also triggers on the word "auth".
+
+**Questions and state**
+- **AskUserQuestion prompts** in create-requirements, brainstorm, work-status, resume-work, load-context, add-product-knowledge, merge-release and archive-requirements offer at most 4 options. The tool shows 4 and dropped the rest without an error.
+- **work-status**: a lifecycle state typed as free text is checked against the five valid states before it is written.
+
+**Wrong paths and names**
+- **brainstorm**: the quality-guard reads from the brainstorm directory, not the work directory.
+- **epic**: templates and the state schema use `{epic-id}`/`{ticket-id}`, matching what the skill writes.
+- **monitor-pr**: CI-fix commits use the project's own ticket prefix, not a hardcoded `SKILLS-`.
+
+**Agents asked to do things they cannot do**
+- **context-builder, security-auditor**: no longer told to read `.env` files, which the read guard blocks.
+- **refactorer, database-analyst, aws-architect**: no longer ask the user questions or show menus from inside a sub-agent. They report back to the caller instead.
+- **playwright-engineer**: debugs from artifacts, not interactive `--ui`/`--debug` windows.
+
+**Always-on guidance**
+- **plugin/CLAUDE.md, rules/workflow.md**: removed pressure to always delegate, enter plan mode for any 3+ step task, and edit the project's `CLAUDE.md` after every correction. It now offers to record lessons, uses subagents for large independent work, and keeps to the scope that was asked for.
+
+**Smaller fixes**
+- Internal ticket IDs and history notes removed from shipped prompts.
+- React rule examples fixed (no in-place `sort` of props, TanStack Query v5 `invalidateQueries`, MSW v2).
+- PHPUnit data providers use attributes.
+- Stale cross-references and anchors fixed.
+
+The full audit report, with every finding and its reason, is in `docs/assessments/prompt-audit_09262026/REPORT.md`.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.47.1...v1.47.2
+
 ## [1.47.1] - 2026-09-27
 
 ## What's Changed

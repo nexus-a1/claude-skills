@@ -52,7 +52,7 @@ collector with `bash` rather than sourcing it also keeps its functions inside th
 
 The scan is not optional. A PR title containing a literal `UNTRUSTED-CONTENT:END` would
 close from inside the boundary you are about to wrap it in, pushing the rest of the output
-outside it. Content may not carry the fence meant to contain it — the same rule six other
+outside it. Content may not carry the fence meant to contain it — the same rule other
 skills in this plugin already apply, using this same shared scanner.
 
 ```bash

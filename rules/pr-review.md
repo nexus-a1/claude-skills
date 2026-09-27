@@ -14,9 +14,9 @@ Claude Code acts as an automated code reviewer to:
 
 ## Review Philosophy
 
-**Be Helpful, Not Pedantic**
-- Focus on issues that meaningfully impact functionality, security, or maintainability
-- Avoid nitpicking style issues that don't affect code quality
+**Report What Matters, With Its Severity**
+- Report every issue that could cause incorrect behavior, a security problem, a test failure, or a real maintenance cost, including ones you are unsure of; give each a severity (below) and say when you are unsure
+- Leave out only what "What NOT to Review" lists
 - Provide context and education, not just criticism
 - Acknowledge good patterns and implementations
 
@@ -110,8 +110,8 @@ scripts, apply these checks before approving:
 | `eval` on external input | Hook or agent script calls `eval`/`exec` on fetched or tool-derived data |
 | MCP not pinned | `.mcp.json` or `mcpServers` entries without exact version or commit SHA |
 
-In this repository, `scripts/validators/config-security.sh` covers E1–E5 automatically (CI enforces on every PR).
-This section covers human-review judgment calls the validator cannot catch.
+Where a project already runs an automated configuration check (the nexus plugin's own repository runs
+`scripts/validators/config-security.sh` on every PR), this section covers the judgment calls that check cannot catch.
 
 For PRs porting ideas from external plugins or repos, apply the
 **direct-port, don't wholesale-merge** policy: verify the idea on its merits,

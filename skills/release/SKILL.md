@@ -47,7 +47,7 @@ Arguments provided: $ARGUMENTS
 
 ## Your Task
 
-Thin dispatcher over `${CLAUDE_PLUGIN_ROOT}/shared/release/`. Run all steps in a single message; use parallel tool calls where independent. Do not re-derive parsing, version normalization, RC bumping, tag-existence checks, or workflow-case detection — call the scripts and surface their structured output.
+Thin dispatcher over `${CLAUDE_PLUGIN_ROOT}/shared/release/`. Use parallel tool calls where steps are independent; pause only for the confirmations the steps below ask for. Do not re-derive parsing, version normalization, RC bumping, tag-existence checks, or workflow-case detection — call the scripts and surface their structured output.
 
 The default release source is `origin/<repo default branch>` (resolved from `origin/HEAD` via `_default_branch()`, falling back to `master`). Users can override by passing a branch as the second argument (e.g. `/release v1.2.0-rc.1 release/v1.2.0` for an RC off a release branch). Note: passing a `release/*` branch as the target automatically implies `--pre-release`; stable releases must target the default branch. When no branch arg is given and the user appears to want something other than the default branch, hint that they can pass one explicitly.
 
@@ -206,7 +206,7 @@ On success:
 
 ## Important Notes
 
-- **Single message execution** — all steps in one assistant turn.
+- **No extra round-trips** — run the steps straight through, pausing only for the confirmations they ask for.
 - **No re-derived gh/git logic in prose** — every gh/git operation goes through the shared scripts.
 - **Default source is `origin/<repo default branch>`** — if the user appears to want a different source (e.g. an RC off a release branch), ask them to pass it as the second argument: `/release <version> <branch>`.
 - **Workflow gate** — when `release/<version>` exists, the action script enforces "no-pr → /create-release", "open-pr → /merge-release", "closed-not-merged → confirm with --allow-unmerged-pr". Do not bypass.

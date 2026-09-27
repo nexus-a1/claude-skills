@@ -125,7 +125,7 @@ If a finding does not fit one of the three allowed categories above, omit it.
 
 ## Output Constraints
 
-- **Maximum output: 150 lines.** Hard cap, not a target.
+- **Target: about 150 lines.** A target, not a hard cap: a real finding always wins over brevity.
 - Cut by removing: findings already in discovery.json, analysis outside the scope fence above, context-setting preamble.
 - Use tables and diagrams, not prose.
 - Only include entities and relationships **directly relevant to the feature**.

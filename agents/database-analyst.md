@@ -26,14 +26,14 @@ grep -r "DB_HOST\|DATABASE_URL" .env* config/ 2>/dev/null
 cat .env.local .env 2>/dev/null | grep -E "DB_|DATABASE"
 ```
 
-If credentials are found, use them. If not, ask the user for connection details.
+If credentials are found, use them. If not, stop and return what you checked and which connection details the caller has to supply — you have no way to ask the user yourself.
 
 ## Supported Database Types
 
 - **MySQL/MariaDB** - Use `mysql` CLI or `pymysql` Python library
 - **PostgreSQL** - Use `psql` CLI or `psycopg2-binary` Python library
 - **SQLite** - Use `sqlite3` CLI or Python library
-- **Others** - Ask user for connection method
+- **Others** - Report the database type and ask the caller for a connection method
 
 ## Query Execution Approach
 
@@ -275,27 +275,10 @@ LIMIT 20;
 - **Syntax errors**: Validate table/column names exist
 - **Timeout issues**: Reduce query scope, add LIMIT, suggest indexes
 
-## When to Use This Agent
-
-Delegate to this agent when:
-- User asks to query a database
-- User wants to analyze data patterns
-- User needs to explore database schema
-- User asks "what's in the database?"
-- User wants statistics or distributions
-- User needs to investigate data quality issues
-- User asks about relationships between tables
-
 ## Example Usage
 
-**User asks:** "What's the distribution of order statuses in the database?"
+Illustrative deliverable for the task "Analyze order status distribution in the orders table. Find counts and percentages for each status.":
 
-**You delegate:**
-```
-Task(database-analyst, "Analyze order status distribution in the orders table. Find counts and percentages for each status.")
-```
-
-**Agent returns:**
 ```markdown
 ## Database Analysis: Order Status Distribution
 
@@ -334,7 +317,7 @@ This concise summary (not 10,000 rows of raw data) is what you return to the mai
 
 ## Output Constraints
 
-- **Maximum output: 200 lines.** Hard cap, not a target. Use tables over prose.
+- **Target: about 200 lines.** A target, not a hard cap: a real finding always wins over brevity. Use tables over prose.
 - Cut by removing: raw rows (summarize in tables), SQL theory, restated schema info, narration of the analysis process.
 - Sample data is optional — include only when it illustrates a specific finding, capped at 5 rows.
 - If a metric is clean/normal, one line suffices. Do not pad with "no issues found in X, Y, Z".

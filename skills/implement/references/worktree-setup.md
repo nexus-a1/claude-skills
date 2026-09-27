@@ -1,6 +1,6 @@
 # Worktree Setup (Phase 0.2b)
 
-Read this file only when `resolve_worktree_enabled` returns `"true"`.
+Read this file only when the `WORKTREE_ENABLED` printed in Phase 0.2b is `true`.
 
 ## Single mode (`WORKSPACE_MODE == "single"`)
 
@@ -15,7 +15,18 @@ Read this file only when `resolve_worktree_enabled` returns `"true"`.
 Create per-service worktrees:
 
 ```bash
+# Its own Bash call, so the library is sourced again: without it the resolve_*
+# calls are undefined, WT_ROOT is empty and the mkdir lands at /.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
 WT_ROOT=$(resolve_worktree_root)
+[ -n "$WT_ROOT" ] || { echo "ERROR: no worktree root resolved" >&2; exit 1; }
 TICKET_WORKSPACE="${WT_ROOT}/{identifier}"
 mkdir -p "$TICKET_WORKSPACE"
 

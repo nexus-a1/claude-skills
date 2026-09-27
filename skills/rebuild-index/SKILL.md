@@ -293,7 +293,6 @@ fi
 # `<project>/.claude|git` — the test below passes and the bypassed push lands in
 # the project's own repository. Strict refuses instead of fabricating (rc 3 here)
 # and returns the same PATH|TYPE pair, so this is a swap, not a redesign.
-# See docs/decisions/014-artifact-resolution-strictness.md.
 if _RESOLVED=$(resolve_artifact_strict product-knowledge .); then
   IFS='|' read -r PRODUCT_DIR PROD_TYPE <<< "$_RESOLVED"
 else
@@ -395,7 +394,6 @@ fi
 # location's type — so `local: {type: git}` plus an unconfigured `brainstorms`
 # makes the loop below push the project's own repository. Strict refuses rather
 # than guessing; an artifact it refuses is skipped, not written to.
-# See docs/decisions/014-artifact-resolution-strictness.md.
 _pairs=()
 for _art in work:work brainstorms:brainstorm proposals:proposals refactoring:work/refactoring-sessions; do
   IFS=':' read -r _name _subdir <<< "$_art"
@@ -452,7 +450,7 @@ done
 
 Requirements manifests are committed by their own delegated skill
 (`/rebuild-requirements-index`). The product-knowledge manifest is committed by
-the **Rebuild: Product Knowledge** step below (it is *not* committed by
+the **Rebuild: Product Knowledge** step above (it is *not* committed by
 `product-expert`, which only writes the manifest) — do not duplicate either
 here.
 

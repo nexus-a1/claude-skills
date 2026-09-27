@@ -51,10 +51,16 @@ if [ -n "$SPEC" ] && [ ! -f "$SPEC" ]; then
   echo "WARNING: --spec '$SPEC' not found; per-AC verification skipped." >&2
   SPEC=""
 fi
+echo "TROUBLESHOOT_EXEC_MODE=$TROUBLESHOOT_EXEC_MODE"
+echo "TROUBLESHOOT_WORKFLOW_ENABLED=$TROUBLESHOOT_WORKFLOW_ENABLED"
+echo "SPEC=$SPEC"
+echo "WORKTREE_ENABLED=$(resolve_worktree_enabled)"
+echo "WORKSPACE_MODE=$WORKSPACE_MODE"
 ```
 
-Use `$TROUBLESHOOT_EXEC_MODE` to determine team vs sub-agent behavior in Phase 6 (verify fix).
-Use `$TROUBLESHOOT_WORKFLOW_ENABLED` to decide whether Phase 6.3 attempts the orchestrated path.
+Shell variables do not survive this Bash call; later steps use the printed values.
+Use the printed `TROUBLESHOOT_EXEC_MODE` to determine team vs sub-agent behavior in Phase 6 (verify fix).
+Use the printed `TROUBLESHOOT_WORKFLOW_ENABLED` to decide whether Phase 6.3 attempts the orchestrated path.
 
 ## Write Safety
 
@@ -112,7 +118,7 @@ See `${CLAUDE_PLUGIN_ROOT}/shared/write-safety.md` (or `~/.claude/shared/write-s
 
 ## Phase 0: Enter Worktree (Conditional)
 
-Skip if `resolve_worktree_enabled` returns `"false"`.
+Skip if the printed `WORKTREE_ENABLED` is `false`.
 
 **Single mode** (`WORKSPACE_MODE == "single"`):
 1. Call `EnterWorktree(name: "troubleshoot-{short_slug}")` where `{short_slug}` is derived from the issue description (e.g., `troubleshoot-login-500`)
@@ -125,7 +131,18 @@ that uses them.
 **Multi mode** (`WORKSPACE_MODE == "multi"`):
 1. Create per-service worktrees using each service's current branch:
 ```bash
+# Its own Bash call, so the library is sourced again: without it the resolve_*
+# calls are undefined, WT_ROOT is empty and the mkdir lands at /.
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+  source "$HOME/.claude/shared/resolve-config.sh"
+else
+  echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+  exit 1
+fi
 WT_ROOT=$(resolve_worktree_root)
+[ -n "$WT_ROOT" ] || { echo "ERROR: no worktree root resolved" >&2; exit 1; }
 TROUBLESHOOT_WORKSPACE="${WT_ROOT}/troubleshoot-{short_slug}"
 mkdir -p "$TROUBLESHOOT_WORKSPACE"
 
@@ -244,36 +261,14 @@ Call chain:
 
 **Goal:** Understand WHY the issue occurs.
 
-**Investigation steps:**
+Read the code along the call chain Phase 2 found, reproduce the failing condition where you
+can, and use git history to find when the behaviour changed — `git log -S "<string>" -- <path>`
+finds the commit that added or removed a string, `git log --oneline -- <path>` lists recent
+changes. Check what the existing tests expect: a test that disagrees with the code is evidence
+for Scenario B in Phase 4.
 
-### 3.1 Read the code
-- Read controller/handler
-- Read service methods
-- Check conditional logic (if/else that might trigger different responses)
-
-### 3.2 Check git history
-```bash
-# When did this start?
-git log -p --all -S "202" -- path/to/controller
-
-# Recent changes to this file
-git log --oneline -10 -- path/to/controller
-```
-
-### 3.3 Check existing tests
-```bash
-# What do tests expect?
-grep -r "api/users" tests/ -A 5 -B 5
-```
-
-### 3.4 Perform systematic investigation
-
-**Investigate the root cause:**
-1. Reproduce - Identify exact conditions
-2. Isolate - When did it last work?
-3. Investigate - Trace through code
-4. Hypothesize - Form theory about cause
-5. Document - Provide root cause analysis
+The analysis is the claim Phase 6.3 tests the fix against, so state it concretely: where the
+failure is produced, when it was introduced if history shows it, and the mechanism.
 
 **Output to user:**
 ```
@@ -340,7 +335,7 @@ AskUserQuestion:
 **If code needs fixing:**
 - Apply the fix directly using Edit tool
 - Keep changes minimal and focused
-- Add comments if logic is complex
+- Comment only a constraint the code itself can't show — not what the change does or why it is correct
 
 **Example:**
 ```php
@@ -348,7 +343,7 @@ AskUserQuestion:
 return new JsonResponse($data, 202); // Async processing
 
 // After
-return new JsonResponse($data, 200); // Synchronous response
+return new JsonResponse($data, 200);
 ```
 
 ### 5.2 Test Fix (Scenario B)
@@ -363,7 +358,7 @@ return new JsonResponse($data, 200); // Synchronous response
 $response->assertStatus(200);
 
 // After
-$response->assertStatus(202); // Updated for async processing
+$response->assertStatus(202);
 ```
 
 ### 5.3 Write Missing Tests
@@ -379,16 +374,13 @@ Task(test-writer, "Write test for /api/users endpoint expecting 200 status code 
 
 **Goal:** Ensure the fix works and doesn't break anything.
 
-**Execution mode**: Determined by `$TROUBLESHOOT_EXEC_MODE`.
+**Execution mode**: Determined by `TROUBLESHOOT_EXEC_MODE`.
 
 ### 6.1 Run relevant tests
-```bash
-# Run specific test file
-./vendor/bin/phpunit tests/Feature/UserApiTest.php
 
-# Or run all tests
-./vendor/bin/phpunit
-```
+Use the project's own test command (from its manifest, Makefile or CI config): the tests that
+cover the changed code first, then the full suite to catch regressions. Keep each run's name,
+pass/fail status, exit code and a one-line summary — 6.3 passes them on as `testResults`.
 
 ### 6.2 If tests fail
 **Delegate to test-fixer:**
@@ -451,7 +443,7 @@ into a classic run, and do not present a partial run as complete. Name the path 
 > manifests, so do not write logic that depends on a specific error shape. If the orchestrated
 > path does not produce a result, take the fallback.
 
-`$TROUBLESHOOT_EXEC_MODE` is not consulted on the orchestrated path. `workflow` is not a third
+`TROUBLESHOOT_EXEC_MODE` is not consulted on the orchestrated path. `workflow` is not a third
 value of `execution_mode`; it replaces the choice for this step, because a script has no
 teammate protocol to run.
 
@@ -531,7 +523,7 @@ start at zero every time and the third rejection would look like the first.
 
 #### Classic path
 
-**If `$TROUBLESHOOT_EXEC_MODE` = `"subagent"`:**
+**If `TROUBLESHOOT_EXEC_MODE` = `"subagent"`:**
 
 Run verification agents in parallel:
 
@@ -560,9 +552,9 @@ If skeptic raises BLOCKING gates, address them before committing.
 
 ---
 
-**If `$TROUBLESHOOT_EXEC_MODE` = `"team"` (default):**
+**If `TROUBLESHOOT_EXEC_MODE` = `"team"` (default):**
 
-**Team-start fallback (attempt-and-observe).** If `TeamCreate` or any `TaskCreate` below fails, for any reason, the team did not start. `TeamDelete` any team that was created, run the sub-agent path above with the same agents, and record the mode as `subagent (fallback: team start failed at {TeamCreate|TaskCreate})`. Set `$TROUBLESHOOT_EXEC_MODE = "subagent"` for the rest of the run, so a later round does not try the team again. Do not check for the tools in advance and do not read the error to guess why it failed. The full contract is in `${CLAUDE_PLUGIN_ROOT}/shared/team-mode.md` (or `~/.claude/shared/team-mode.md` for local/dev copies).
+**Team-start fallback (attempt-and-observe).** If `TeamCreate` or any `TaskCreate` below fails, for any reason, the team did not start. `TeamDelete` any team that was created, run the sub-agent path above with the same agents, and record the mode as `subagent (fallback: team start failed at {TeamCreate|TaskCreate})`. Set `TROUBLESHOOT_EXEC_MODE = "subagent"` for the rest of the run, so a later round does not try the team again. Do not check for the tools in advance and do not read the error to guess why it failed. The full contract is in `${CLAUDE_PLUGIN_ROOT}/shared/team-mode.md` (or `~/.claude/shared/team-mode.md` for local/dev copies).
 
 ```
 TeamCreate(team_name="troubleshoot-verify")
@@ -720,35 +712,6 @@ Task(test-fixer, "Fix all failing tests after changing /api/users status code")
 | Review (classic) | security-auditor, quality-guard | Validate fix quality and security |
 | Review (orchestrated) | quality-guard, security-auditor, code-reviewer | Two blind verifiers on one question each, then three lenses refuting the reach verdict — see `references/workflow-verify.md` |
 | Commit | Direct (Bash, hook-guarded) | Save and document fix |
-
----
-
-## Tips for Effective Debugging
-
-**Provide clear issue descriptions:**
-✅ "Login endpoint returns 500 when password is empty"
-✅ "User creation fails with unique constraint error on email"
-✅ "Dashboard loads slowly (>5s) with 1000+ items"
-
-❌ "It's broken"
-❌ "Fix the login"
-❌ "Make it faster"
-
-**Include context when available:**
-- Error messages
-- Stack traces
-- Reproduction steps
-- Expected vs actual behavior
-- Recent changes
-
-**Example:**
-```bash
-/troubleshoot "Login endpoint returns 500 when password is empty
-Error: Call to a member function hash() on null
-Stack trace shows error in AuthService::validatePassword()
-Expected: 400 Bad Request with validation error
-Actual: 500 Internal Server Error"
-```
 
 ---
 

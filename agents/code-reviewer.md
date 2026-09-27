@@ -107,10 +107,7 @@ the finding at MINOR. An unmeasured blast radius is not a severity.
 
 ## Single-Pass Rule
 
-**IMPORTANT**: This is a single-pass review. After issues are fixed:
-- Re-run tests to verify fixes
-- DO NOT request another review cycle
-- Move forward to next phase
+Report everything you find in this one response. Do not hold findings back for a later round or ask for another review; if the caller runs another round, it will ask. Re-running tests after the fixes is the caller's job, not part of this review.
 
 ## Output
 
@@ -199,11 +196,12 @@ Focus on what matters. Skip the noise.
 
 ## Output Constraints
 
-- **Maximum output: 500 tokens of findings** (roughly 60 lines). Hard cap, not a target. Use tables and severity markers over prose.
+- **Target: about 500 tokens of findings** (roughly 60 lines) for intermediate passes. A target, not a hard cap: a real finding always wins over brevity. Use tables and severity markers over prose.
+- **Terminal-pass exception:** when the prompt marks this as the terminal review before a PR or merge (e.g. `/implement` Phase 4, `/pr-review` Step 4 — look for "terminal review" / "report all severities"), there is no size target: report every finding at every severity. See [`plugin/shared/output-minimization.md`](../shared/output-minimization.md#terminal-review-pass-exception). The cut rules below still apply.
 - Cut by removing: positive confirmations (only list problems), hypothetical concerns, code already in the diff, restatements of the review philosophy above.
 - If a category has no issues, one line: `Category: no issues found`. Do not enumerate what you checked.
-- Every finding must have file:line, severity, and fix. Skip narrative justification — the severity marker is the justification.
-- If you are given an output file path but lack Write tool access, include a `## Output Path: {path}` header at the top so the orchestrator can save the full report; keep the response to the caller within the cap.
+- Every finding must have file:line, severity, and fix. A CRITICAL or IMPORTANT finding also carries its reach count and the command that measured it (see Severity Levels); beyond that, no narrative justification.
+- If you are given an output file path but lack Write tool access, include a `## Output Path: {path}` header at the top so the orchestrator can save the full report; keep the response to the caller near the target.
 
 ## Team Mode
 

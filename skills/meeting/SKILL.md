@@ -236,11 +236,9 @@ echo "MDIR=$MDIR  DATE=$TODAY"
 ```
 
 Ask (via AskUserQuestion, only if not already supplied) for **subject** and
-**parties**; write them into `state.json` — `topic` (the confirmed subject —
-this is the only place it is persisted; previously it lived only in prose
-inside `meeting-record.md`/`summary.md` headers, which the meetings manifest's
-required `title` field cannot read from, per `manifest-schema.md`'s Meetings
-section) and `parties`. Bind both through **quoted heredocs** rather than
+**parties**; write them into `state.json` — `topic` (the confirmed subject;
+the meetings manifest's required `title` field is read from here, per
+`manifest-schema.md`'s Meetings section) and `parties`. Bind both through **quoted heredocs** rather than
 templating them into the command line — inside a double-quoted string
 (`"{subject}"`) or a hand-composed JSON literal (`'{parties_json_array}'`),
 `$(...)` and backticks still expand, and a stray quote breaks the JSON, when
@@ -625,9 +623,8 @@ work. Offer — do **not** auto-run:
 > Otherwise the summary + changes doc stand as the record.
 
 **Whichever destination the user picks, do NOT invoke it directly** — print
-a handoff banner naming the exact next command and **stop** (same shape as
-`.claude/skills/work-issue`'s planning-pipeline handoff). This applies to
-all three destinations equally (AC-1.2), not only `/epic`.
+a handoff banner naming the exact next command and **stop**. This applies to
+all three destinations equally, not only `/epic`.
 
 **`/update-documentation`:**
 ```
@@ -670,7 +667,7 @@ so paste the relevant points from summary.md/changes.md into the epic
 description if they matter to the breakdown.
 
 Note: /epic gates on scope. If it decides this is really single-ticket
-work, it will redirect you to /create-requirements instead (AC-1.5).
+work, it will redirect you to /create-requirements instead.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 

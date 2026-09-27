@@ -90,7 +90,6 @@ else
   exit 1
 fi
 IFS='|' read -r REPO _TYPE <<< "$(resolve_artifact_typed requirements requirements)"
-_BASE="$(dirname "$REPO")"
 
 # The sync runs HERE, in the call that resolved REPO and _TYPE, because shell
 # state does not survive to the next Bash tool call. Split across two calls
@@ -102,9 +101,6 @@ if [[ "$_TYPE" == "git" ]]; then
   # survive between calls, so a bare `cd "$REPO"` here would leave the whole
   # session standing in the knowledge-base repo — and the next call writing a
   # relative path would land inside the KB instead of the user's project.
-  # Folding the sync into this fence is what created that exposure, so scoping
-  # it is part of the fix rather than a detail of it. Same shape as
-  # load-requirements, where cross-block-vars-sweep.test pins it.
   #
   # `cd "$REPO"`, not its parent: git pull operates on the containing repository
   # from any directory inside it, and dirname is not the location root when
@@ -120,7 +116,7 @@ if [[ "$_TYPE" == "git" ]]; then
 fi
 ```
 
-`REPO`, `_TYPE` and `_BASE` come from `resolve_artifact_typed` in the block
+`REPO` and `_TYPE` come from `resolve_artifact_typed` in the block
 above and exist only for the rest of that same block. Any later block that
 needs them re-derives them the same way.
 
@@ -154,7 +150,7 @@ Query: ${query}
 Configuration: ${requirements_config}
 
 Tasks:
-1. Sync requirements repository (if sync_command configured)
+1. Sync requirements repository (git-backed KBs only)
 2. Parse query for keywords, filters, date ranges
 3. Load index.json for fast search
 4. Calculate relevance scores for matching tickets
@@ -427,7 +423,7 @@ If working on export:
 Configured path: /path/to/requirements-repo
 Error: Directory does not exist
 
-Check CLAUDE.md configuration.
+Check the requirements artifact in .claude/configuration.yml.
 ```
 
 ### Index Corrupted
@@ -456,16 +452,6 @@ Try:
 - Browse by tag: /search-requirements "tag:export"
 - Browse recent: /search-requirements "after:2025-01-01"
 ```
-
-## Performance
-
-**Fast search:**
-- Index-based search (no file reads)
-- Results in < 100ms for typical repositories
-
-**Scales to:**
-- 1000+ archived requirements
-- Complex queries with multiple filters
 
 ## See Also
 

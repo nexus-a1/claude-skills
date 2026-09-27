@@ -1,6 +1,6 @@
 # Epic Plan Template
 
-Markdown template for `$WORK_DIR/{epic-slug}/EPIC_PLAN.md`.
+Markdown template for `$WORK_DIR/{epic-id}/EPIC_PLAN.md`.
 
 ```markdown
 # Epic: {Title}
@@ -22,7 +22,7 @@ Markdown template for `$WORK_DIR/{epic-slug}/EPIC_PLAN.md`.
 
 ## Tickets ({count})
 
-### {epic-slug}-001: {Title}
+### {epic-ticket}-001-{slug}: {Title}
 **Type**: {Database|Backend|Frontend|etc}
 **Estimate**: {Small|Medium|Large}
 **Dependencies**: None
@@ -30,10 +30,10 @@ Markdown template for `$WORK_DIR/{epic-slug}/EPIC_PLAN.md`.
 
 {Brief description}
 
-### {epic-slug}-002: {Title}
+### {epic-ticket}-002-{slug}: {Title}
 **Type**: {Database|Backend|Frontend|etc}
 **Estimate**: {Small|Medium|Large}
-**Dependencies**: Blocked by {epic-slug}-001
+**Dependencies**: Blocked by {epic-ticket}-001-{slug}
 **Status**: Pending
 
 {Brief description}
@@ -43,23 +43,23 @@ Markdown template for `$WORK_DIR/{epic-slug}/EPIC_PLAN.md`.
 ## Implementation Order
 
 ### Wave 1 (Start first - no dependencies)
-- {epic-slug}-001: {Title}
-- {epic-slug}-003: {Title} *(can run in parallel)*
+- {epic-ticket}-001-{slug}: {Title}
+- {epic-ticket}-003-{slug}: {Title} *(can run in parallel)*
 
 ### Wave 2 (After Wave 1)
-- {epic-slug}-002: {Title}
-- {epic-slug}-004: {Title}
+- {epic-ticket}-002-{slug}: {Title}
+- {epic-ticket}-004-{slug}: {Title}
 
 ### Wave 3 (After Wave 2)
-- {epic-slug}-005: {Title}
+- {epic-ticket}-005-{slug}: {Title}
 
 ...
 
 ## Progress Tracking
 
-- [ ] {epic-slug}-001: {Title}
-- [ ] {epic-slug}-002: {Title}
-- [ ] {epic-slug}-003: {Title}
+- [ ] {epic-ticket}-001-{slug}: {Title}
+- [ ] {epic-ticket}-002-{slug}: {Title}
+- [ ] {epic-ticket}-003-{slug}: {Title}
 ...
 
 ## Notes

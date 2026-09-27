@@ -123,12 +123,9 @@ final class UserControllerTest extends WebTestCase
 
 ## Testing Guidelines
 
-- Test business logic thoroughly
 - Mock external dependencies (APIs, email services)
-- Use real database for integration tests (with fixtures)
-- Test happy paths and error cases
+- Use a real database for integration tests (with fixtures)
 - Use data providers for multiple scenarios
-- Keep tests fast and isolated
 
 ## Test Naming
 
@@ -161,12 +158,15 @@ $this->assertTrue($result instanceof UserDTO);
 
 ## Data Providers
 
-Use data providers for multiple test cases:
+Use data providers for multiple test cases. The attribute needs PHPUnit 10 or later; the `use`
+import goes at the top of the file, not inside the class:
 
 ```php
-/**
- * @dataProvider invalidEmailProvider
- */
+// at the top of the file
+use PHPUnit\Framework\Attributes\DataProvider;
+
+// inside the test class
+#[DataProvider('invalidEmailProvider')]
 public function testValidationRejectsInvalidEmails(string $email): void
 {
     // test logic

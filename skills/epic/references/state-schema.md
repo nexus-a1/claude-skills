@@ -1,12 +1,12 @@
 # Epic State Schema
 
-JSON schema for `$WORK_DIR/{epic-slug}/state.json`.
+JSON schema for `$WORK_DIR/{epic-id}/state.json`.
 
 ```json
 {
   "schema_version": 1,
   "type": "epic",
-  "identifier": "{epic-slug}",
+  "identifier": "{epic-id}",
   "title": "{Epic Title}",
   "description": "{Full description}",
   "status": "planning",
@@ -20,25 +20,25 @@ JSON schema for `$WORK_DIR/{epic-slug}/state.json`.
 
   "tickets": [
     {
-      "slug": "{epic-slug}-001",
+      "slug": "{epic-ticket}-001-{slug}",
       "title": "{Title}",
       "type": "database",
       "estimate": "small",
       "status": "pending",
       "blocked_by": [],
-      "blocks": ["{epic-slug}-002", "{epic-slug}-004"],
-      "spec_file": "{epic-slug}-001/spec.md",
+      "blocks": ["{epic-ticket}-002-{slug}", "{epic-ticket}-004-{slug}"],
+      "spec_file": "{epic-ticket}-001-{slug}/spec.md",
       "implementation_status": null
     },
     {
-      "slug": "{epic-slug}-002",
+      "slug": "{epic-ticket}-002-{slug}",
       "title": "{Title}",
       "type": "backend",
       "estimate": "medium",
       "status": "pending",
-      "blocked_by": ["{epic-slug}-001"],
-      "blocks": ["{epic-slug}-005"],
-      "spec_file": "{epic-slug}-002/spec.md",
+      "blocked_by": ["{epic-ticket}-001-{slug}"],
+      "blocks": ["{epic-ticket}-005-{slug}"],
+      "spec_file": "{epic-ticket}-002-{slug}/spec.md",
       "implementation_status": null
     }
   ],
@@ -46,12 +46,12 @@ JSON schema for `$WORK_DIR/{epic-slug}/state.json`.
   "waves": [
     {
       "wave": 1,
-      "tickets": ["{epic-slug}-001", "{epic-slug}-003"],
+      "tickets": ["{epic-ticket}-001-{slug}", "{epic-ticket}-003-{slug}"],
       "status": "pending"
     },
     {
       "wave": 2,
-      "tickets": ["{epic-slug}-002", "{epic-slug}-004"],
+      "tickets": ["{epic-ticket}-002-{slug}", "{epic-ticket}-004-{slug}"],
       "status": "pending"
     }
   ],

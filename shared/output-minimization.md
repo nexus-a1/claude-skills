@@ -4,8 +4,8 @@ Single source of truth for compact CLI flags, search-tool discipline, and agent 
 
 > **How to use this file:** Agents and skills reference this file by path
 > (e.g., "Follow the compact-flag patterns in `plugin/shared/output-minimization.md`")
-> rather than embedding the full table. The reference implementation is
-> `plugin/agents/git-operator.md`, which already follows these rules in full.
+> rather than embedding the full table. `plugin/agents/git-operator.md` applies
+> them to git in its Output discipline and Output contract sections.
 
 ---
 
@@ -24,7 +24,7 @@ Every command produces three categories of output:
 
 ### `git`
 
-See [`plugin/agents/git-operator.md`](../agents/git-operator.md#output-minimization-token-efficiency) for the full git table. Summary:
+The same rules appear in [`plugin/agents/git-operator.md`](../agents/git-operator.md#output-discipline):
 
 | Pattern | Use |
 |---------|-----|
@@ -162,7 +162,7 @@ Every agent invoked from a pipeline (i.e., not as the final user-facing call) **
 
 ### Reference template
 
-Model on `git-operator`'s [Output Guidelines](../agents/git-operator.md#output-guidelines):
+For a worked instance see `git-operator`'s [Output contract](../agents/git-operator.md#output-contract). The template:
 
 ```markdown
 ## Output
@@ -188,28 +188,28 @@ context and verbose output wastes it.
 - Hypothetical issues without evidence
 ```
 
-### Sizing guidelines per agent type
+### Sizing by agent type
 
-| Agent type | Target output ceiling |
-|------------|----------------------|
-| Single-purpose worker (git-operator, doc-writer) | 1–3 lines per operation |
-| Reviewer (code-reviewer, security-auditor) | severity-grouped findings, ~10–40 lines for typical PR |
-| Investigator (archaeologist, business-analyst) | structured report, ~50–150 lines |
-| Synthesizer (quality-guard verdict) | gates + verdict block, ~30–80 lines |
+Size a return by what the caller does with it, not by a line count:
 
-These are targets, not hard caps — a real critical finding always wins over brevity.
+- **Single-purpose worker** (git-operator, doc-writer): the result of each operation and any blocker.
+- **Reviewer** (code-reviewer, security-auditor): findings grouped by severity, each with `file:line` (which severities an intermediate pass reports is below).
+- **Investigator** (archaeologist, business-analyst): a structured report of what was found and where.
+- **Synthesizer** (quality-guard verdict): the gates and the verdict block.
+
+What makes a return long should be findings, never padding (see Anti-Patterns).
 
 ### Terminal review pass exception
 
-The compaction targets above apply to **intermediate** review passes — ones whose output feeds another agent or loop iteration (e.g. quality-guard in `/create-requirements`, `/brainstorm`, `/epic`, or a mid-implementation chunk gate). Suppressing low/medium findings is correct there: they would be noise in a pipeline that has more passes ahead.
+Each agent's Output Constraints target applies to **intermediate** review passes — ones whose output feeds another agent or loop iteration (e.g. quality-guard in `/create-requirements`, `/brainstorm`, `/epic`, or a mid-implementation chunk gate). There, keep low and medium findings to a line each; later passes will see the work again. A finder stage whose output goes to a verification panel (the orchestrated review scripts) reports everything, including findings it is unsure of — the panel does the filtering.
 
 A **terminal review pass** is different. When a reviewer (quality-guard, code-reviewer, security-auditor) runs as the **last review before a PR is created or merged** — `/implement` Phase 4 and `/pr-review` Step 4 — there is no later pass to catch what it suppresses. For that pass:
 
 - **Report all severities**, including IMPORTANT and ADVISORY/MINOR. Do not drop medium/low findings to hit a line target.
-- The per-agent output ceiling is **lifted** (not raised to a higher number — removed). Completeness wins over brevity.
+- The per-agent size target is **lifted** (not raised to a higher number — removed). Completeness wins over brevity.
 - Still avoid the anti-patterns below (no prompt-echo, no process narration, no raw tool dumps) — verbosity from *padding* is never justified; verbosity from *real findings at every severity* is the point.
 
-The orchestrating skill signals a terminal pass in the agent prompt (e.g. "This is the terminal review before PR — report all severities, do not suppress"). Absent that signal, default to the compacted targets.
+The orchestrating skill signals a terminal pass in the agent prompt (e.g. "This is the terminal review before PR — report all severities, do not suppress"). Absent that signal, default to each agent's size target.
 
 ---
 

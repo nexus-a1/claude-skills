@@ -254,7 +254,16 @@ bash "${CLAUDE_PLUGIN_ROOT}/shared/tasks/tasks.sh" --op set-status --id "{task_i
   worktree inside the first
 - `worktree.enabled` is not `true`:
   ```bash
+  if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
+    source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
+  elif [ -f "$HOME/.claude/shared/resolve-config.sh" ]; then
+    source "$HOME/.claude/shared/resolve-config.sh"
+  else
+    echo "ERROR: resolve-config.sh not found — reinstall the nexus plugin: /plugin install nexus@claude-skills" >&2
+    exit 1
+  fi
   WORKTREE_ENABLED=$(resolve_worktree_enabled 2>/dev/null || echo "false")
+  echo "WORKTREE_ENABLED=$WORKTREE_ENABLED"
   ```
   This is the same opt-in flag `/implement`, `/refactor`, and
   `/update-documentation` respect — defaulting to `false`.
@@ -439,7 +448,7 @@ becomes promoted.
 |-----------|--------------|
 | `tasks.sh` refuses (exit 20) | Its message is shown unchanged; the skill stops |
 | Marking in progress fails | Stop before any worktree or handoff |
-| Task text has a forged marker, or the scan failed | No handoff to `/create-requirements`; other actions are still offered |
+| Task text has a forged marker, or the scan failed | No handoff to `/review-plan` or `/create-requirements`; `Implement directly` and `Just show details` still work |
 | Argument out of range | `No task #{N} — only {total} tasks in the list.` |
 
 ## Notes

@@ -51,15 +51,13 @@ orchestrated path.
 
 Use `$WORK_DIR` instead of a hardcoded `.claude/work` — but only inside this block. Each later block is its own Bash tool call and does not inherit the variable, so those substitute the value printed above instead.
 
-**Important:** All path references in this skill MUST use `$WORK_DIR`. Never use hardcoded `.claude/work/` paths.
+Never hardcode `.claude/work/`: the configured work directory can be anywhere.
 
 ---
 
 ## Your Task
 
 Transform a large initiative into a structured set of implementable tickets with dependencies.
-
-**IMPORTANT**: Complete all steps using parallel tool calls where possible.
 
 ---
 
@@ -168,13 +166,11 @@ default to proceeding.
 **If `TICKET_COUNT` < 2, or `INDEPENDENT` is `no` (including the fail-closed
 case above):** STOP. Read `references/error-handling.md` and print the
 "Epic too small" template verbatim. Do not proceed to Phase 2.6 or Phase 3 —
-no specialist agent may have been spawned for this initiative (AC-1.4). That
-template's own "Recommendation: Use /create-requirements instead" line is
-the redirect AC-1.5 requires — it fires unconditionally on every too-small
-verdict, so a run reached via `/meeting`'s "route to epic" destination is
-never left at a dead end without this skill needing any way to detect that
-origin (which the meeting handoff has no mechanism to signal in the first
-place).
+no specialist agent is spawned for an initiative that fails this gate. The
+template's "Recommendation: Use /create-requirements instead" line is the
+redirect for every too-small verdict, including runs that arrived through
+`/meeting`'s "route to epic", so this skill does not need to know where a run
+came from.
 
 **Otherwise:** proceed to Phase 2.6 (conditional specialist deep dive).
 
@@ -184,7 +180,7 @@ place).
 
 **Goal**: Based on Phase 2 findings, run specialist agents to gather deeper context for areas that will significantly impact the epic breakdown.
 
-**IMPORTANT**: This phase is conditional. Only run agents when the scope warrants it. Skip entirely if the initiative is straightforward and doesn't touch databases, external APIs, cloud infrastructure, or security-sensitive areas.
+This phase is conditional: run only the specialists whose signals appear in the Phase 2 findings, and none at all when the initiative touches no database, external API, cloud infrastructure, or security-sensitive area.
 
 ### 2.6.1 Determine Required Specialists
 
@@ -205,7 +201,7 @@ Review the combined output from `business-analyst` and `architect` in Phase 2. C
 
 **Execute all applicable agents in a single message with multiple Task tool calls.** Only run the agents whose Phase 2 signals matched.
 
-Read `references/agent-prompts.md` (Phase 2.5.2: Conditional Specialist Agents section) for the full prompt templates for `data-modeler`, `integration-analyst`, `aws-architect`, and `security-requirements`. Fill in `{description}`, `{from business-analyst}`, and `{from architect}` in each applicable prompt.
+Read `references/agent-prompts.md` (Phase 2.6.2: Conditional Specialist Agents section) for the full prompt templates for `data-modeler`, `integration-analyst`, `aws-architect`, and `security-requirements`. Fill in `{description}`, `{from business-analyst}`, and `{from architect}` in each applicable prompt.
 
 ### 2.6.3 Incorporate Specialist Findings
 
@@ -235,31 +231,6 @@ Based on analysis from Phase 2 and specialist findings from Phase 2.6 (if any), 
   Estimate: Small | Medium | Large
   Type: Database | Backend | Frontend | Infrastructure | Integration
 ```
-
-**Common decomposition patterns:**
-
-For full-stack features:
-1. Database schema/migrations
-2. Entity/model layer
-3. Repository/data access
-4. Service/business logic
-5. API endpoints
-6. Frontend components
-7. Integration tests
-
-For migrations:
-1. Setup/infrastructure
-2. Parallel implementation (old + new)
-3. Migration scripts
-4. Cutover/toggle
-5. Cleanup old code
-
-For integrations:
-1. Research/API analysis
-2. Client implementation
-3. Service layer integration
-4. Error handling/retry logic
-5. Monitoring/logging
 
 ---
 
@@ -542,7 +513,7 @@ Read `references/state-schema.md` for the complete `state.json` schema (schema_v
 
 After saving all epic files, upsert into `${WORK_DIR}/manifest.json` (see `${CLAUDE_PLUGIN_ROOT}/shared/manifest-schema.md` for the envelope/upsert contract).
 
-Read or initialize manifest, then upsert item using `identifier` (the epic slug) as unique key:
+Read or initialize manifest, then upsert item using `identifier` (the full `{epic-id}`) as unique key:
 
 ```json
 {
@@ -614,9 +585,11 @@ $WORK_DIR/{epic-id}/
 ├── EPIC_PLAN.md                # Shared HOW context for all tickets
 ├── state.json
 ├── {ticket-id}/                # e.g., PROJ-101-db-schema/
-│   └── spec.md                 # Product spec (WHAT/WHY) — plan.md + tasks.md derived by /implement
+│   ├── spec.md                 # Product spec (WHAT/WHY) — plan.md + tasks.md derived by /implement
+│   └── context/context.json    # Codebase context inventory
 ├── {ticket-id}/                # e.g., PROJ-102-entity-layer/
-│   └── spec.md
+│   ├── spec.md
+│   └── context/context.json
 └── ...
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

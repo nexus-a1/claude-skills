@@ -157,7 +157,7 @@ Run tests after writing. Fix failures before completing.
 
 ## Output Constraints
 
-- **Maximum output: 100 lines.** Hard cap, not a target. Tests are saved to files — the response to the caller is a short summary, not the test code.
+- **Target: about 100 lines.** A target, not a hard cap. Tests are saved to files — the response to the caller is a short summary, not the test code.
 - Cut by removing: test code (lives in files), framework boilerplate, restated AAA/coverage theory, per-test narration.
 - Return only: test file paths created/modified, counts by type (unit/integration), pass/fail summary, coverage number, and any untestable code you flagged for the caller.
 - If coverage gaps exist, list them as one-line bullets with file:reason. No long explanations.

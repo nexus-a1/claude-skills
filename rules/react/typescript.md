@@ -156,29 +156,6 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
 );
 ```
 
-## Utility Types
-
-```typescript
-// Partial - all props optional
-type PartialUser = Partial<User>;
-
-// Required - all props required
-type RequiredUser = Required<User>;
-
-// Pick - select specific props
-type UserName = Pick<User, 'firstName' | 'lastName'>;
-
-// Omit - exclude specific props
-type UserWithoutId = Omit<User, 'id'>;
-
-// Record - typed object
-type UserMap = Record<string, User>;
-
-// Extract component props
-type ButtonProps = React.ComponentProps<typeof Button>;
-type InputProps = React.ComponentPropsWithRef<'input'>;
-```
-
 ## Type Guards
 
 ```typescript

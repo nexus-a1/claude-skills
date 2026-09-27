@@ -39,7 +39,7 @@ Arguments provided: $ARGUMENTS
 
 ## Your Task
 
-Thin dispatcher over `${CLAUDE_PLUGIN_ROOT}/shared/release/`. Run all steps in a single message; use parallel tool calls where independent. Do not re-derive parsing, ref resolution, ticket extraction, or gh-CLI mechanics — call the scripts and surface their structured output.
+Thin dispatcher over `${CLAUDE_PLUGIN_ROOT}/shared/release/`. Use parallel tool calls where steps are independent; pause only for the confirmations the steps below ask for. Do not re-derive parsing, ref resolution, ticket extraction, or gh-CLI mechanics — call the scripts and surface their structured output.
 
 ### Step 0 — Pre-flight: verify git repo
 
@@ -58,7 +58,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/shared/release/parse-args.sh" \
 
 Outcomes:
 - **Exit 0** — `target` and `version`/`release_branch` populated; proceed.
-- **Exit 10** — `missing` contains `version`. Run `version-suggest.sh --json` and use AskUserQuestion to pick. Re-run parser with the chosen version. `version-suggest.sh` fetches remote tags first so the suggestion reflects the authoritative tag set; **watch its stderr** — if it emits a `[stale-tags]` or `[no-remote]` marker, surface that to the user before presenting the recommendation (the version may be based on stale local tags). Do not block on the marker; continue.
+- **Exit 10** — `missing` contains `version`. Run `bash "${CLAUDE_PLUGIN_ROOT}/shared/release/version-suggest.sh" --json` and use AskUserQuestion to pick. Re-run parser with the chosen version. `version-suggest.sh` fetches remote tags first so the suggestion reflects the authoritative tag set; **watch its stderr** — if it emits a `[stale-tags]` or `[no-remote]` marker, surface that to the user before presenting the recommendation (the version may be based on stale local tags). Do not block on the marker; continue.
 - **Exit 20** — surface errors and stop.
 
 ### Step 2 — Gather commit data
@@ -178,7 +178,7 @@ Next:
 
 ## Important Notes
 
-- **Single message execution** — all steps in one assistant turn.
+- **No extra round-trips** — run the steps straight through, pausing only for the confirmations they ask for.
 - **No re-derived gh/git logic in prose** — every gh/git operation goes through the shared scripts.
 - **Audit gate** — `record-audit.sh` must run *immediately before* `pr-create.sh --apply`, since the script issues `git push`. Do not run anything between them that could change HEAD or branch.
 - **Body authoring is your job** — the shell scripts deliberately don't template prose; the JSON from `commits-data.sh` is what you have to work with. Keep it factual and grouped, no marketing voice.

@@ -64,8 +64,6 @@ Use `$WORK_DIR` instead of a hardcoded `.claude/work` — but only inside this b
 calls, so `REPO` is re-resolved in each block that uses it rather than carried
 from the block above.
 
-**Important:** All path references in this skill MUST use `$WORK_DIR`. Never use hardcoded `.claude/work` paths.
-
 ---
 
 ## Process
@@ -112,6 +110,9 @@ Select work to archive:
 Select [1-3]:
 ```
 
+`AskUserQuestion` shows at most 4 options: offer the 4 most recently completed
+and name the rest in the question text so the user can type one.
+
 ### Step 2: Validate Work State
 
 Read state files — these are **Read tool calls, not shell**, so the fence is
@@ -148,8 +149,7 @@ resolver is advisory: on an install that never configured a knowledge base it
 fabricates `.claude/requirements` and returns it as though it were real, so the
 "not configured" branch below could never fire and an archive would proceed
 into a directory nobody set up. The strict resolver refuses instead, and it is
-the same rule the archivist itself gates on — one rule, one answer (CL-32; see
-[ADR-014](../../../docs/decisions/014-artifact-resolution-strictness.md)).
+the same rule the archivist itself gates on — one rule, one answer.
 
 ```bash
 if _RESOLVED=$(resolve_artifact_strict requirements requirements); then
@@ -244,7 +244,7 @@ Tasks:
 5. Generate a concatenated human-readable requirements.md in the archive by joining spec.md + plan.md + tasks.md under clearly marked section headers (## Spec / ## Plan / ## Tasks). This preserves KB search compatibility without duplicating authoring.
 6. Copy all files to requirements repository (including context/ agent outputs)
 7. Update searchable index.json — extract tags from spec.md user stories and plan.md sections
-8. Commit — and push only if the KB is git-backed — by following **archivist's own Responsibility 3 STORE step 7**, which branches on the resolved storage type `_TYPE`. Do not reproduce the commit/push mechanics here: for a `directory`-type KB the archive must commit locally with NO push and NO `NEXUS_KB_WRITE=1` / `SECURITY_AUDITOR_BYPASS=1`, because that KB lives inside the host project's own repository and those variables would disable its branch protection and audit gate against its own trunk. The agent resolves `_TYPE` itself and owns both branches; duplicating the command here is what previously caused the unconditional-bypass defect to exist in two places at once.
+8. Commit — and push only if the KB is git-backed — by following **archivist's own Responsibility 3 STORE step 7**, which branches on the resolved storage type `_TYPE`. Do not reproduce the commit/push mechanics here: for a `directory`-type KB the archive must commit locally with NO push and NO `NEXUS_KB_WRITE=1` / `SECURITY_AUDITOR_BYPASS=1`, because that KB lives inside the host project's own repository and those variables would disable its branch protection and audit gate against its own trunk. The agent resolves `_TYPE` itself and owns both branches.
 
 Provide detailed success report with archive location.
 ")

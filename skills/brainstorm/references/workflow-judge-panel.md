@@ -126,18 +126,10 @@ function agentBlock(name, body) {
 }
 
 // EVERY AGENT-RETURNED FIELD IS COERCED TO ITS DECLARED TYPE ONCE, HERE.
-//
-// Eight review rounds, and seven of them found the same shape at a new site: a
-// field is used with the type its schema promised, guarded by a truthiness check
-// that does not test the type. `x || []` accepts the string "first do this then
-// that" and throws on `.map` four call sites later — top level, after the agents
-// have been paid, so a completed run is discarded and the lead gets a Workflow
-// failure instead of `ok: false`.
-//
-// Reviewing that space samples it; normalising closes it. The rule is: read a
-// raw agent field EXACTLY ONCE, at ingestion, through `arr()` or `str()`, and let
-// everything downstream trust the shape. There are more read sites than fields,
-// so guarding fields is both smaller and complete.
+// Read a raw agent field exactly once, at ingestion, through `arr()` or `str()`,
+// and let everything downstream trust the shape. A truthiness guard such as
+// `x || []` passes a string, which then throws on `.map` at top level after the
+// agents have been paid — the lead gets a Workflow failure instead of `ok: false`.
 function arr(v) { return Array.isArray(v) ? v : [] }
 function str(v) { return typeof v === 'string' ? v : '' }
 
@@ -164,43 +156,15 @@ var CRITERIA = [
 // A JUDGE THAT DID NOT USE THE DECLARED SCALE DID NOT SCORE. Its rows are
 // discarded WHOLE — every row, for every approach — and it is reported as absent.
 //
-// This is the fifth version of this guard and the first that is not a repair.
-// The four before it all tried to salvage something from a bad row, and each one
-// decided a winner the panel had not chosen:
-//
-//   no guard      one judge returning fit:1000 outvoted two unanimous judges
-//   drop the row  a judge's 0 was deleted, so the approach it hated GAINED points
-//   clamp the row a judge on 0-10 had every row pulled to 5 and stopped
-//                 discriminating, and clamping SUMS could even reverse it
-//   detect the    clamping compresses a gap above the scale without reordering
-//   clamp damage  it: 10 against 4.9 becomes 5 against 4.9, still strictly
-//                 ordered, still wrong by 2 points of mean, and no comparison of
-//                 clamped values against raw ones can see it
-//
-// They share one cause: a per-row repair treats approaches NON-UNIFORMLY. Drop a
-// row and one approach loses a judge the others keep; compress a value and one
-// approach's mean moves. Discarding the judge everywhere is the only treatment
-// that leaves every total a mean over the SAME panel.
-//
-// What that buys is commensurability, NOT "no distortion" — and the difference
-// matters enough to write down, because getting it wrong is how the last four
-// versions were justified. Judges are not interchangeable: a harsh judge's
-// absence lifts every approach it would have marked down, and removing it can
-// change the winner. `judgeIntegrity.rejected` says who is gone and why, and
-// `rankingComparable` says whether what remains is even.
-//
-// NOTHING HERE RECOVERS WHAT THE JUDGE MEANT, and no treatment could. The script
-// cannot know which scale a judge had in mind — 0-10, 0-4, or a slip on one key —
-// so it cannot translate the rows back. Measured against a faithful rescale of a
-// 0-10 judge onto 1-5, rejection lands on the same winner clamping did in at
-// least one case; the difference is not the answer, it is that one of them says
-// a judge is missing and the other prints a clean run over numbers the judge
-// never wrote. Honest and smaller beats silent and wrong.
-//
-// The cost is real and accepted: one stray value forfeits that judge's whole
-// vote, which on a three-judge panel is a third of it. That loss is visible in
-// `judgesScoring` and `judgePanels`. The alternative's loss was a winner that
-// changed while the run printed clean.
+// Any per-row repair (dropping, clamping) treats approaches non-uniformly: one
+// approach loses a judge the others keep, or one approach's mean moves, and the
+// winner can change while the run prints clean. Discarding the judge everywhere
+// keeps every total a mean over the SAME panel. That is commensurability, not
+// "no distortion": a harsh judge's absence lifts every approach it would have
+// marked down. The script cannot know which scale the judge meant, so it does not
+// translate rows back. The cost — one stray value forfeits that judge's whole
+// vote — is visible in `judgeIntegrity.rejected`, `judgesScoring` and
+// `judgePanels`.
 var SCORE_MIN = 1
 var SCORE_MAX = 5
 
@@ -527,25 +491,13 @@ approaches.forEach(function (a) { byId[a.id] = { approach: a, rows: [] } })
 
 // A judge is committed ALL OR NOTHING. Its rows are staged first and pushed only
 // if every one of them checks out, so a judge that is off-scale on the third
-// approach also loses its perfectly good row on the first. That is the whole
-// point: keeping the good rows and discarding the bad one is a per-row drop, and
-// a per-row drop is what versions two through five of this guard did wrong.
+// approach also loses its good row on the first — keeping good rows is a per-row
+// drop, the non-uniform treatment the guard above rules out.
 //
-// A CONTRADICTORY duplicate rejects the judge; an identical one does not.
-//
-// The first version of this carve-out let every duplicate through on the grounds
-// that first-row-wins "removes nothing from any approach and so treats them all
-// alike". That proves the PANEL stays uniform and says nothing about the VALUE,
-// and the defect class named in this very file has two halves: drop a row and one
-// approach loses a judge the others keep — OR compress a value and one approach's
-// mean moves. First-row-wins moves it. A judge emitting 5,5,5,5 and then 1,1,1,1
-// for the same approach hands the tally whichever came first, and that choice
-// alone flipped the winner in a run that reported `rejected: []`,
-// `rankingComparable: true` and a complete panel.
-//
-// A judge that says two different things about one approach has not scored it.
-// A byte-identical repeat says one thing twice, costs nothing to ignore, and is
-// counted rather than punished.
+// A CONTRADICTORY duplicate rejects the judge; an identical one does not. A judge
+// that gives one approach two different scores has not scored it, and taking the
+// first row would let row order pick the value. A byte-identical repeat says one
+// thing twice and is counted rather than punished.
 var rowTriage = { duplicate: 0 }
 var rejectedJudges = []
 
@@ -954,12 +906,13 @@ return {
    exist is one whose other attributions deserve a second look.
 7. **`judgeIntegrity.rejected` is the one to say out loud.** Each entry names a judge whose
    rows were discarded in full, and why: `off-scale` (it did not use the 1-5 scale),
-   `malformed` (a criterion was not a number), or `unknown-approach-id` (it scored something
-   nobody generated). That judge is absent from every approach, so the ranking is an honest
+   `malformed` (a criterion was not a number, or an entry was not an object),
+   `unknown-approach-id` (it scored something nobody generated), or
+   `contradictory-duplicate` (it gave one approach two different scores). That judge is absent from every approach, so the ranking is an honest
    comparison over a SMALLER panel — which is not the same as an undistorted one. Judges are
    not interchangeable, and a harsh judge's absence lifts every approach it would have marked
    down. Say who is missing and why, and say that a full panel might have ranked differently.
-   `rowTriage.duplicate` is minor by comparison: the first row per approach won and nothing
+   `rowTriage.duplicate` is minor by comparison: it counts identical repeats only, so nothing
    was lost.
 8. **Do not call the result undistorted.** A smaller panel gives a *commensurable* comparison,
    not an unbiased one. Judges are not interchangeable — a harsh judge's absence lifts every

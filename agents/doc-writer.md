@@ -181,6 +181,6 @@ How to revert if issues arise.
 
 ## Output Constraints
 
-- **Maximum output: 50 lines.** Hard cap, not a target. Documentation is saved to files — the response to the caller is a short summary, not the doc body.
+- **Target: about 50 lines.** A target, not a hard cap. Documentation is saved to files — the response to the caller is a short summary, not the doc body.
 - Return only: files created/updated (paths), one-line description of each change, and any source-code inconsistencies you could not resolve (flagged for the caller).
 - Do not echo the written documentation content in your response. The caller will Read the files if needed.

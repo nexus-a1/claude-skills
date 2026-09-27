@@ -1,8 +1,8 @@
 # Quality Checklist (Create Requirements)
 
 ## Stage 1: Setup
-- [ ] Identifier established (must be ticket number: `PROJECT-123` format)
-- [ ] Feature branch created locally: `feature/{identifier}`
+- [ ] Identifier established: `{TICKET}-{slug}`, or `DRAFT-{slug}` with `--no-ticket`
+- [ ] Feature branch created locally: `feature/{identifier}` (none with `--no-ticket`)
 - [ ] Verified on feature branch (not release/main/master)
 - [ ] Work directory initialized
 - [ ] State file created and validated as JSON
@@ -13,7 +13,7 @@
 - [ ] Context inventory built
 - [ ] Endpoints, services, entities identified
 - [ ] Gaps documented
-- [ ] Feature branch pushed to remote
+- [ ] Feature branch pushed to remote (not with `--no-ticket`)
 
 ## Stage 3: Deep Dive
 - [ ] `.claude/configuration.yml` checked for archivist/product-expert config

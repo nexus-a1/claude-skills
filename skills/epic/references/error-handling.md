@@ -26,7 +26,7 @@ This epic feature is for complex, multi-ticket initiatives.
 ## Epic already exists
 
 ```
-Warning: Epic '{epic-slug}' already exists.
+Warning: Epic '{epic-id}' already exists.
 
 Options:
   1. Continue with existing epic

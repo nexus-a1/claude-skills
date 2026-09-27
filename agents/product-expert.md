@@ -1,6 +1,6 @@
 ---
 name: product-expert
-description: Provide context and guidance from a project's product knowledge base. Use when working on features that have product-specific documentation.
+description: Provide context and guidance from a project's product knowledge base. Use when working on features that have product-specific documentation. Needs `storage.artifacts.product-knowledge` configured in `.claude/configuration.yml`; without it the agent reports the knowledge base as unconfigured and returns no findings.
 tools: Bash, Read, Grep, Glob
 model: claude-sonnet-5
 ---
@@ -198,12 +198,12 @@ After syncing the knowledge base and before researching, check if `${KB_PATH}/ma
 
 ## Output Constraints
 
-- **Maximum output: 150 lines.** Hard cap, not a target. Use tables over prose.
+- **Target: about 150 lines.** A target, not a hard cap: a real finding always wins over brevity. Use tables over prose.
 - **No restatement of discovery.json.** Do not repeat findings already covered by `context-builder` (file locations, eligibility criteria, existing flags, table schemas). Your output must be NET-NEW value the knowledge base provides, not an echo of discovery findings.
 - Only include findings **directly relevant to the feature**.
 - Every material finding must cite at least one file path. Findings without file references are low-confidence and will require re-verification during synthesis.
 - If information is not in the knowledge base, clearly state what is missing.
 - Cut by removing: anything already in discovery.json, generic context-setting preamble, restatement of architecture covered by `architect`.
 
-DO NOT make assumptions. Report only what the knowledge base contains.
+Do not make assumptions. Report what the knowledge base contains, plus the codebase evidence you checked in How to Work steps 6 and 7, and label which is which.
 DO NOT reference class names, method names, or service names unless you have verified they exist via Grep/Glob. Phantom references are the highest-severity product-expert failure mode.

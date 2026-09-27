@@ -17,13 +17,8 @@ High-level description of the approach
 ## Architecture
 
 ### Components
-List and describe all components:
-- Controllers
-- Services
-- Entities
-- Repositories
-- Models (Request/Response)
-- Exceptions
+List and describe all components, in the project's own terms for {ecosystem} (for example
+entry points, services, data entities, request/response models, errors).
 
 ### Data Flow
 Describe the request/response flow with sequence diagrams or step-by-step
@@ -35,13 +30,12 @@ Describe the request/response flow with sequence diagrams or step-by-step
 
 ### Directory Structure
 ```
-src/
-├── Controller/
-├── Service/
-├── Entity/
-├── Model/
+{source_dir}/
+├── {entry_points_dir}/
+├── {business_logic_dir}/
 └── ...
 ```
+Fill in for {ecosystem} and the project's existing layout.
 
 ## API Endpoints
 
@@ -69,7 +63,7 @@ src/
 
 ## Dependencies
 - External services
-- PHP packages
+- Packages and libraries
 - Environment variables
 
 ## Implementation Notes

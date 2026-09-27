@@ -1,6 +1,6 @@
 # Epic Agent Prompts
 
-Prompt templates for Phase 2 (always-run agents) and Phase 2.5.2 (conditional specialist agents).
+Prompt templates for Phase 2 (always-run agents) and Phase 2.6.2 (conditional specialist agents).
 
 ## Phase 2: Always-run Agents
 
@@ -65,7 +65,7 @@ Provide:
 
 Run both agents in parallel.
 
-## Phase 2.5.2: Conditional Specialist Agents
+## Phase 2.6.2: Conditional Specialist Agents
 
 Run only the agents whose Phase 2 signals matched. Execute all applicable agents in a single message with multiple Task tool calls.
 

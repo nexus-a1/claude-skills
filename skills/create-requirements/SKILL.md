@@ -14,16 +14,15 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, Workflow, AskUserQuest
 
 Create comprehensive, step-by-step technical requirements documentation for a given task or feature. Establishes persistent work context that enables `/implement` and `/resume-work` to continue seamlessly.
 
-## Scope Boundary — CRITICAL
+## Scope Boundary
 
-**This skill produces REQUIREMENTS DOCUMENTS. It does NOT implement anything.**
+**This skill produces requirements documents. It does not implement anything.**
 
-- Do NOT enter plan mode for implementation after requirements are complete
-- Do NOT propose code changes, file modifications, or implementation steps
-- Do NOT ask the user to confirm execution of implementation
+- Do not enter plan mode for implementation after requirements are complete
+- Do not make code changes or offer to make them. Files to touch and implementation steps belong inside `plan.md` and `tasks.md`, not in anything you propose to act on now
+- Do not ask the user to confirm execution of implementation
 - The terminal state of this skill is: requirements documents saved, completion report printed, STOP
 - The user will explicitly invoke `/implement` when they are ready to implement
-- If Claude's workflow rules say "enter plan mode for non-trivial tasks" — that applies to planning the REQUIREMENTS GATHERING process, not planning implementation
 
 ## Execution Modes
 
@@ -86,12 +85,13 @@ REQUIREMENTS_DIR=$(resolve_artifact requirements requirements)
 BRAINSTORM_DIR=$(resolve_artifact brainstorms brainstorm)
 EXEC_MODE=$(resolve_exec_mode requirements_deep_dive team)
 echo "WORK_DIR=$WORK_DIR"
+echo "EXEC_MODE=$EXEC_MODE"
 ```
 
 Use `$WORK_DIR` instead of a hardcoded `.claude/work` — but only inside this block. Each later block is its own Bash tool call and does not inherit the variable, so those substitute the value printed above instead.
-Use `$EXEC_MODE` to determine team vs sub-agent behavior at stages 2, 3, 4, 4.5, and 4.6.
+Use the printed `EXEC_MODE` to determine team vs sub-agent behavior at stages 2, 3, 4, 4.5, and 4.6.
 
-**Important:** All path references in this skill MUST use `$WORK_DIR`. Never use hardcoded `.claude/work/` paths.
+Never hardcode `.claude/work/`: the configured work directory can be anywhere.
 
 ---
 
@@ -166,7 +166,7 @@ subcommand, not a feature description — route here instead of Stage 0.
 A description that merely starts with the word "reconcile" but doesn't match
 this exact three-token shape (e.g. `"reconcile the login and export flows"`,
 which is 6 tokens) falls through to the normal Stage 0/1 flow as
-`{feature_description}`, unchanged (AC-3.4).
+`{feature_description}`, unchanged.
 
 **Treat each step below as its own `Bash` tool call, which may be a fresh
 shell — sourced functions and shell variables are not guaranteed to survive
@@ -178,7 +178,7 @@ Shell Code) rather than by copying templated text between blocks — the argumen
 text is user input and may contain shell metacharacters, so it never appears in
 a command string.
 
-**Step A — pre-flight (validate before any filesystem access, AC-SEC-2):**
+**Step A — pre-flight (validate before any filesystem access):**
 ```bash
 if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh" ]; then
   source "${CLAUDE_PLUGIN_ROOT}/shared/resolve-config.sh"
@@ -279,7 +279,7 @@ echo "RECONCILE_RC=$rc NEW_ID=$new_id"
 
 If `$ARGUMENTS` begins with `--light`, strip the flag and enable lightweight mode:
 
-- Output to user: "Lightweight mode enabled: research agents use Sonnet. Quality gates unchanged."
+- Output to user: "Lightweight mode enabled: business-analyst runs on Sonnet. Research agents and quality gates unchanged."
 - **context-builder**: unchanged
 - **archaeologist**: unchanged
 - **data-modeler**: unchanged
@@ -291,6 +291,8 @@ If `$ARGUMENTS` begins with `--light`, strip the flag and enable lightweight mod
 - All orchestration flow, quality standards, and output formats remain identical
 
 This reduces cost for the analysis/synthesis phase. The deep-dive agents are left untouched, so the savings come from the business-analyst downgrade.
+
+The list above is the classic path. On the orchestrated path (§2.0) `--light` is passed as `args.light` and means something else: business-analyst keeps its pinned model, and the script skips deep-dive round 2 and the three-lens verification panel. Say that instead of the message above when the orchestrated path runs.
 
 ---
 
@@ -327,7 +329,7 @@ Active requirements sessions:
 Select session to resume, or [n] to start fresh:
 ```
 
-Use AskUserQuestion. On selection: load state from `$WORK_DIR/{identifier}/state.json` and resume from the recorded stage. On **n**: proceed to Stage 1.
+Use AskUserQuestion. It shows at most 4 options, so offer the three most recently updated sessions plus Start new session; the full list stays in the text above. On selection: load state from `$WORK_DIR/{identifier}/state.json` and resume from the recorded stage. On **n**: proceed to Stage 1.
 
 **If no active sessions:** Proceed directly to Stage 1.
 
@@ -384,11 +386,11 @@ place options or ticket keys are read from.
 strip the flag and set `{no_ticket_mode: true}`. Skip the ticket prompt
 below entirely — there is no `{ticket}` yet. The provisional `DRAFT-{slug}`
 identifier is composed in §1.4 once the slug is known; §1.5 (base branch)
-and §1.6 (branch creation) are no-ops in this mode (AC-3.1). A free-text
+and §1.6 (branch creation) are no-ops in this mode. A free-text
 feature description that happens to start with the word "reconcile" is
 still just a description here — the `reconcile` subcommand is a distinct
 top-level routing decision made before Stage 0, not something this stage
-re-interprets (AC-3.4).
+re-interprets.
 
 **Otherwise, check for a pre-filled ticket** — `/brainstorm promote` hands off with
 `--from-brainstorm {slug} {ticket-id}`, where `{ticket-id}` (if the user provided
@@ -432,14 +434,14 @@ and non-empty) as the fetched ticket content — §1.2 proposes it back to the
 user via a confirm-or-edit gate rather than treating it as accepted input
 outright, and does not re-run this fetch. On any non-zero exit, fall through
 silently to §1.2's manual prompt — never surface the script's raw error to
-the user here (AC-5.1, AC-5.2). This reuses the same `jira.sh` the `/jira`
+the user here. This reuses the same `jira.sh` the `/jira`
 command calls, including its ADF-to-plain-text rendering for rich
 descriptions.
 
 #### 1.1b Load Prior Meeting (Optional)
 
 **Goal**: When this work started life as a wrapped meeting, seed the feature
-description from it before any question is asked (AC-2.1) — same shape as
+description from it before any question is asked — same shape as
 §1.1's Jira auto-fetch, but for meeting records.
 
 If `$ARGUMENTS` contains `--from-meeting {ref}`, extract `{ref}`. Otherwise,
@@ -514,7 +516,7 @@ echo "MDIR=$MDIR"
 2. Store `{meeting_ref: {ref}}` and `{has_meeting_context: true}`.
 3. Announce: `"Loading meeting context from: {meeting_ref}"`.
 
-**The bidirectional link (AC-2.2) is written later, at §1.4b** — not here.
+**The bidirectional link is written later, at §1.4b** — not here.
 `{identifier}` doesn't exist yet at this point in the flow (it isn't
 composed until §1.4), so `promoted_to` would have nothing valid to write.
 
@@ -563,7 +565,7 @@ Store as `{feature_description}`.
 
 **Goal**: Clarify ambiguous requirements before running heavy agent pipeline.
 
-Ask 3-5 targeted questions to refine the user's requirements. Use AskUserQuestion with multi-select where appropriate.
+Ask 3-5 targeted questions to refine the user's requirements. Use AskUserQuestion with multi-select where appropriate. It shows at most 4 options and adds its own free-text Other, so drop the `Other: ___` lines below and split a longer list into passes of 4 or fewer (`shared/principles.md` § Question Sizing).
 
 **Question categories** (select relevant ones based on feature description):
 
@@ -637,7 +639,7 @@ Enter the brainstorm slug (e.g., "user-data-export"), or leave blank to skip.
 than type a slug:** show the shared candidate picker below against
 `$BRAINSTORM_DIR/manifest.json`. Selecting a candidate sets `{brainstorm-slug}`.
 
-##### Shared candidate picker (AC-2.3, AC-2.4)
+##### Shared candidate picker
 
 Used here for brainstorms and by §1.1b for meetings — same shape, different
 manifest.
@@ -647,8 +649,8 @@ manifest.
 2. Cap the listed set at **10**. If more exist, say so explicitly rather
    than silently truncating: `"...and {n} more"`.
 3. **Do not omit already-promoted candidates** — mark them instead:
-   `{identifier-or-slug} — {title} (already promoted → {promoted_to})`
-   (AC-2.4). Omitting them would make a candidate the user is looking for
+   `{identifier-or-slug} — {title} (already promoted → {promoted_to})`.
+   Omitting them would make a candidate the user is looking for
    silently disappear once it's been used once.
 4. Offer at most **3** quick-select options via AskUserQuestion, plus
    **"None of these"** (always present, never omitted).
@@ -698,7 +700,7 @@ composed until §1.4), so `promoted_to` would have nothing valid to write.
 
 With the refined requirements (§1.3) in hand, derive a kebab-case slug (2–5 meaningful words, lowercase, ASCII, joined with `-`). Drop filler words. Confirm with the user via AskUserQuestion:
 
-**If `{no_ticket_mode}` is true (AC-3.1):**
+**If `{no_ticket_mode}` is true:**
 ```
 Derived slug: {slug}
 Proposed work identifier: DRAFT-{slug}
@@ -843,15 +845,14 @@ Select base branch for this work:
 [1] origin/master (default)
 [2] origin/main
 [3] origin/release/v{latest}
-...
-[Other] Enter custom branch
 ```
 
-Store as `{base_branch}`.
+At most 4 options, and only branches the fetch listed (for release branches, the newest);
+the tool's own free-text Other takes a custom branch. Store as `{base_branch}`.
 
 #### 1.6 Create Feature Branch (Local Only)
 
-**If `{no_ticket_mode}` is true:** skip this stage entirely (AC-3.1) — no
+**If `{no_ticket_mode}` is true:** skip this stage entirely — no
 branch is created, and nothing is pushed. Stay on whatever branch the user
 was already on. The branch is created later by `create-requirements
 reconcile` (see the routing section above `## Lightweight Mode`), once a
@@ -859,7 +860,7 @@ real ticket is assigned.
 
 **Otherwise:**
 
-**CRITICAL**: This step MUST complete successfully before proceeding.
+Every later stage assumes this branch exists, so do not continue past a failure here — take it to Error Handling.
 
 Create the branch locally. Remote push is deferred to Stage 2 (after initial context has been gathered).
 
@@ -974,7 +975,7 @@ mean the same thing — not scanned. Neither means clean.
 
 **`branches` must always be a present object with explicit `null` values when
 `{no_ticket_mode}` is true** — never an empty string, never an omitted key, and
-never a guessed branch name (AC-3.2). `create-requirements reconcile`
+never a guessed branch name. `create-requirements reconcile`
 (see the routing section below) fills these in later without needing to
 distinguish "never set" from "explicitly empty."
 
@@ -1049,7 +1050,7 @@ Read or initialize manifest, then upsert item using `identifier` as unique key:
   "updated_at": "{ISO_TIMESTAMP}",
   "current_phase": "setup",
   "progress": "Stage 1/4",
-  "branch": "{feature/{identifier}, or null if no_ticket_mode — AC-3.2}",
+  "branch": "{feature/{identifier}, or null if no_ticket_mode}",
   "tags": [],
   "path": "{identifier}/"
 }
@@ -1088,11 +1089,8 @@ No-op when neither `CLAUDE_SESSION_ID` nor `CLAUDE_CODE_SESSION_ID` is set, or `
 
 After setup completes, run a quick feasibility check:
 
-1. **Search for existing implementations** matching the feature description:
-   ```bash
-   # Use Grep to search for existing implementations matching the feature description
-   # Search for key terms from the feature description in controllers, services, endpoints
-   ```
+1. **Search for existing implementations** matching the feature description: use Grep
+   for its key terms in controllers, services and endpoints.
 
 2. **If a match is found**, present it to the user:
    ```
@@ -1355,7 +1353,7 @@ Save output to `$WORK_DIR/{identifier}/context/discovery.json`
 **If `{no_ticket_mode}` is true: skip this stage entirely.** No local branch
 exists for a draft session (§1.6 was a no-op), so there is nothing to push
 — `git push -u origin feature/DRAFT-{slug}` would fail with "src refspec
-does not match any", and running it at all would contradict AC-3.1's "no
+does not match any", and running it at all would contradict the "no
 branch is created or pushed" promise even as a caught warning.
 
 **Otherwise:**
@@ -1587,10 +1585,8 @@ agent that was never dispatched. It then appears in the summary as:
 Skipped: product-expert (no storage.artifacts.product-knowledge configured)
 ```
 
-This has bitten in practice: `product-expert` was skipped during a real
-requirements run and nothing said so, so the run read as complete while missing
-a whole research dimension. A path that resolved to an existing-but-empty
-directory was the cause; the silence is what made it invisible.
+An unreported skip makes the run read as complete while missing a whole research
+dimension.
 
 #### 3.2 Run All Applicable Agents in Parallel
 
@@ -1690,7 +1686,7 @@ Update `state.json`:
 }
 ```
 
-**Population rule for `agents_run`:** include a role only if `context/{agent}.md` exists and is non-empty — the same `[[ -f ]] && [[ -s ]]` test Stage 3.4 already runs (`:1185-1189`). A role that was dispatched (recorded in `agents_to_run`) but produced no usable output is excluded from `agents_run`, not included with an empty or placeholder entry. **Preserve `agents_to_run` in this update** — it was set at Stage 2.4 and the Stage-3-exit telemetry step below reads both fields from `deep_dive` to compute the dispatched-but-empty count; do not overwrite `deep_dive` with an object that drops it.
+**Population rule for `agents_run`:** include a role only if `context/{agent}.md` exists and is non-empty — the same `[[ -f ]] && [[ -s ]]` test Stage 3.4's verification loop already runs. A role that was dispatched (recorded in `agents_to_run`) but produced no usable output is excluded from `agents_run`, not included with an empty or placeholder entry. **Preserve `agents_to_run` in this update** — it was set at Stage 2.4 and the Stage-3-exit telemetry step below reads both fields from `deep_dive` to compute the dispatched-but-empty count; do not overwrite `deep_dive` with an object that drops it.
 
 ---
 
@@ -2020,7 +2016,7 @@ Produce FOUR documents, separated by the exact markers shown below. This follows
 - `TASKS` is a numbered, dependency-ordered list. Every task MUST cite one or more AC IDs from SPEC (format: `Covers: AC-1.2, AC-3.1`).
 - `JIRA_TICKET` is a light paste-ready summary derived from SPEC — no HOW details.
 
-Token budgets: SPEC ≤1500, PLAN ≤2500, TASKS ≤1200, JIRA_TICKET ≤800.
+Match each document's length to what this feature needs: cover the substance, but no filler sections, restated summaries, or boilerplate. JIRA_TICKET stays a short paste-ready view.
 
 Use this EXACT format:
 
@@ -2060,7 +2056,7 @@ no surrounding punctuation, nothing else on the line — reading exactly
 actually true for this feature** (this is a real per-feature decision, not
 fixed boilerplate — pick the one that matches your analysis, don't default
 to either). `/implement`'s QA phase greps for that exact anchored line to
-decide whether to run Playwright/E2E authoring (AC-6.1); anything else on
+decide whether to run Playwright/E2E authoring; anything else on
 that line, or any markdown wrapping it, means the match fails silently and
 the gate never fires. Then follow it with the normal AC bullet:
 
@@ -2452,12 +2448,12 @@ happened, mechanically, where it could not be renegotiated. Render it and write 
    <!-- UNTRUSTED-CONTENT:END {agent}.md -->
    ```
 
-   The other bodies stay unmarked, exactly as today. Skipping this is how external text
-   reaches `/implement` with no boundary at all.
+   The other bodies stay unmarked, as on the classic path. Skipping this is how external
+   text reaches `/implement` with no boundary at all.
 3. **Write the state.** `deep_dive.agents_to_run` from `roster.run`, `agents_run` from
    `coverage` where `produced` is true, and `agents_skipped` from `roster.skipped` — one
-   computation produced all three, so the skip record cannot go missing the way it did
-   before. `skeptic_validation` from `gates.skeptic`.
+   computation produced all three, so the skip record cannot go missing.
+   `skeptic_validation` from `gates.skeptic`.
 4. **Report what the run actually did**, in the Stage 3-exit summary and the Stage 4.11
    report: every dimension in `coverage` that produced nothing, every entry in `dropped`
    with the lenses that refuted it, every entry in `uncited`, every `contradictions` entry,
@@ -2469,7 +2465,7 @@ happened, mechanically, where it could not be renegotiated. Render it and write 
    for what to report, and an obligation recorded only next to the write is one that gets
    written and not reported.
 5. **Ask the questions the script could not.** A `gates.skeptic.verdict` of `conditional`
-   goes to `AskUserQuestion` exactly as Stage 4.8 does today (Address gates / Override /
+   goes to `AskUserQuestion` exactly as Stage 4.8 does (Address gates / Override /
    Abort) — and note that a run can be `conditional` *and* have an incomplete panel, since
    integrity and verdict are separate axes: a blocking gate found by a short panel is still
    a blocking gate. A verdict of `unverified` means no blocking gate was found but the
@@ -2607,7 +2603,7 @@ Next Steps (for YOU to run when ready):
 {end if}
 ```
 
-**STOP HERE. Do not enter plan mode. Do not propose implementation. Do not ask to proceed with implementation. The user will invoke `/implement` when ready.**
+Then run this last fence, which clears this session's auto-context entry:
 
 ```bash
 # A wrong or missing substitution must fail here, not write next to `/`.
@@ -2627,11 +2623,13 @@ if [ -n "$SID" ] \
 fi
 ```
 
+**Then stop.** Do not enter plan mode, propose implementation, or ask to proceed with it. The user will invoke `/implement` when ready.
+
 ---
 
 ## Error Handling
 
-Read `references/error-handling.md` for error recovery procedures (branch creation fails, agent fails, team creation fails, remote push fails). All error recovery uses AskUserQuestion.
+Read `references/error-handling.md` for error recovery procedures (branch creation fails, agent fails, team creation fails, remote push fails). Failures that need a user decision go through AskUserQuestion; team-start and remote-push failures do not.
 
 ---
 
