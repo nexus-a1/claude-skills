@@ -1008,7 +1008,13 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
      backfilled.
 
 4. storage.artifacts
-   → Each artifact must have "location" and "subdir"
+   → An artifact whose value is null (`name: ~`) is left out on purpose →
+     PASS ("{name}: not configured, by choice") and skip it in every other
+     check in 4, 4b and 4c. It resolves exactly like an absent artifact, but
+     migrate never backfills it and 4b never reports it — the only way a
+     project can say "this template artifact does not apply here" and have
+     it stay said.
+   → Each other artifact must have "location" and "subdir"
    → "location" must reference a key defined in storage.locations → else FAIL ("artifact '{name}' references undefined location '{loc}'")
    → Known artifact names: read at runtime with
        artifact_template_keys "$TEMPLATE"

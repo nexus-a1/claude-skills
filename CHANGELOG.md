@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.47.1] - 2026-09-27
+
+## What's Changed
+
+2 commits since v1.47.0: 1 fix, 1 chore. No breaking changes.
+
+### Bug Fixes
+
+- **configuration-init**: let a project leave a template artifact out on purpose. Set the artifact to null in `.claude/configuration.yml` (e.g. `product-knowledge: ~`): it resolves as "not configured", `validate` reports it as a deliberate choice rather than drift, and `migrate` no longer adds it back. (#425)
+
+### Other Changes
+
+- **config**: keep this repository's tasks in the shared global list (repository configuration only; nothing in the plugin changes). (#425)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.47.0...v1.47.1
+
 ## [1.47.0] - 2026-09-25
 
 ## What's Changed

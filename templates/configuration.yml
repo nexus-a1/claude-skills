@@ -124,6 +124,12 @@ storage:
   #                       projects at one shared store outside every
   #                       repository, tagging each task with its project — see
   #                       the commented example below
+  #
+  # To leave an artifact out on purpose, set it to null rather than deleting
+  # it:  product-knowledge: ~
+  # It then resolves as "not configured" (its agent is skipped), and
+  # `/configuration-init migrate` will not add it back. A deleted entry looks
+  # like drift, and migrate restores it from this template.
   # ---------------------------------------------------------------------------
   artifacts:
     requirements:      { location: team-knowledge, subdir: requirements }

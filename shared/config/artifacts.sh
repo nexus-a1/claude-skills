@@ -204,7 +204,9 @@ artifact_plan_location_rename() {
 # stays clean.
 #
 # Two artifacts are deliberately skipped rather than written:
-#   - already present  — never overwrite a user's mapping
+#   - already present  — never overwrite a user's mapping. This includes a
+#     null value (`name: ~`), which is how a project says it leaves a template
+#     artifact out on purpose; a deleted entry cannot say that.
 #   - location undefined in the target config — writing it would leave a
 #     dangling reference that validation then reports as a failure, i.e. the
 #     migration would break the config it just "fixed"
@@ -268,7 +270,8 @@ artifact_plan_backfill() {
 # Names in the template that the config does not define, one per line.
 # Backs the validate-mode drift warning. Unlike artifact_plan_backfill this
 # reports every missing artifact, including ones that cannot be backfilled —
-# the user still needs to know their config has drifted.
+# the user still needs to know their config has drifted. A null-valued entry is
+# present, not missing: it is the deliberate opt-out, not drift.
 artifact_missing_names() {
   local cfg="$1" tmpl="$2"
   local name
