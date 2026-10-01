@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.47.3] - 2026-10-01
+
+## What's Changed
+
+1 fix. No breaking changes.
+
+### Bug Fixes
+
+- **hooks**: `redact-output` now works inside a linked worktree. Claude Code's worktree guard refused every Bash command after `EnterWorktree` (even `echo hello`) because the hook's `exec` + `trap` prelude is something the guard cannot verify. In a linked worktree the hook now wraps the command in a plain pipeline into a small launcher, `redact-pipe.py`. Both streams are still redacted and the exit status is kept. Outside a worktree nothing changes. (#427)
+
+### Known limits
+
+- In a worktree, each Bash command runs in a subshell: `cd` and `export` do not carry to the next call.
+- A background job such as `sleep 100 &` keeps the call open until the tool times out.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.47.2...v1.47.3
+
 ## [1.47.2] - 2026-09-27
 
 ## What's Changed

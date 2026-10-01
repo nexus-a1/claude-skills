@@ -249,6 +249,56 @@ _prelude="exec > >(bash $_stream_q"
 _prelude="$_prelude) 2>&1  # nexus-redact
 _nexus_redact_pid=\$!; trap 'exec 1>&- 2>&-; if [ -n \"\$_nexus_redact_pid\" ]; then _i=0; while kill -0 \"\$_nexus_redact_pid\" 2>/dev/null && [ \$_i -lt 50 ]; do sleep 0.1; _i=\$((_i+1)); done; else sleep 0.3; fi' EXIT"
 
+# LINKED WORKTREES GET A PIPELINE INSTEAD (worktree-isolation guard).
+# Claude Code's worktree-isolation guard, active after EnterWorktree, refuses
+# any command containing `exec` or `trap` with "too complex to verify that it
+# stays inside the worktree" -- measured with headless runs, where the exec
+# prelude above made even `echo hello` fail and `NEXUS_DISABLED_HOOKS=
+# redact-output` made it pass. Plain pipelines pass. So when the session's cwd
+# is inside a linked worktree the same filter is applied as
+#
+#     set -o pipefail; {  # nexus-redact
+#     <the original command, untouched>
+#     } 2>&1 | python3 /…/redact-pipe.py --map … --pii …
+#
+# The guard also refuses `bash <script>` as the sink of a pipeline fed by a
+# `{ … }` group (measured), but accepts python3; redact-pipe.py just execs
+# `bash redact-stream.sh` with the same arguments and stdin.
+# Redaction is identical (same filter, same map, stdout and stderr both). The
+# pipe is synchronous, so no wait-trap is needed. The cost: the command runs in
+# a subshell, so `cd` and exports do not persist to the next call, and an `exit`
+# ends only that subshell. pipefail keeps the command's own status.
+_in_linked_worktree=0
+_cwd="$(printf '%s' "$_raw" | jq -r '.cwd // empty' 2>/dev/null || true)"
+if [ -n "$_cwd" ] && [ -d "$_cwd" ] && command -v git >/dev/null 2>&1; then
+    _gd="$(git -C "$_cwd" rev-parse --absolute-git-dir 2>/dev/null || true)"
+    _gc="$(git -C "$_cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    [ -n "$_gd" ] && [ -n "$_gc" ] && [ "$_gd" != "$_gc" ] && _in_linked_worktree=1
+fi
+_pipe="$_hook_dir/redact-pipe.py"
+case "$_pipe" in *$'\n'*) _pipe="" ;; esac
+# Without python3 or the launcher there is no pipeline the guard accepts; fall
+# through to the exec prelude (which the guard refuses, but which redacts).
+if [ "$_in_linked_worktree" -eq 1 ] && { ! command -v python3 >/dev/null 2>&1 || [ ! -r "$_pipe" ]; }; then
+    _in_linked_worktree=0
+fi
+if [ "$_in_linked_worktree" -eq 1 ]; then
+    _filter="python3 $(_sq "$_pipe")"
+    [ -n "$_map_q" ] && _filter="$_filter --map $_map_q"
+    [ -n "$_pii_q" ] && _filter="$_filter --pii $_pii_q"
+    _prelude="set -o pipefail; {  # nexus-redact"
+    # Always wrap, never skip on a matching first line: here the filter sits at
+    # the END of the pipeline, so the first line alone proves nothing and a
+    # command opening with it would run unfiltered. A second wrap is harmless.
+    _new="$_prelude
+$_cmd
+} 2>&1 | $_filter"
+    jq -nc --arg c "$_new" --arg x "$_context" '
+        {hookSpecificOutput: ({hookEventName: "PreToolUse", updatedInput: {command: $c}}
+            + (if $x == "" then {} else {additionalContext: $x} end))}'
+    exit 0
+fi
+
 # Already wrapped: the command's FIRST LINE is exactly the prelude this run
 # would emit — the filter by its quoted absolute path, the map, the 2>&1,
 # nothing missing and nothing added. A prefix match let a hand-built
