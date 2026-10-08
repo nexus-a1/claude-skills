@@ -39,13 +39,19 @@
 # is checked HERE as well as inside the script, so disabling it skips the
 # python3 spawn rather than paying for an interpreter that exits immediately.
 #
+# A PROJECT CAN OPT OUT. `redaction.enabled: false` in .claude/configuration.yml
+# makes this hook pass the command through unwrapped, with a warning on every
+# call (see "PROJECT OPT-OUT" below). The kill switches come first and never read
+# the configuration; nothing but that file turns the filter off per project.
+#
 # FAILS CLOSED where it can: a missing or non-executable redact-stream.sh
 # blocks the call (exit 2) rather than letting it run unfiltered. Inside the
 # rewritten command, a filter that cannot load its patterns withholds output
 # rather than passing it through (see redact-stream.sh).
 #
 # What this cannot cover, stated so nobody assumes it: the Read tool's own
-# result (read-guard.sh refuses sensitive files and redirects to cat), Grep
+# result (read-guard.sh refuses sensitive files and redirects to cat, or, when the
+# project has redaction off, tells the model to ask the user), Grep
 # and Glob results, @file mentions and pasted text, and the command text
 # itself — a secret the model writes into a command was already in context.
 
@@ -140,7 +146,11 @@ _stream_q="$(_sq "$_stream")"
 # supported way to turn the tier off, and it is one word.
 _pii_lib="$_hook_dir/../shared/pii-patterns.sh"
 # shellcheck source=../shared/pii-patterns.sh
-if ! . "$_pii_lib" 2>/dev/null || ! type nexus_pii_resolve_classes >/dev/null 2>&1; then
+# The on/off resolver lives in the same library and is checked with the rest: a
+# stale copy that lacks it BLOCKS rather than leaving this hook to guess.
+if ! . "$_pii_lib" 2>/dev/null || ! type nexus_pii_resolve_classes >/dev/null 2>&1 \
+   || ! type nexus_redaction_output_mode >/dev/null 2>&1 \
+   || ! type nexus_redaction_config_path >/dev/null 2>&1; then
     echo "BLOCKED: redact-output cannot load the PII class list at $_pii_lib — refusing to run the command with only half the redactor." >&2
     echo "Reinstall the nexus plugin, or disable this hook explicitly: NEXUS_DISABLED_HOOKS=redact-output" >&2
     exit 2
@@ -148,7 +158,12 @@ fi
 # Only [a-z0-9,-] ever reaches the command line, and it is single-quoted there
 # on top of that. The resolver already refuses a name that is not one of its
 # own classes; this is the belt to that pair of braces.
-_pii="$(nexus_pii_resolve_classes 2>/dev/null || true)"
+#
+# ONE config file per call: the on/off decision and the class list are both read
+# from the file found here, so they cannot come from two different projects
+# (CL-122, AC-SEC-3).
+_cfg="$(nexus_redaction_config_path 2>/dev/null || true)"
+_pii="$(nexus_pii_resolve_classes "$_cfg" 2>/dev/null || true)"
 case "$_pii" in *[!a-z0-9,-]*) _pii="" ;; esac
 _pii_q=""
 [ -n "$_pii" ] && _pii_q="$(_sq "$_pii")"
@@ -198,6 +213,35 @@ if [ "$_tf_disabled" -eq 0 ] && command -v python3 >/dev/null 2>&1 && [ -f "$_ho
         [ -n "$_tf_cmd" ] && _cmd="$_tf_cmd"
         _context="$(printf '%s' "$_tf_out" | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null || true)"
     fi
+fi
+
+# PROJECT OPT-OUT (CL-122). `redaction.enabled: false` in the project's
+# configuration.yml turns redaction off for every Bash call in the project,
+# subagents and review panels included. The kill switches above ran first and
+# never read the configuration, so they keep their own warning and their own
+# precedence; `minimal` does not reach them, so this setting applies under it.
+#
+# The decision is a printed WORD compared against exactly `off`. Empty output,
+# `on`, an error and a missing function (127) are all "redact": a status test
+# would have read 127 as an answer. The lib check at the top already blocked on
+# a stale library, so reaching here with the function missing cannot happen.
+#
+# Placed after the token filter so the quiet-flag rewrite still applies, and
+# before the session map and both preludes, so no map is created and nothing is
+# wrapped. Same jq shape as the wrapped path, plus a systemMessage so the user
+# sees the warning on EVERY call: a silent off is the failure mode here.
+_mode="$(nexus_redaction_output_mode "$_cfg" 2>/dev/null || true)"
+if [ "$_mode" = "off" ]; then
+    # The path comes from $PWD: strip anything a terminal or a prompt could read
+    # as more than a name.
+    _cfg_show="${_cfg//[[:cntrl:]]/?}"
+    _off_note="redact-output: Bash output is NOT redacted for this project (redaction.enabled: false in ${_cfg_show:-.claude/configuration.yml})."
+    if [ -n "$_context" ]; then _context="$_context
+$_off_note"; else _context="$_off_note"; fi
+    jq -nc --arg c "$_cmd" --arg x "$_context" --arg m "$_off_note" '
+        {systemMessage: $m,
+         hookSpecificOutput: {hookEventName: "PreToolUse", updatedInput: {command: $c}, additionalContext: $x}}'
+    exit 0
 fi
 
 # The session map lives with the REPOSITORY the session is in, under the main

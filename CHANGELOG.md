@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.48.0] - 2026-10-08
+
+## What's Changed
+
+One feature, delivered as PR #428: a project can now turn the output-redaction hook off. 8 commits (3 feat, 3 fix, 1 docs, 1 test). No breaking changes: redaction stays on unless a project says otherwise.
+
+### Features
+
+- **hooks**: `redaction.enabled: false` in `.claude/configuration.yml` turns off output redaction for the project. Only the plain value `false` does it; a typo, a missing or unreadable file, a duplicate key, or a config not owned by the user (or world-writable) keeps redaction on. When off, a warning naming the config file shows on every shell command. — CL-122
+- **hooks**: when redaction is off, the sensitive-file refusal no longer points at Bash. It says redaction is off and to ask the user for the value. The read is still refused. — CL-122
+- **configuration-init**: setup and reconfigure ask one question about redaction ("keep on" first). Reconfigure now saves the old file and keeps existing `redaction.pii.*` settings, which were lost before. Validate has a new check; migrate does not touch the setting. — CL-122
+
+### Bug Fixes
+
+- **hooks**: review findings fixed before merge: loose spellings such as `enabled:false` could read as false, and a config planted in a shared directory could switch redaction off. — CL-122
+- **configuration-init**: validate check 9 only looks inside the `redaction:` block, so an `enabled:` under `jira:` no longer triggers a false warning. — CL-122
+
+### Other Changes
+
+- **docs**: `redaction.enabled`, the order of precedence (kill switches, then the setting, then `redaction.pii.*` and `NEXUS_REDACT_PII`), and the new ownership rule are documented in `hook-profiles.md`, the configuration template, `plugin/CLAUDE.md` and `docs/`.
+- **test**: new tests for the resolver, the hook, the guard and the wizard; one validator allowlist update.
+
+### Notes
+
+- Turning the setting off disables both secret and personal-data redaction for every agent in the project, review panels included. The command text itself was never covered.
+- A project checked out under another user (for example a container mount) has its opt-out ignored by the ownership rule; `/configuration-init validate` says so.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.47.3...v1.48.0
+
 ## [1.47.3] - 2026-10-01
 
 ## What's Changed

@@ -256,8 +256,8 @@ requirements:
 # -----------------------------------------------------------------------------
 # Redaction (optional)
 # -----------------------------------------------------------------------------
-# Which STRUCTURED PII classes the redaction filter replaces with placeholders,
-# on top of the credential classes it always replaces.
+# The master switch, and which STRUCTURED PII classes the filter replaces with
+# placeholders on top of the credential classes it always replaces.
 #
 # How redaction works, in one sentence: the redact-output hook rewrites every
 # Bash command so its output streams through a filter, and each matched value
@@ -265,8 +265,30 @@ requirements:
 # to, compare and write back into a file (reverse-substitute), while the value
 # itself never enters the conversation.
 #
-# Credentials are NOT configurable here. An API key is never task input, so
-# there is no case for switching that tier off per project.
+# redaction.enabled (default true) is the master switch for the whole filter.
+# Set it to false and shell output reaches every agent in the project unchanged,
+# credentials and personal data alike, subagents and review panels included; the
+# hook then shows a warning on every shell command. It takes the plain boolean
+# false and nothing else: a typo, `no`, `off`, a quoted "false", a missing file
+# or the one-line `redaction: false` all leave redaction ON; so does a second
+# `enabled:` or `redaction:` key, and so does a file owned by another user or
+# writable by everyone (a config planted in a shared directory must not be able
+# to switch this off). /configuration-init
+# asks about it. What it never covered stays uncovered either way: the command
+# text itself, direct file reads, search results and pasted text.
+#
+# Which control wins, in order:
+#   1. The kill switches (NEXUS_HOOK_PROFILE=off, NEXUS_DISABLED_HOOKS) skip the
+#      hook before this file is read, with their own warning. NEXUS_HOOK_PROFILE=minimal
+#      keeps the hook, so the setting below applies under it.
+#   2. redaction.enabled decides whether anything is redacted at all.
+#   3. pii.* and NEXUS_REDACT_PII choose which personal-data classes are hidden,
+#      and only matter while step 2 leaves redaction on.
+# No other environment variable turns redaction off.
+#
+# While redaction is on, the credential classes are always replaced; only the
+# classes in the list below are configurable. An API key is never task input, so
+# there is no case for switching that tier off selectively.
 #
 # The classes, and the default each one ships with:
 #
@@ -313,6 +335,7 @@ requirements:
 # stderr — a typo here is a class its author believes is on.
 # -----------------------------------------------------------------------------
 # redaction:
+#   enabled: true      # false turns ALL output redaction off for this project
 #   pii:
 #     email: true
 #     phone: true

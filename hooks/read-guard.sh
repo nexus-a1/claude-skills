@@ -1,7 +1,9 @@
 #!/bin/bash
 # read-guard.sh — PreToolUse hook on Read, Grep and Glob: refuse the file
 # tools on files that exist to hold secrets, and point the model at `cat`,
-# whose output the redact-output hook filters.
+# whose output the redact-output hook filters. (If the project has turned
+# redaction off, redaction.enabled: false, the redirect is dropped and the model
+# is told to ask the user: Bash would no longer filter anything.)
 #
 # The Read tool's result cannot be rewritten by any hook, so a `.env` read
 # would put every value into the conversation verbatim; Grep returns matching
@@ -161,6 +163,32 @@ fi
 # untrusted source, so it gets the same treatment.
 _safe_what="$_what"
 case "$_what" in *[[:cntrl:]]*) _safe_what="the given path (it contains a control character)" ;; esac
+
+# When the project has turned output redaction off (redaction.enabled: false),
+# the usual advice below is wrong: "use Bash, which is filtered" would send the
+# agent to an unfiltered `cat .env`. So that paragraph is replaced as a whole,
+# not patched, and the read is still refused. Resolved here, after a sensitive
+# hit, so a normal Read, Grep or Glob pays nothing for it (CL-122). If the
+# library cannot be loaded the usual text stays — which is safe in practice:
+# the same broken library makes redact-output BLOCK every Bash call.
+_redaction_mode="on"
+# shellcheck source=../shared/pii-patterns.sh
+if . "$_hook_dir/../shared/pii-patterns.sh" 2>/dev/null && type nexus_redaction_output_mode >/dev/null 2>&1; then
+    _redaction_mode="$(nexus_redaction_output_mode 2>/dev/null || true)"
+fi
+
+if [ "$_redaction_mode" = "off" ]; then
+cat >&2 <<EOF
+BLOCKED: $_tool refused on $_safe_what — it matches the sensitive-file pattern '$_hit'.
+Output redaction is off for this project (redaction.enabled: false in .claude/configuration.yml),
+so Bash would not filter this file either. Do not read it through Bash or any other tool.
+If you need a value from it, ask the user.
+
+Residual, stated so it is not mistaken for coverage: this check is by NAME. A Grep that names
+no path, or a directory, still returns matching lines from files this list does not name.
+EOF
+exit 2
+fi
 
 cat >&2 <<EOF
 BLOCKED: $_tool refused on $_safe_what — it matches the sensitive-file pattern '$_hit'.

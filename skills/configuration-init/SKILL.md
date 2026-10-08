@@ -105,6 +105,37 @@ If user selects "Cancel", stop with: "Configuration unchanged."
 
 If user selects "Validate", jump to **Step 9: Validate Configuration**.
 
+If user selects "Reconfigure", save the current file first. Step 7 writes a whole
+new file, so anything the wizard does not ask about — a hand-written
+`redaction.pii` block, for one — would be lost; Step 7c reads the saved copy to
+carry that forward. Only `.claude/configuration.yml` in the current directory is
+saved: a file found in a parent directory is not the one being overwritten, and
+nothing is carried over from it.
+
+```bash
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
+source "$NEXUS_SHARED/resolve-config.sh"
+source "$NEXUS_SHARED/config/artifacts.sh"
+
+WRITE_CONFIG=".claude/configuration.yml"
+if [ -f "$WRITE_CONFIG" ]; then
+  TS="$(date +%Y%m%d-%H%M%S)"
+  if artifact_backup_once "$WRITE_CONFIG" "$TS"; then
+    echo "PREV_CONFIG=$WRITE_CONFIG.bak-$TS"
+  else
+    echo "PREV_CONFIG=failed"
+  fi
+else
+  echo "PREV_CONFIG=none"
+fi
+```
+
+Remember the printed `PREV_CONFIG` for Step 7c. On `PREV_CONFIG=failed`, stop with:
+"The current configuration could not be saved, so Reconfigure would lose its
+settings. Nothing was changed." Do not go on to Step 2.
+
 ### Step 2: Load Template
 
 Read the template, trying in order: `${CLAUDE_PLUGIN_ROOT}/templates/configuration.yml`, then the `templates/configuration.yml` two directories above the shared library the preamble sourced (the installed plugin's own copy — `artifact_template_path` resolves it from the library's location, since the variable itself is not present in a Bash call), then `~/.claude/templates/configuration.yml` (local/dev copies).
@@ -397,7 +428,7 @@ Use AskUserQuestion:
 - multiSelect: false
 
 **If "In this repository":** set `TASKS_CHOICE=local`. Nothing else changes —
-Step 6 maps `tasks` into the local location like every other artifact. Continue to Step 6.
+Step 6 maps `tasks` into the local location like every other artifact. Continue to Step 5d.
 
 **If "Shared list in my home directory":** set `TASKS_CHOICE=global` and work
 through 5c.1–5c.3. Nothing is written until Step 7b.
@@ -523,6 +554,25 @@ Use AskUserQuestion:
 - multiSelect: false
 
 On "Keep tasks in the repository", set `TASKS_CHOICE=local`.
+
+Continue to Step 5d.
+
+### Step 5d: Ask About Output Redaction
+
+Setup and reconfigure only. When Step 5c was reached from Step 10 (migrate), skip
+this step and Step 7c and go to Step 7b: migrate never adds or changes the
+redaction setting, because an absent setting already means "on".
+
+Use AskUserQuestion:
+- header: "Redaction"
+- question: "The nexus plugin hides secrets (API keys, passwords, tokens) and personal data (email addresses, phone numbers, bank and card numbers) in the output of every shell command, showing a placeholder instead of the value. Turning it off means the real values reach the conversation for every agent in this project, review panels included; it never covered the command text itself. Keep it on?"
+- options:
+  - "Keep redaction on (Recommended)" / "Nothing is written to switch it off. Which personal-data classes are hidden stays as configured, or at the defaults."
+  - "Turn redaction off" / "Writes redaction.enabled: false. Shell output reaches agents unchanged, secrets included, and a warning shows on every shell command."
+- multiSelect: false
+
+Set `REDACTION_CHOICE=on` for the first answer and `REDACTION_CHOICE=off` for the
+second. Nothing is written until Step 7c.
 
 ### Step 6: Build Configuration
 
@@ -695,7 +745,8 @@ mkdir -p .claude
 
 ### Step 7b: Put Tasks in the Shared List
 
-Only when Step 5c ended with `TASKS_CHOICE=global`. Step 7 wrote the file with
+Only when Step 5c ended with `TASKS_CHOICE=global`; otherwise go straight to
+Step 7c. Step 7 wrote the file with
 tasks inside the repository; this step switches them over, and puts the file
 back exactly as Step 7 wrote it if anything fails — a configuration left in
 global mode with no usable store would refuse every task command.
@@ -878,6 +929,54 @@ esac
 [ -d "$WIZ" ] && [ ! -L "$WIZ" ] && rm -rf -- "$WIZ"
 ```
 
+Continue to Step 7c — unless you came here from Step 10 (migrate), which stops
+after this step.
+
+### Step 7c: Write the Redaction Choice
+
+Setup and reconfigure only; never from migrate. It runs on **both** answers: even
+"Keep redaction on" has work to do, because Step 7 wrote the file from scratch and
+the previous `redaction.pii` class settings must be put back.
+
+Substitute `{prev_config}` with the path Step 1 printed after `PREV_CONFIG=`, or
+leave it empty when Step 1 printed `none`, or printed nothing at all (a first setup never runs Step 1's save), and `{redaction_choice}`
+with `REDACTION_CHOICE` from Step 5d.
+
+```bash
+NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+[ -f "$NEXUS_SHARED/config/artifacts.sh" ] || { echo "ERROR: nexus shared library not found — looked in ${CLAUDE_PLUGIN_ROOT}/shared and $HOME/.claude/shared; update or reinstall the plugin (/plugin update nexus@claude-skills) or check the plugin cache" >&2; exit 1; }
+source "$NEXUS_SHARED/resolve-config.sh"
+source "$NEXUS_SHARED/config/artifacts.sh"
+source "$NEXUS_SHARED/config/redaction.sh"
+
+PREV='{prev_config}'
+case "${PREV#.claude/configuration.yml.bak-}" in
+  "$PREV"|*[!0-9-]*) PREV="" ;;
+esac
+CHOICE='{redaction_choice}'
+case "$CHOICE" in
+  on|off) : ;;
+  *) CHOICE="on" ;;
+esac
+
+if nexus_redaction_write_block ".claude/configuration.yml" "$PREV" "$CHOICE"; then
+  echo "REDACTION_WRITE=ok"
+else
+  echo "REDACTION_WRITE=failed"
+fi
+```
+
+The writer appends one block built only from fixed words, re-reads it with the
+resolver the hook uses, and moves it into place only if it reads back as
+intended. On any failure the file is exactly as Step 7 wrote it.
+
+On `REDACTION_WRITE=failed`, say so plainly and never report success for a choice
+that was not written: "The redaction choice and the previous personal-data
+settings were not written. Redaction is ON with the default classes." and, only when
+`{prev_config}` is a path, add: "Your previous configuration is saved at {prev_config}."
+Then continue to Step 8.
+
 ### Step 8: Show Summary
 
 Build the artifact rows from the config just written, so the summary reports what was actually generated rather than what this document expects:
@@ -917,6 +1016,11 @@ TASKS
   where:     shared list at ${TASKS_LOCATION_PATH}/${TASKS_SUBDIR}   # global
   project:   ${project from init-store's output}                    # global
   moved in:  ${counts from Step 7b, or "nothing yet — run /todo migrate"}  # global
+
+REDACTION
+────────────────────────────────────────────────
+  output redaction:     ${on | OFF for this project}     # from REDACTION_CHOICE and Step 7c's result
+  personal-data classes: ${carried over from the previous configuration | defaults}
 
 REQUIREMENTS BEHAVIOR
 ────────────────────────────────────────────────
@@ -1134,6 +1238,39 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
      prints (name|path|suggested): WARN ("storage.locations.{name}.path is
      {path}, inside your home directory — everyone who uses this configuration
      would be sent there; write it as {suggested}")
+
+9. redaction (CL-122)
+   → The ON/OFF verdict comes from the hook's own resolver and from nothing
+     else. Do not read `redaction.enabled` with yq or your own idea of YAML:
+     `redaction: {enabled: false}`, `enabled: False` and a quoted "false" are
+     false to a YAML parser and ignored by the hook, so a verdict from yq
+     would describe a project the hook is not protecting the way it says.
+       NEXUS_SHARED="${CLAUDE_PLUGIN_ROOT}/shared"
+       [ -f "$NEXUS_SHARED/pii-patterns.sh" ] || NEXUS_SHARED="$HOME/.claude/shared"
+       source "$NEXUS_SHARED/pii-patterns.sh" || echo "UNKNOWN"
+       nexus_redaction_output_mode "$EXISTING_CONFIG"
+     If the source failed or the call printed nothing, report "redaction:
+     could not be checked" and give no verdict — silence is not "on".
+   → `off` → WARN ("output redaction is OFF for this project — shell output
+     reaches every agent unchanged, secrets included, and a warning shows on
+     every shell command. If this file is committed, it is off for everyone who
+     uses the project")
+   → `on`: also run `nexus_redaction_config_enabled "$EXISTING_CONFIG"`, the
+     same parser, and this command, which lists only what sits INSIDE the
+     top-level `redaction:` block (an `enabled:` under `jira:` is not it):
+         awk '/^redaction:/ {b=1; if ($(0) ~ /^redaction:[[:space:]]*[^[:space:]#]/) print "shorthand: " $(0); next} /^[^[:space:]#]/ {b=0} b && /^[[:space:]]+enabled:/ {print "enabled: " $(0)}' "$EXISTING_CONFIG"
+     Then, in this order:
+       - the parser printed `false` → WARN ("redaction.enabled: false is set but
+         ignored, because the file is world-writable or not owned by the user
+         running the check, so redaction is on")
+       - the parser printed `true` → PASS ("redaction: on, set explicitly")
+       - the command printed anything else (the one-line `redaction: false`, the
+         flow form `redaction: {enabled: false}`, an `enabled:` that is not
+         `true`/`false` after a space, or more than one `enabled:` / `redaction:`)
+         → WARN ("redaction.enabled is present but not usable — it needs to be
+         the plain boolean false, written once — so it is ignored and redaction is on")
+       - the command printed nothing → PASS ("redaction: on (default)"), also when
+         the block holds only `pii:` settings
 ```
 
 **Output format:**
@@ -1166,6 +1303,7 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
          /configuration-init migrate to back it up and remove it
   [PASS] requirements: all values valid
   [PASS] jira: enabled, acli installed and authenticated
+  [WARN] redaction: output redaction is OFF for this project
 
   Result: 6 passed, 5 warnings, 2 failures
 
@@ -1608,9 +1746,10 @@ If any step fails, stop and report which action failed. The user can retry after
 
 **Where tasks live.** When the configuration has a `tasks` entry with no
 `mode`, it has never chosen between the repository and a shared list. After the
-summary, go to **Step 5c** and then **Step 7b** — the file already exists, so
-Step 7's write is skipped and Step 7b switches it in place. Step 5c's first
-answer, "In this repository", changes nothing.
+summary, go to **Step 5c**, skip Step 5d and Step 7c, and then go to **Step 7b**
+— the file already exists, so Step 7's write is skipped and Step 7b switches it
+in place. Step 5c's first answer, "In this repository", changes nothing. Migrate
+never asks about redaction and never writes the setting.
 
 **Scope note:** This migration only handles known-historical format changes. Unknown legacy formats are left untouched — the user can file an issue if they encounter a case this skill misses.
 

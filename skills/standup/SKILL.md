@@ -90,8 +90,8 @@ Read `STANDUP_SCAN` before rendering:
 | `failed` | The scan reached no conclusion. Say so, and do not present the text as bounded |
 
 **Never** route the collector's output through a file and read it back. It is read directly
-from the Bash result because that path is covered by the credential redactor; a file read
-is not.
+from the Bash result because that path is covered by the credential redactor (unless the
+project has turned redaction off); a file read is not.
 
 ### Step 2 — Read the records
 

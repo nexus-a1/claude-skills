@@ -197,18 +197,23 @@ Full reference: [`plugin/shared/hook-profiles.md`](shared/hook-profiles.md).
 | `NEXUS_HOOK_PROFILE=off` | Disable **all** hooks — nuclear option, removes git guards |
 | `NEXUS_DISABLED_HOOKS=notify,audit` | Fine-grained per-hook disable by name |
 | `NEXUS_REDACT_PII=none` | Redact secrets but not structured PII. `all`, or a comma list of `email,phone,iban,pesel,nip,card,ip`, sets the classes instead; `.claude/configuration.yml` → `redaction.pii.*` sets them per project |
+| `.claude/configuration.yml` → `redaction.enabled: false` | Master switch, no env-var equivalent. Turns off the whole redaction filter (both tiers) for the project; default `true` |
 
 **Redaction, in one paragraph.** `redact-output` rewrites every Bash command so
 its output streams through a filter: secrets and structured PII come back as
 stable `<REDACTED:kind:n>` placeholders and the values never enter the
-conversation. `read-guard` refuses Read, Grep and Glob on files named to hold
-secrets and redirects to the Bash equivalent, which is filtered.
+conversation — unless the project has turned redaction off
+(`redaction.enabled: false`), in which case output reaches the model
+unredacted and a warning is shown instead. `read-guard` refuses Read, Grep and
+Glob on files named to hold secrets and redirects to the Bash equivalent, which
+is filtered unless redaction is off for the project, in which case the message
+says so and asks the agent to request the value from the user instead.
 `reverse-substitute` turns a placeholder the model writes into a Write or an
 Edit back into the real value, so a file can carry a value the conversation
 never held — never into a path outside the repository or one the deny list marks
 sensitive, unless the file already contains that value. Every class, every
-default and everything this does **not** cover is in
-[`plugin/shared/hook-profiles.md`](shared/hook-profiles.md).
+default, the `redaction.enabled` switch and everything this does **not** cover
+is in [`plugin/shared/hook-profiles.md`](shared/hook-profiles.md).
 
 ---
 

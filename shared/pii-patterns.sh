@@ -154,17 +154,96 @@ nexus_pii_config_flags() {
         {
             d = ind(line)
             key = line; sub(/^[[:space:]]+/, "", key)
-            if (key ~ /^redaction:[[:space:]]*$/ && d == 0) { inred = 1; redd = d; next }
+            if (key ~ /^redaction:([[:space:]]+#.*)?[[:space:]]*$/ && d == 0) { inred = 1; redd = d; next }
             if (inred && d <= redd && key !~ /^$/) { inred = 0; inpii = 0 }
-            if (inred && key ~ /^pii:[[:space:]]*$/) { inpii = 1; piid = d; next }
+            if (inred && key ~ /^pii:([[:space:]]+#.*)?[[:space:]]*$/) { inpii = 1; piid = d; next }
             if (inpii && d <= piid && key !~ /^$/) { inpii = 0 }
-            if (inpii && match(key, /^[a-z0-9]+:[[:space:]]*(true|false)[[:space:]]*$/)) {
+            if (inpii && match(key, /^[a-z0-9]+:[[:space:]]+(true|false)([[:space:]]+#.*)?[[:space:]]*$/)) {
                 name = key; sub(/:.*/, "", name)
-                val = key; sub(/^[a-z0-9]+:[[:space:]]*/, "", val); sub(/[[:space:]]*$/, "", val)
+                val = key; sub(/^[a-z0-9]+:[[:space:]]+/, "", val); sub(/([[:space:]]+#.*)?[[:space:]]*$/, "", val)
                 printf "%s\t%s\n", name, val
             }
         }
     ' "$cfg" 2>/dev/null || return 0
+}
+
+# Find the project's configuration.yml by walking up from $PWD, the same way
+# resolve-config.sh does. Prints the path, or nothing when there is none.
+# Factored out of nexus_pii_resolve_classes so the on/off decision below and
+# the class list are read from ONE file per call (CL-122, AC-SEC-3).
+nexus_redaction_config_path() {
+    local d="$PWD"
+    while [ -n "$d" ] && [ "$d" != "/" ]; do
+        if [ -f "$d/.claude/configuration.yml" ]; then printf '%s' "$d/.claude/configuration.yml"; return 0; fi
+        d="${d%/*}"
+    done
+    return 0
+}
+
+# Read `redaction.enabled: true|false` out of a configuration.yml: a direct
+# child of a bare top-level `redaction:` block and nothing else. Prints `true`
+# or `false` for exactly those literals (a trailing `# comment` is allowed);
+# prints nothing for anything else. The shorthand `redaction: false`, a
+# quoted "false", `no`, `off`, `False`, and an `enabled` nested under `pii:`
+# all print nothing. Same hand-rolled reader as above, for the same reason,
+# and the value is only ever compared against these two words.
+nexus_redaction_config_enabled() {
+    local cfg="${1-}"
+    [ -n "$cfg" ] && [ -r "$cfg" ] || return 0
+    awk '
+        function ind(l,   n) { n = 0; while (substr(l, n + 1, 1) == " ") n++; return n }
+        { line = $0 }
+        line ~ /^[[:space:]]*#/ { next }
+        {
+            d = ind(line)
+            key = line; sub(/^[[:space:]]+/, "", key)
+            if (key ~ /^redaction:([[:space:]]+#.*)?[[:space:]]*$/ && d == 0) { inred = 1; redd = d; childd = -1; nred++; next }
+            if (inred && d <= redd && key !~ /^$/) { inred = 0 }
+            if (inred && key !~ /^$/) {
+                if (childd < 0) childd = d
+                if (d == childd && key ~ /^enabled:/) {
+                    nen++
+                    if (match(key, /^enabled:[[:space:]]+(true|false)([[:space:]]+#.*)?[[:space:]]*$/)) {
+                        val = key; sub(/^enabled:[[:space:]]+/, "", val); sub(/([[:space:]]+#.*)?[[:space:]]*$/, "", val)
+                        got = val
+                    }
+                }
+            }
+        }
+        # A YAML parser takes the LAST of two equal keys, this reader would take
+        # the first: so a second `enabled:` or a second `redaction:` block is
+        # ambiguous, and an ambiguous file stays ON.
+        END { if (nred == 1 && nen == 1 && got != "") print got }
+    ' "$cfg" 2>/dev/null || return 0
+}
+
+# Whether output redaction is on for this project. Prints exactly `on` or
+# `off`. `off` ONLY when a readable configuration says the literal `false`;
+# an absent file, an unreadable one, an empty path, a missing key and every
+# unexpected value, a duplicated key and a file owned by someone else or
+# writable by everyone are `on`. Callers compare the printed word and never test
+# an exit status: a function that is missing exits 127, and a status test
+# would read that as an answer.
+# $1 (optional) — path to a configuration.yml; omitted means walk up from $PWD.
+nexus_redaction_output_mode() {
+    local cfg="${1-}" v
+    [ -n "$cfg" ] || cfg="$(nexus_redaction_config_path)"
+    v="$(nexus_redaction_config_enabled "$cfg" 2>/dev/null)" || v=""
+    # Only the user running the session may switch a safety control off by file.
+    # The upward search stops at /, so a config planted by another user in a
+    # shared directory (/tmp/.claude/configuration.yml, mode 644) would otherwise
+    # reach every project beneath it. So the file must be OWNED by the current
+    # user and not world-writable. Group-writable stays fine: that is the default
+    # umask on many Linux setups. Anything that cannot be judged is "on" — which
+    # includes a project checked out under another uid (a container mount): the
+    # opt-out is then ignored, and /configuration-init validate says why.
+    if [ "$v" = "false" ]; then
+        local p="$cfg"
+        case "$p" in /*) : ;; *) p="./$p" ;; esac
+        if [ ! -O "$cfg" ] || [ -n "$(find -L "$p" -perm -002 2>/dev/null)" ]; then v=""; fi
+    fi
+    if [ "$v" = "false" ]; then printf 'off'; else printf 'on'; fi
+    return 0
 }
 
 # Resolve the classes that are on for this session.
@@ -193,13 +272,7 @@ nexus_pii_resolve_classes() {
     local cfg="${1-}"
     local c name val on=" "
 
-    if [ -z "$cfg" ]; then
-        local d="$PWD"
-        while [ -n "$d" ] && [ "$d" != "/" ]; do
-            if [ -f "$d/.claude/configuration.yml" ]; then cfg="$d/.claude/configuration.yml"; break; fi
-            d="${d%/*}"
-        done
-    fi
+    [ -n "$cfg" ] || cfg="$(nexus_redaction_config_path)"
 
     # Session override wins outright.
     local env_set="${NEXUS_REDACT_PII-}"

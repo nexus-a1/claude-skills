@@ -115,7 +115,7 @@ too.
 | `git-mutation-guard` | **safety** | ✅ active | ❌ off | Branch protection, credential scan, push audit gate |
 | `validate-commit` | **safety** | ✅ active | ❌ off | Enforce ticket-number pattern in commit messages |
 | `redact-output` | **safety** | ✅ active | ❌ off | Rewrite every Bash command so its output streams through `redact-stream.sh`: secrets become stable `<REDACTED:kind:n>` placeholders before the model sees them |
-| `read-guard` | **safety** | ✅ active | ❌ off | Refuse Read, Grep and Glob on files that exist to hold secrets (`.env*`, `*.pem`, `*credentials*`, the redaction map, …) — by path or by filename filter — and redirect to the Bash equivalent (`grep` for a Grep, `cat` otherwise), whose output is redacted |
+| `read-guard` | **safety** | ✅ active | ❌ off | Refuse Read, Grep and Glob on files that exist to hold secrets (`.env*`, `*.pem`, `*credentials*`, the redaction map, …) — by path or by filename filter — and redirect to the Bash equivalent (`grep` for a Grep, `cat` otherwise), whose output is redacted (unless the project has turned redaction off, in which case the message says so and asks the agent to ask the user) |
 | `reverse-substitute` | **safety** | ✅ active | ❌ off | On Write, Edit and MultiEdit: turn a `<REDACTED:kind:n>` placeholder the model wrote into the real value from the session map, so a file can carry a value the conversation never held. Refuses outside the repository and on sensitive paths unless the file already contains that value; logs every substitution without the value |
 | `audit` | advisory | ❌ off | ❌ off | **Opt-in — off under `full` too.** `NEXUS_AUDIT=1` writes all tool usage to `~/.claude/tool-audit.log`. See [`NEXUS_AUDIT`](#nexus_audit) |
 | `auto-context` | advisory | ❌ off | ❌ off | Auto-append entries to active work-session state.json |
@@ -189,6 +189,67 @@ NEXUS_DISABLED_HOOKS=reverse-substitute claude
 Both hooks print a `WARN` line on every call while disabled. Prefer to keep them on
 and paste the one value into the conversation yourself — that is one value, not
 every value in every file the session reads.
+
+---
+
+## Turning redaction off per project: `redaction.enabled`
+
+Everything above — the credential tier and the structured-PII tier below —
+assumes redaction is on. A project can turn the whole filter off:
+
+```yaml
+redaction:
+  enabled: false
+```
+
+Default `true`. Only the plain boolean `false` turns it off (a trailing
+`# comment` is fine). Everything else leaves redaction on: the key absent, the
+config file missing or unreadable, `true`, a typo, `no`, `off`, `0`, an empty
+value, `False`, a quoted `"false"`, `enabled:false` with no space, the one-line
+`redaction: false` with no nesting, `enabled` nested under `pii:` instead of
+directly under `redaction:`, a second `enabled:` or `redaction:` key (the file
+is ambiguous), and a config file that is world-writable or owned by someone
+other than the user running the session (the upward search stops at `/`, so a
+file planted in a shared directory must not be able to switch redaction off —
+the cost is that a project checked out under another uid, such as a container
+mount, has its opt-out ignored; `/configuration-init validate` says so).
+
+**Precedence, in order:**
+1. The kill switches above — `NEXUS_HOOK_PROFILE=off` and
+   `NEXUS_DISABLED_HOOKS=redact-output` — skip the hook before the config is
+   ever read, with their own existing warning. `minimal` keeps safety hooks
+   active, so this setting still applies under it.
+2. `redaction.enabled` decides whether anything is redacted at all.
+3. `redaction.pii.*` and the session override `NEXUS_REDACT_PII` choose which
+   classes, and only matter once step 2 leaves redaction on.
+
+There is **no environment variable** for this switch — the config file alone
+decides it.
+
+**What changes when it's `false`:**
+- `redact-output` leaves Bash commands unwrapped. Shell output — credentials
+  and personal data alike — reaches every agent in the project unchanged,
+  subagents and review panels included. Every call still shows a
+  `systemMessage` warning and adds a note for the agent. The quiet-flag
+  rewrite from `bash-token-filter` still runs. No session map is created.
+- `read-guard` still refuses Read, Grep and Glob on sensitive files — that part
+  is unconditional — but its message no longer points at the Bash equivalent,
+  because Bash output is no longer filtered either: it says redaction is off
+  for this project and to ask the user for the value directly.
+- **Never covered either way:** the command text itself, direct file reads,
+  search results, pasted text — the same residual as always.
+
+Set via `/configuration-init`: the first, recommended option in setup and
+reconfigure keeps redaction on; the other writes `enabled: false`.
+Reconfigure preserves any existing `redaction.pii.*` class settings.
+`/configuration-init validate` reports `OFF` as INFO, and warns when the key
+is present but not recognized as the literal `false` (so it had no effect).
+`migrate` does not touch this key.
+
+This **reverses** an earlier design: credential redaction used to have no
+project-level off switch at all. It still has no independent one — the only
+way to disable the credential tier is this same project-wide switch, which
+takes the structured-PII tier down with it.
 
 ---
 
