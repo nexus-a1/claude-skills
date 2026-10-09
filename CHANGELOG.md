@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.48.1] - 2026-10-09
+
+## What's Changed
+
+Three bug fixes, from PRs #429, #430 and #431: 3 fix commits plus their merge commits. No breaking changes.
+
+### Bug Fixes
+
+- **hooks**: when a project turns redaction off (`redaction.enabled: false`), the "Bash output is NOT redacted" message now shows once per session instead of on every shell command. If there is no session id, or the marker file under `~/.claude/tmp` cannot be written, it still shows every time. The agent's own note is unchanged and still comes with every command. (#430)
+- **create-requirements**: on the classic path, when the summary agent raised no flags, the run skipped architecture validation (Stage 4.7) and skeptic validation (Stage 4.8) and went straight to the final state. It now runs both. A new test pins the routing. (#431)
+- **ci**: the tests job timeout went from 30 to 45 minutes. The suite takes about 25 minutes alone and was being cancelled under load. Repository CI only; the plugin is not affected. (#429)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.48.0...v1.48.1
+
 ## [1.48.0] - 2026-10-08
 
 ## What's Changed

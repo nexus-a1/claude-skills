@@ -568,7 +568,7 @@ Use AskUserQuestion:
 - question: "The nexus plugin hides secrets (API keys, passwords, tokens) and personal data (email addresses, phone numbers, bank and card numbers) in the output of every shell command, showing a placeholder instead of the value. Turning it off means the real values reach the conversation for every agent in this project, review panels included; it never covered the command text itself. Keep it on?"
 - options:
   - "Keep redaction on (Recommended)" / "Nothing is written to switch it off. Which personal-data classes are hidden stays as configured, or at the defaults."
-  - "Turn redaction off" / "Writes redaction.enabled: false. Shell output reaches agents unchanged, secrets included, and a warning shows on every shell command."
+  - "Turn redaction off" / "Writes redaction.enabled: false. Shell output reaches agents unchanged, secrets included, and a warning shows on the first shell command of each session."
 - multiSelect: false
 
 Set `REDACTION_CHOICE=on` for the first answer and `REDACTION_CHOICE=off` for the
@@ -1253,7 +1253,7 @@ Read `$EXISTING_CONFIG` and run validation checks. Report results using pass/war
      could not be checked" and give no verdict — silence is not "on".
    → `off` → WARN ("output redaction is OFF for this project — shell output
      reaches every agent unchanged, secrets included, and a warning shows on
-     every shell command. If this file is committed, it is off for everyone who
+     the first shell command of each session. If this file is committed, it is off for everyone who
      uses the project")
    → `on`: also run `nexus_redaction_config_enabled "$EXISTING_CONFIG"`, the
      same parser, and this command, which lists only what sits INSIDE the

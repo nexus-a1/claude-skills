@@ -2230,7 +2230,7 @@ Read `references/resolve-flagged-issues.md` for the complete conditional re-anal
 
 **Goal**: Re-run business-analyst to incorporate targeted re-analysis findings. Only runs if Stage 4.5 (Resolve Flagged Issues) executed.
 
-**If Stage 4.5 was skipped**: Skip this stage too.
+**If Stage 4.5 was skipped**: Skip this stage too, record it as below, and continue to Stage 4.7. Stages 4.7 and 4.8 run whether or not 4.5 and 4.6 did.
 
 ```json
 {

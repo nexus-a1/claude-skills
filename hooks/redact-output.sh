@@ -40,8 +40,8 @@
 # python3 spawn rather than paying for an interpreter that exits immediately.
 #
 # A PROJECT CAN OPT OUT. `redaction.enabled: false` in .claude/configuration.yml
-# makes this hook pass the command through unwrapped, with a warning on every
-# call (see "PROJECT OPT-OUT" below). The kill switches come first and never read
+# makes this hook pass the command through unwrapped, with a warning on the first
+# call of a session (see "PROJECT OPT-OUT" below). The kill switches come first and never read
 # the configuration; nothing but that file turns the filter off per project.
 #
 # FAILS CLOSED where it can: a missing or non-executable redact-stream.sh
@@ -238,9 +238,25 @@ if [ "$_mode" = "off" ]; then
     _off_note="redact-output: Bash output is NOT redacted for this project (redaction.enabled: false in ${_cfg_show:-.claude/configuration.yml})."
     if [ -n "$_context" ]; then _context="$_context
 $_off_note"; else _context="$_off_note"; fi
-    jq -nc --arg c "$_cmd" --arg x "$_context" --arg m "$_off_note" '
-        {systemMessage: $m,
-         hookSpecificOutput: {hookEventName: "PreToolUse", updatedInput: {command: $c}, additionalContext: $x}}'
+    # The user-facing message shows once per session, not on every call: the
+    # marker is keyed on the session id. No usable id, no HOME or a marker that
+    # cannot be written all mean "show it": a warning that goes missing by
+    # accident is the failure mode, a repeated one is only noise. The agent's
+    # additionalContext carries the note on every call either way.
+    _sid="${HOOK_SESSION_ID:-}"
+    case "$_sid" in *[!A-Za-z0-9_-]*) _sid="" ;; esac
+    _seen=0
+    if [ -n "$_sid" ] && [ -n "${HOME:-}" ]; then
+        _mark="$HOME/.claude/tmp/redact-off-warned-$_sid"
+        if [ -f "$_mark" ] && [ ! -L "$_mark" ]; then
+            _seen=1
+        else
+            mkdir -p -m 700 "$HOME/.claude/tmp" 2>/dev/null && ( umask 077; set -C; : > "$_mark" ) 2>/dev/null
+        fi
+    fi
+    jq -nc --arg c "$_cmd" --arg x "$_context" --arg m "$_off_note" --argjson seen "$_seen" '
+        (if $seen == 1 then {} else {systemMessage: $m} end)
+        + {hookSpecificOutput: {hookEventName: "PreToolUse", updatedInput: {command: $c}, additionalContext: $x}}'
     exit 0
 fi
 

@@ -204,7 +204,7 @@ its output streams through a filter: secrets and structured PII come back as
 stable `<REDACTED:kind:n>` placeholders and the values never enter the
 conversation — unless the project has turned redaction off
 (`redaction.enabled: false`), in which case output reaches the model
-unredacted and a warning is shown instead. `read-guard` refuses Read, Grep and
+unredacted and a warning is shown on the first command of each session. `read-guard` refuses Read, Grep and
 Glob on files named to hold secrets and redirects to the Bash equivalent, which
 is filtered unless redaction is off for the project, in which case the message
 says so and asks the agent to request the value from the user instead.

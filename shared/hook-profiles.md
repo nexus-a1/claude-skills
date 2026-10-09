@@ -229,8 +229,8 @@ decides it.
 **What changes when it's `false`:**
 - `redact-output` leaves Bash commands unwrapped. Shell output — credentials
   and personal data alike — reaches every agent in the project unchanged,
-  subagents and review panels included. Every call still shows a
-  `systemMessage` warning and adds a note for the agent. The quiet-flag
+  subagents and review panels included. The first call of each session shows a
+  `systemMessage` warning (later calls do not repeat it); every call adds a note for the agent. The quiet-flag
   rewrite from `bash-token-filter` still runs. No session map is created.
 - `read-guard` still refuses Read, Grep and Glob on sensitive files — that part
   is unconditional — but its message no longer points at the Bash equivalent,

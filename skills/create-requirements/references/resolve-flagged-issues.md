@@ -7,7 +7,7 @@
 - Coverage gaps (areas no agent analyzed)
 - Challenged assumptions or severity mismatches
 
-**If NO flags found**: Update state and skip to Stage 4.9 (Update Final State).
+**If NO flags found**: Update state and continue to Stage 4.6, which records itself as skipped, then run Stage 4.7 (Architecture Validation, when its conditions hold) and Stage 4.8 (Skeptic Validation). Never jump from here straight to the final state update: having no flags means there was nothing to re-analyse, not that the triad has been challenged. Stage 4.8 is the only adversarial review on this path.
 
 ```json
 {

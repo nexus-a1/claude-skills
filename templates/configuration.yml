@@ -268,7 +268,7 @@ requirements:
 # redaction.enabled (default true) is the master switch for the whole filter.
 # Set it to false and shell output reaches every agent in the project unchanged,
 # credentials and personal data alike, subagents and review panels included; the
-# hook then shows a warning on every shell command. It takes the plain boolean
+# hook then shows a warning on the first shell command of each session. It takes the plain boolean
 # false and nothing else: a typo, `no`, `off`, a quoted "false", a missing file
 # or the one-line `redaction: false` all leave redaction ON; so does a second
 # `enabled:` or `redaction:` key, and so does a file owned by another user or
