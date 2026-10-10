@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.48.2] - 2026-10-10
+
+## What's Changed
+
+4 commits since v1.48.1: 1 fix, 1 perf, 1 test, 1 ci. No breaking changes.
+
+### Bug Fixes
+
+- **validators**: stop piping values into `grep -q` under `pipefail` — a busy CPU could make a present field read as missing (#435)
+
+### Performance
+
+- **tasks**: read every template subdir in one `yq` call (#433)
+
+### Other Changes
+
+- **ci(tests)**: split the tests job into three balanced shards (#434)
+- **test(validators)**: cut the validators suite from 515 s to 293 s locally
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.48.1...v1.48.2
+
 ## [1.48.1] - 2026-10-09
 
 ## What's Changed

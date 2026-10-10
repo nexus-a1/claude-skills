@@ -165,11 +165,16 @@ _tasks_artifact_names() {
   printf '%s\n' "$out" | LC_ALL=C grep -xE '[A-Za-z0-9_-]+' || true
 }
 
-# One artifact's default subdir from the template; the artifact name if unset.
-_tasks_template_subdir() {
-  local tmpl="${1}" name="${2}" sub
-  sub="$(k="$name" yq -r 'select(document_index == 0) | .storage.artifacts[strenv(k)].subdir // ""' "$tmpl" 2>/dev/null)" || sub=""
-  printf '%s\n' "${sub:-$name}"
+# Every artifact's default subdir from the template, one `name<TAB>subdir` line
+# each, with an empty subdir where none is set or the entry is not a map. ONE yq
+# call for the whole catalog: this used to be one call per artifact, and the
+# overlap gate runs on every op, so those calls were about a third of the cost of
+# every tasks.sh invocation. A failed read prints nothing, and every name then
+# falls back to itself, which is what the per-artifact reader did on failure.
+_tasks_template_subdirs() {
+  local tmpl="${1}"
+  yq -r 'select(document_index == 0) | .storage.artifacts // {} | to_entries | .[]
+         | .key + "\t" + ((.value | select(kind == "map") | .subdir) // "")' "$tmpl" 2>/dev/null || true
 }
 
 # Is `storage.artifacts.tasks` present in the configuration?
@@ -527,9 +532,15 @@ _tasks_gate_overlap() {
   fi
   [ -n "$names" ] || _tasks_die "$EXIT_SYSTEM" "the artifact catalog in $tmpl is empty"
 
+  local -A tmpl_sub=()
+  local k v
+  while IFS=$'\t' read -r k v; do
+    [ -n "$k" ] && tmpl_sub["$k"]="$v"
+  done < <(_tasks_template_subdirs "$tmpl")
+
   while IFS= read -r name; do
     { [ -n "$name" ] && [ "$name" != "tasks" ]; } || continue
-    sub="$(_tasks_template_subdir "$tmpl" "$name")"
+    sub="${tmpl_sub[$name]:-$name}"
     other="$(resolve_artifact_typed "$name" "$sub" 2>/dev/null)" || continue
     other="${other%%|*}"
     [ -n "$other" ] || continue

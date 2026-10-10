@@ -177,7 +177,7 @@ while IFS= read -r -d "$RS" record; do
     [[ -n "${BASH_REMATCH[5]}" ]] && breaking="true"
   fi
   # `BREAKING CHANGE:` trailer overrides.
-  if printf '%s\n' "$body" | grep -qE '^BREAKING CHANGE:'; then
+  if grep -qE '^BREAKING CHANGE:' <<< "$body"; then
     breaking="true"
   fi
   if [[ "$breaking" == "true" ]]; then has_breaking="true"; fi
@@ -202,7 +202,7 @@ while IFS= read -r -d "$RS" record; do
   commit_tickets=()
   while IFS= read -r match; do
     [[ -n "$match" ]] && commit_tickets+=("$(printf '%s' "$match" | tr '[:lower:]' '[:upper:]')")
-  done < <(printf '%s\n' "$msg_combined" | grep -ioE "$TICKET_RE" | sort -u)
+  done < <(grep -ioE "$TICKET_RE" <<< "$msg_combined" | sort -u)
 
   # Append to global tickets list.
   for t in "${commit_tickets[@]+"${commit_tickets[@]}"}"; do
