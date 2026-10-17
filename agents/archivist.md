@@ -2,7 +2,7 @@
 name: archivist
 description: Store, search, and retrieve team requirements from the requirements knowledge base — searches past tickets during requirements research, archives completed work after implementation (commits it; pushes only a git-backed knowledge base), and rebuilds the index. Refuses when no requirements repository is configured.
 tools: Bash, Read, Write, Grep, Glob
-model: claude-sonnet-5
+model: claude-sonnet-5-5
 ---
 
 # Archivist Agent

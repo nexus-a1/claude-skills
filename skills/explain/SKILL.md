@@ -1,7 +1,7 @@
 ---
 name: explain
 category: analysis
-model: claude-sonnet-5
+model: claude-sonnet-5-5
 userInvocable: true
 description: Explain one thing in plain English — a file, a function, an error message, a config key, a ticket, or a concept. Says what it is, how it works and what to watch out for, in a few short sections with no filler. It never edits, commits or fixes anything; the one command it runs is the shared Jira reader.
 argument-hint: "[path | symbol | error text | ticket key | question] [--more]"

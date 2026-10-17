@@ -806,13 +806,24 @@ _tasks_pick() {
 # directory with exactly that shape is accepted, because its path reaches this
 # script as an argument the model substituted.
 _tasks_check_input_dir() {
-  local dir="${1}" base="$HOME/.claude/tmp"
-  local LC_ALL=C
-  { [[ "$dir" =~ ^.*/tasks-input\.[A-Za-z0-9]{6}$ ]] && [ "${dir%/*}" = "$base" ]; } \
+  local dir="${1}"
+  _tasks_input_dir_named "$dir" \
     || _tasks_die "$EXIT_REFUSED" "not a task input directory: '$dir' (create one with --op input-dir)"
-  { [ -d "$dir" ] && [ ! -L "$dir" ] && [ -O "$dir" ]; } \
+  _tasks_input_dir_real "$dir" \
     || _tasks_die "$EXIT_REFUSED" "task input directory $dir is missing, a symlink, or not owned by you"
   TASKS_INPUT_DIR="$dir"
+}
+
+# The two halves of that check, as predicates, so an op that was handed a
+# second input directory (edit refuses a repeated --input) can remove it too
+# without dying before the first one is recorded.
+_tasks_input_dir_named() {
+  local dir="${1}" base="$HOME/.claude/tmp"
+  local LC_ALL=C
+  [[ "$dir" =~ ^.*/tasks-input\.[A-Za-z0-9]{6}$ ]] && [ "${dir%/*}" = "$base" ]
+}
+_tasks_input_dir_real() {
+  [ -d "${1}" ] && [ ! -L "${1}" ] && [ -O "${1}" ]
 }
 
 # One field of an input directory as a JSON string; "" when the file is absent.
@@ -1165,9 +1176,12 @@ _tasks_op_show() {
   esac
 }
 
-# The only way a status changes. Transitions:
+# Status changes that start, promote or close a task. Transitions:
 #   pending -> in_progress -> promoted, and any open status -> done (see `done`).
 # A promoted task stays promoted, with its link, until it is done.
+# The one other status change is `edit`'s pending -> pending move (proposed,
+# not_started, needs_discussion between each other), which reads the same
+# TASKS_PENDING_STATUSES list; nothing else changes a status.
 _tasks_op_set_status() {
   local id="" to="" promoted_to="" store=""
   while [ "$#" -gt 0 ]; do
@@ -1222,6 +1236,189 @@ _tasks_op_set_status() {
     exit "$EXIT_INDEX_STALE"
   fi
   jq -cn --arg id "$id" --arg to "$to" '{ok: true, id: $id, status: $to}'
+}
+
+# Change the editable fields of one open task (CL-130). Each field is one file
+# in a Write-tool input directory: a MISSING file leaves the field as it is, an
+# EMPTY file clears it. Title, priority and status can never be cleared.
+#
+# Presence is decided per file with -e, never with _tasks_field, which answers
+# "" for a missing file and an empty one alike — reading it that way would
+# clear every field the caller did not mean to touch.
+#
+# Read-only, whatever the input directory holds: id, project, created_at,
+# promoted_to, migrated_from (a file of any other name is refused, not
+# ignored). ticket_key follows the title; updated_at moves only when something
+# changed. A status can move only between the pending statuses, and only on a
+# pending task — starting, promoting and closing stay with set-status and done.
+readonly TASKS_EDIT_FIELDS="title priority status category scope related description"
+_tasks_op_edit() {
+  local id="" input="" problem="" seen_input=0
+  local -a extra_inputs=()
+  # The flag loop never dies: the exit trap removes only an input directory
+  # _tasks_check_input_dir has recorded, so a refusal before that check would
+  # leave the text the person typed on disk. Problems are remembered and
+  # reported after it.
+  while [ "$#" -gt 0 ]; do
+    case "${1}" in
+      --id|--input)
+        # A next word that is itself a flag is a missing value, not the value:
+        # `--id --input <dir>` must not swallow --input and leave <dir> unread.
+        if [ "$#" -lt 2 ] || [[ "${2}" == --* ]]; then
+          problem="${problem:-edit: ${1} needs a value}"
+          shift
+          continue
+        fi
+        if [ "${1}" = "--id" ]; then
+          id="${2}"
+        elif [ "$seen_input" -eq 0 ]; then
+          input="${2}"
+          seen_input=1
+        else
+          extra_inputs+=("${2}")
+          problem="${problem:-edit: --input was given more than once}"
+        fi
+        shift 2
+        ;;
+      *)
+        [ -n "$problem" ] || problem="edit: unknown option '${1}'"
+        shift
+        ;;
+    esac
+  done
+  # A second input directory cannot be recorded for the trap, so it is removed
+  # here when it has the shape of one — before the first check can refuse.
+  local extra
+  for extra in ${extra_inputs[@]+"${extra_inputs[@]}"}; do
+    if _tasks_input_dir_named "$extra" && _tasks_input_dir_real "$extra"; then
+      rm -rf -- "$extra" 2>/dev/null || _tasks_log "could not remove the input directory $extra"
+    fi
+  done
+  _tasks_check_input_dir "$input"
+  _tasks_preflight
+  [ -z "$problem" ] || _tasks_die "$EXIT_REFUSED" "$problem"
+  _tasks_require_id "$id"
+  _tasks_resolve
+  _tasks_require_writable
+  _tasks_pick "$id" "" open
+  id="$TASKS_PICKED"
+
+  # What the directory holds. Counted with find rather than listed: a name may
+  # carry a newline, and a count cannot be split. Every entry must be one of the
+  # allowlisted fields, so the two counts must agree.
+  local entries rc=0 field present="" present_count=0
+  entries="$(find "$input" -mindepth 1 -maxdepth 1 -exec printf x \; 2>/dev/null)" || rc=$?
+  [ "$rc" -eq 0 ] || _tasks_die "$EXIT_SYSTEM" "edit: could not list the input directory (find exit $rc) — nothing was changed"
+  for field in title priority status category scope related description; do
+    if [ -e "$input/$field" ] || [ -L "$input/$field" ]; then
+      if [ -L "$input/$field" ] || [ ! -f "$input/$field" ]; then
+        _tasks_die "$EXIT_REFUSED" "edit: $field in the input directory is not a regular file — nothing was changed"
+      fi
+      present="$present $field"
+      present_count=$((present_count + 1))
+    fi
+  done
+  if [ "${#entries}" -ne "$present_count" ]; then
+    # This branch always ends in _tasks_die, so a C locale here reaches nothing else.
+    local f name shown="a file with an unusual name" LC_ALL=C
+    for f in "$input"/* "$input"/.[!.]* "$input"/..?*; do
+      { [ -e "$f" ] || [ -L "$f" ]; } || continue
+      name="${f##*/}"
+      _tasks_word_in "$name" "$TASKS_EDIT_FIELDS" && continue
+      # Tested as one string: grep would pass a name whose every line matches.
+      if [[ "$name" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then shown="'$name'"; fi
+      break
+    done
+    _tasks_die "$EXIT_REFUSED" "edit: unexpected file $shown in the input directory — only $TASKS_EDIT_FIELDS can be edited; nothing was changed"
+  fi
+  [ "$present_count" -gt 0 ] || _tasks_die "$EXIT_REFUSED" "edit: nothing to change"
+
+  # One jq pass decides every value and builds the new document. Absent fields
+  # are read from /dev/null and ignored: the list of present ones says which
+  # count. The verdict comes back as data ({error} or {doc, changed}) so a
+  # refusal is never confused with jq failing to run.
+  local -a files=()
+  for field in title priority status category scope related description; do
+    if _tasks_word_in "$field" "$present"; then
+      files+=(--rawfile "v_$field" "$input/$field")
+    else
+      files+=(--rawfile "v_$field" /dev/null)
+    fi
+  done
+  local result
+  # shellcheck disable=SC2016  # a jq program
+  result="$(jq -c --arg present "$present" --arg now "$(_tasks_now)" \
+    --arg pending "$TASKS_PENDING_STATUSES" --arg priorities "$TASKS_PRIORITIES" "${files[@]}" \
+    "$TASKS_TICKET_KEY_DEF"'
+    def one: sub("\n$"; "");
+    . as $old
+    | ($present | split(" ") | map(select(. != ""))) as $fields
+    | {title: $v_title, priority: $v_priority, status: $v_status, category: $v_category,
+       scope: $v_scope, related: $v_related, description: $v_description}
+    | with_entries(select(.key as $k | $fields | index($k)) | .value |= one) as $raw
+    | ($pending | split(" ")) as $pend
+    | ($priorities | split(" ")) as $prio
+    | if ($raw | has("title")) and $raw.title == "" then {error: "a title cannot be empty"}
+      elif ($raw | has("title")) and ($raw.title | test("\n")) then {error: "a title must be a single line"}
+      elif ($raw | has("priority")) and $raw.priority == "" then {error: "priority cannot be empty"}
+      elif ($raw | has("priority")) and (($raw.priority | ascii_downcase) as $p | $prio | index($p) | not) then
+        {error: ("priority must be one of: " + $priorities)}
+      elif ($raw | has("status")) and $raw.status == "" then {error: "status cannot be empty"}
+      elif ($raw | has("status")) and (($old.status as $s | $pend | index($s)) | not) then
+        {error: ("task \($old.id) is \($old.status); its status changes through /todo-work or /todo done, not edit")}
+      elif ($raw | has("status")) and (($raw.status as $s | $pend | index($s)) | not) then
+        {error: ("status can only be set to one of: " + $pending + " through edit")}
+      else
+        ($raw | if has("priority") then .priority |= ascii_downcase else . end) as $new
+        | [$new | keys[] | select(($old[.] // "") != $new[.])] as $changed
+        | {changed: $changed, seen: $old,
+           doc: (reduce $changed[] as $k ($old; .[$k] = $new[$k])
+                 | if ($changed | index("title")) then .ticket_key = (.title | ticket_key) else . end
+                 | if ($changed | length) > 0 then .updated_at = $now else . end)}
+      end' "$TASKS_DIR/items/$id.json")" \
+    || _tasks_die "$EXIT_SYSTEM" "edit: could not read items/$id.json or the input directory — nothing was changed"
+  local why
+  why="$(jq -r '.error // empty' <<< "$result")" || _tasks_die "$EXIT_SYSTEM" "edit: could not read its own result"
+  [ -z "$why" ] || _tasks_die "$EXIT_REFUSED" "edit: $why — nothing was changed"
+
+  # The task may have been closed since it was picked: done archives it, then
+  # removes the open copy. Writing now would bring a closed task back as open,
+  # and even an edit that changes nothing must answer "already done", not ok.
+  if [ -e "$TASKS_DIR/archive/$id.json" ] || [ -L "$TASKS_DIR/archive/$id.json" ]; then
+    _tasks_die "$EXIT_REFUSED" "task $id is already done — nothing was changed"
+  fi
+  local changed
+  changed="$(jq -c '.changed' <<< "$result")" || _tasks_die "$EXIT_SYSTEM" "edit: could not read its own result"
+  if [ "$changed" = "[]" ]; then
+    _tasks_remove_input_dir
+    jq -cn --arg id "$id" '{ok: true, id: $id, changed: []}'
+    return 0
+  fi
+  if [ ! -f "$TASKS_DIR/items/$id.json" ] || [ -L "$TASKS_DIR/items/$id.json" ]; then
+    _tasks_die "$EXIT_REFUSED" "items/$id.json is no longer a regular task file — nothing was changed"
+  fi
+  # The write replaces the whole file, so a change another session made since
+  # the read above (a set-status, another edit) would be undone. Read it again
+  # and refuse if it is not the document the new values were built on.
+  local seen current
+  seen="$(jq -c '.seen' <<< "$result")" || _tasks_die "$EXIT_SYSTEM" "edit: could not read its own result"
+  current="$(jq -c '.' "$TASKS_DIR/items/$id.json")" \
+    || _tasks_die "$EXIT_SYSTEM" "edit: could not re-read items/$id.json — nothing was changed"
+  if [ "$current" != "$seen" ]; then
+    _tasks_die "$EXIT_REFUSED" "task $id was changed by another session while it was being edited — nothing was changed; run the edit again"
+  fi
+  local doc
+  doc="$(jq -c '.doc' <<< "$result")" || _tasks_die "$EXIT_SYSTEM" "edit: could not read its own result"
+  _tasks_write_json "$TASKS_DIR/items/$id.json" "$doc" \
+    || _tasks_die "$EXIT_SYSTEM" "FAILED at item-write: task $id is unchanged"
+  _tasks_remove_input_dir
+  if ! _tasks_write_index; then
+    _tasks_log "FAILED at index-write: task $id was edited in its own file, but manifest.json could not be rewritten — run /rebuild-index tasks"
+    jq -cn --arg id "$id" --argjson changed "$changed" '{ok: true, id: $id, changed: $changed, index: "stale"}'
+    TASKS_REPORTED=1
+    exit "$EXIT_INDEX_STALE"
+  fi
+  jq -cn --arg id "$id" --argjson changed "$changed" '{ok: true, id: $id, changed: $changed}'
 }
 
 # Close any open task. Order: archive file, then remove the item, then the
@@ -1889,20 +2086,23 @@ _tasks_op_init_store() {
 }
 
 _tasks_usage() {
-  _tasks_die "$EXIT_REFUSED" "usage: tasks.sh --op <resolve|input-dir|add|list|show|set-status|done|rebuild|validate-ref|migrate|migrate-store|init-store|parse-handoff> [options]"
+  _tasks_die "$EXIT_REFUSED" "usage: tasks.sh --op <resolve|input-dir|add|list|show|edit|set-status|done|rebuild|validate-ref|migrate|migrate-store|init-store|parse-handoff> [options]"
 }
 
 main() {
   { [ "${1:-}" = "--op" ] && [ -n "${2:-}" ]; } || _tasks_usage
   local op="${2}"
   shift 2
-  _tasks_preflight
+  # edit runs the preflight itself, once its input directory is recorded: a
+  # preflight refusal here would leave the text the person typed on disk.
+  [ "$op" = "edit" ] || _tasks_preflight
   case "$op" in
     resolve)      _tasks_op_resolve "$@" ;;
     input-dir)    _tasks_op_input_dir "$@" ;;
     add)          _tasks_op_add "$@" ;;
     list)         _tasks_op_list "$@" ;;
     show)         _tasks_op_show "$@" ;;
+    edit)         _tasks_op_edit "$@" ;;
     set-status)   _tasks_op_set_status "$@" ;;
     done)         _tasks_op_done "$@" ;;
     rebuild)      _tasks_op_rebuild "$@" ;;

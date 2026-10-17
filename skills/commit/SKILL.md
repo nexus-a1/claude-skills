@@ -1,7 +1,7 @@
 ---
 name: commit
 category: release-management
-model: claude-haiku-4-5
+model: claude-haiku-5-5
 userInvocable: true
 description: Stage and commit changes with a conventional commit message. Runs pre-commit checks automatically. Optionally prefixes with a ticket number.
 argument-hint: "[ticket-number]"

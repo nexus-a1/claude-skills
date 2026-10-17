@@ -3,7 +3,7 @@ name: standup
 category: Project Management
 description: Answer "where do we stand right now" in a few lines — what landed, what is in flight, what is waiting on you, what is next. Checks git, open PRs and work sessions, and keeps what it verified separate from what it could not.
 userInvocable: true
-model: claude-sonnet-5
+model: claude-sonnet-5-5
 argument-hint: ""
 allowed-tools: "Bash(bash:*), Bash(source:*), Bash(echo:*), Read"
 ---

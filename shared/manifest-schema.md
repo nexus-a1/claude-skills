@@ -256,7 +256,23 @@ picking an `in_progress` task again hands it off without a status change.
 
 Allowed transitions: pending → `in_progress` → `promoted`; any open status →
 `done`. A `promoted` task only moves to `done`, and keeps its `promoted_to`.
-Nothing else is allowed.
+These go through `--op set-status` and `--op done`. The one other status
+change is `--op edit` (`/todo edit`), which may move a pending task only to
+another pending status (`proposed`, `not_started`, `needs_discussion`); it
+refuses any status change on an `in_progress` or `promoted` task. No other
+status change is allowed.
+
+**Editing a task** (`tasks.sh --op edit`, CL-130). Apart from creating a
+task (add, migrate) and the status ops, edit is the only op that rewrites an
+open detail file. It may change `title`,
+`priority`, `status` (pending to pending only), `category`, `scope`,
+`description` and `related`; `ticket_key` is re-read from a changed title,
+and `updated_at` moves only when something changed. Read-only — never
+changed by edit: `id`, `project`, `created_at`, `promoted_to` and
+`migrated_from`. Done (archived) tasks cannot be edited. In the input
+directory a missing field file leaves the field as it is and an empty one
+clears it; `title`, `priority` and `status` cannot be cleared, and a file of
+any other name is refused.
 
 Reverse link: the requirements session's `state.json` records
 `"task": {"promoted_from": "<id or null>"}`.

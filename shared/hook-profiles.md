@@ -122,6 +122,33 @@ too.
 | `bash-token-filter` | advisory | ❌ off | ❌ off | Inject `-q`/`--silent` flags to reduce noisy output. Runs *inside* `redact-output` (not registered on its own, so only one hook ever rewrites a command); this name still disables it, and since CL-111 disabling it **skips the `python3` spawn** rather than starting an interpreter that exits immediately — worth ~65-70 ms on every Bash call. See [the note below](#the-token-filter-is-the-expensive-part-of-redact-output) |
 | `notify` | advisory | ❌ off | ❌ off | Send desktop notification on session end |
 | `output-guard` | advisory | ❌ off | ❌ off | Advisory nudge when Bash output exceeds thresholds |
+| `messaging-context` | advisory | ❌ off | ❌ off | On SessionStart and SubagentStart, add the [messaging contract](agent-messaging.md) summary plus the contract path, the request log path and the session's name. Never blocks a start |
+| `message-guard` | advisory | ❌ off | ❌ off | On SendMessage, refuse a message to **another session** that breaks the contract header or 5-line limit. See [the note below](#message-guard-advisory-but-it-blocks) |
+
+> <a id="message-guard-advisory-but-it-blocks"></a>**`message-guard` is advisory,
+> but it blocks.** It is the first advisory hook that refuses a tool call, and
+> it does so on the *content* of a message, not to protect anything. So it is
+> off under `minimal`, and it **fails open**: when it cannot run (no `jq`, a
+> payload it cannot read) the message goes through with a one-line note.
+>
+> It only checks a target it can positively identify as another session: a
+> `uds:` address, or an exact match with a `name` in Claude Code's session
+> registry (`$HOME/.claude/sessions/*.json`). A name that is also a member of any
+> team (`$HOME/.claude/teams/*/config.json`) counts as a teammate and passes.
+> Both files are undocumented Claude Code state, recorded against **Claude Code
+> 2.1.302**; if their layout changes, the hook checks less, never more. They
+> are read from `$HOME` because `CLAUDE_CONFIG_DIR` is not one of the variables
+> a hook may rely on, so a relocated config directory means nothing is checked.
+> The `*.key` files beside the registry are never opened, and neither hook
+> writes anything.
+>
+> `messaging-context` reads `storage.artifacts.messages` from the project's
+> `.claude/configuration.yml` to find the request log, under the same trust rule
+> as the redaction opt-out: the file it reads must be owned by you and not
+> writable by anyone, the location must not be git-typed, and the result must be
+> a plain absolute path. Otherwise it uses `.claude/messages/` and says why.
+> Both hooks read the registry through one helper, `plugin/hooks/session-registry.sh`,
+> so the name a session is told to sign with is the name the send check expects.
 
 > **How a hook receives the tool call.** Claude Code passes it as JSON on
 > **stdin**. A hook here depends only on `CLAUDE_PROJECT_DIR`,

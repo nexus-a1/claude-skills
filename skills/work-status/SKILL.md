@@ -1,7 +1,7 @@
 ---
 name: work-status
 category: project-setup
-model: claude-sonnet-5
+model: claude-sonnet-5-5
 userInvocable: true
 description: Show all active work sessions across brainstorms, requirements, proposals, and epics. Supports --brief for a narrative digest with latest updates and suggested next actions, --update to advance lifecycle on one session, and --sync to sweep them all.
 argument-hint: "[--brief | --update | --sync] [identifier]"

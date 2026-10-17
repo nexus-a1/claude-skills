@@ -1,7 +1,7 @@
 ---
 name: resume-work
 category: implementation
-model: claude-sonnet-5
+model: claude-sonnet-5-5
 userInvocable: true
 description: Resume any interrupted work session — brainstorm, requirements, proposal, epic, or implementation. Scans for incomplete sessions and continues from the last saved checkpoint. Accepts a ticketed identifier (JIRA-123-slug), a provisional draft (DRAFT-slug, offers to reconcile with a real ticket), or a bare brainstorm slug. Re-enters the original session's worktree if one was used; otherwise runs in the current working tree.
 argument-hint: "[JIRA-123-slug | DRAFT-slug | brainstorm-slug]"

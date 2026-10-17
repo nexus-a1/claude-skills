@@ -1,7 +1,7 @@
 ---
 name: release
 category: release-management
-model: claude-haiku-4-5
+model: claude-haiku-5-5
 userInvocable: true
 description: Create a GitHub release with a version tag and LLM-authored release notes. Takes an optional version and source branch; --pre-release marks it a pre-release, --fasttrack (-y / --yes) skips the confirmation prompt. Final step of the release workflow.
 argument-hint: "[version] [branch] [--pre-release|--prerelease] [--fasttrack|-y|--yes]"

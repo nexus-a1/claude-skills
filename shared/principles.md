@@ -16,6 +16,8 @@ These principles apply to all multi-agent skills and their spawned agents. Skill
 
 ## Communication Standards
 
+Rules 6-9 cover agents inside one session or team. Messages between separate sessions follow [agent-messaging.md](agent-messaging.md).
+
 6. **Terse agent-to-agent communication.** No pleasantries, no filler. State facts, report status, request action. Context windows are precious.
 
 7. **Structured status reporting.** Use consistent format: `[TYPE]: [SUBJECT] | Details: [1-3 sentences] | Action needed: [yes/no]`

@@ -1,6 +1,6 @@
 ---
 name: configuration-init
-model: claude-sonnet-5
+model: claude-sonnet-5-5
 category: project-setup
 description: Initialize project configuration file with interactive wizard. Also supports `validate` and `migrate` modes for existing installs.
 argument-hint: "[validate | migrate]"
@@ -670,6 +670,7 @@ ${ARTIFACTS_YAML}          # shared artifacts now carry location: team-knowledge
     requirements:      { location: local, subdir: requirements }
     product-knowledge: { location: local, subdir: . }
     tasks:             { location: local, subdir: tasks }
+    messages:          { location: local, subdir: messages }
 ```
 
 **Add requirements behavior flags:**

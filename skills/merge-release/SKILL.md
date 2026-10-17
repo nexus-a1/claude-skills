@@ -1,7 +1,7 @@
 ---
 name: merge-release
 category: release-management
-model: claude-haiku-4-5
+model: claude-haiku-5-5
 userInvocable: true
 description: Merge an approved release PR into its target branch. Takes the release branch or the version it is for. Validates approval/checks/conflicts via gh, then merges. Step 3 of the release workflow.
 argument-hint: "[release-branch | version]"

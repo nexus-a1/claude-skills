@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.49.0] - 2026-10-17
+
+## What's Changed
+
+31 commits since v1.48.2: 7 feat, 11 fix, 3 docs, 3 test, 1 chore, 1 ci. No breaking changes.
+
+### Features
+
+- **shared/hooks**: Cross-session agent messaging contract (`shared/agent-messaging.md`). A SessionStart/SubagentStart hook injects a short summary and the session's name; a PreToolUse hook on `SendMessage` refuses messages to another session that break the header or the 5-line cap. Both are advisory and can be turned off (`NEXUS_DISABLED_HOOKS=messaging-context,message-guard`). New `storage.artifacts.messages` setting for the request log. — CL-150 (#445)
+- **todo**: `/todo edit <number|id>` to change an open task's fields, backed by `tasks.sh --op edit`. — CL-130 (#441, #442)
+- **todo**: Add a task from its title alone. — CL-130
+- **todo**: Title-only tasks show only the fields that carry information. — CL-131 (#443)
+
+### Bug Fixes
+
+- **hooks**: Messaging hooks hardened after QA review: shared name cleaning, empty `to` handling, character-based receiver length, `main` never checked. — CL-150
+- **tasks**: `edit` refuses when the task changed since it was read, treats a flag after `--id`/`--input` as a missing value, and cleans up its input dir on a refused preflight. — CL-130
+- **todo**: Edit questions split into calls of four; typed values are re-asked when invalid. — CL-130
+
+### Other Changes
+
+- **models**: Catalog bumped to Haiku 5.5 and Sonnet 5.5. (#440)
+- **ci**: All jobs moved to the ARC container runner. (#438)
+- Docs and tests for the above.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.48.2...v1.49.0
+
 ## [1.48.2] - 2026-10-10
 
 ## What's Changed

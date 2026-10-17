@@ -1,7 +1,7 @@
 ---
 name: create-release-branch
 category: release-management
-model: claude-haiku-4-5
+model: claude-haiku-5-5
 userInvocable: true
 description: Create a release/vX.Y.Z branch from the repo's default branch (default), any branch, or a specific tag using tag@vX.Y.Z syntax. Takes a version and an optional source. Step 1 of the release workflow.
 argument-hint: "<version> [source]"

@@ -267,6 +267,7 @@ storage:
     work:              { location: local, subdir: work }
     refactoring:       { location: local, subdir: work/refactoring-sessions }
     tasks:             { location: local, subdir: tasks }
+    messages:          { location: local, subdir: messages }
 
 requirements:
   auto_search: true
@@ -326,6 +327,7 @@ All skills that use multiple agents support configurable execution mode (`"subag
 | `meetings` | `local` | `meetings` | `/meeting` |
 | `refactoring` | `local` | `work/refactoring-sessions` | `refactorer` agent |
 | `tasks` | `local` | `tasks` | `/todo`, `/todo-work`, `/rebuild-index tasks` — `mode: global` shares one store across projects; a git-typed location is refused either way |
+| `messages` | `local` | `messages` | `messaging-context` hook: the cross-session request log (`requests.md`) its start text points to — see `shared/agent-messaging.md`; a git-typed location is refused |
 | `proposals` | `local` | `proposals` | `/create-proposal` |
 | `requirements` | `local` | `requirements` | `/archive-requirements`, `/search-requirements`, `archivist` agent |
 | `product-knowledge` | `local` | `.` | `product-expert` agent |

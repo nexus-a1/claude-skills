@@ -1,6 +1,6 @@
 ---
 name: search-requirements
-model: claude-haiku-4-5
+model: claude-haiku-5-5
 category: requirements-kb
 description: Search team requirements repository for similar past work
 argument-hint: <query>

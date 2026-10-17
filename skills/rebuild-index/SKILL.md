@@ -1,6 +1,6 @@
 ---
 name: rebuild-index
-model: claude-haiku-4-5
+model: claude-haiku-5-5
 category: project-setup
 description: Rebuild manifest.json for any artifact storage type. Scans directories and regenerates from scratch.
 argument-hint: <work|brainstorms|proposals|refactoring|product-knowledge|requirements|tasks|all>

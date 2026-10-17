@@ -140,6 +140,7 @@ storage:
     work:              { location: local, subdir: work }
     refactoring:       { location: local, subdir: work/refactoring-sessions }
     tasks:             { location: local, subdir: tasks }
+    messages:          { location: local, subdir: messages }
     # tasks:           { location: home, subdir: tasks, mode: global }
 
 

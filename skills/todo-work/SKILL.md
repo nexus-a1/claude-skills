@@ -1,6 +1,6 @@
 ---
 name: todo-work
-model: claude-sonnet-5
+model: claude-sonnet-5-5
 category: project-setup
 description: Pick a pending or in-progress task from the task store, mark it in progress, and hand it off to /review-plan, /create-requirements or /implement. A task promoted to /create-requirements is linked to the session it becomes.
 argument-hint: "[task number] [--all]"
@@ -121,15 +121,22 @@ entry whose `n` is N. Skip the question.
    `Tasks, all projects ({total}):` with `--all` — and then each line starts
    with the task's `[{project}]` (`[untagged]` when it is null).
 
+   Leave out `[{priority}] ` when the priority is `medium` or empty. Print any
+   other value as stored, for example `[high]` or `[unknown]`.
+
    Append ` (in progress)` to the line of every task whose `status` is
    `in_progress`, so unfinished work is told apart from work not yet started.
 
-2. Use AskUserQuestion with the first three as quick picks:
+2. Use AskUserQuestion with the first three tasks of the list, in list order, as
+   quick picks:
 
    - header: `"Pick task"`
    - question: `"Which task should we work on?"`
    - options (at most 3 tasks + `Cancel`):
-     - `{title}` / `{priority} · {category}`, plus ` · in progress` for an in-progress task
+     - `{title}` / `#{n}`, then ` · {priority}` only when the priority is not
+       `medium` or empty, ` · {category}` only when the category is not empty,
+       and ` · in progress` only for an in-progress task. A task with none of
+       these gets just `#{n}`. Never print `none` or an empty field.
      - … up to 3 tasks …
      - `Cancel` / `Don't start any task — exit`
    - multiSelect: `false`
@@ -164,7 +171,9 @@ the task. Show it, and remember that neither handoff — `/review-plan` or
 `/create-requirements` — is allowed for this task (Step 5); `Just show details`
 is.
 
-Display:
+Display the block below. Leave out the `Category` line when the category is
+empty, and the `Scope` line when the scope is empty; never print `none` for
+them. `Priority` and `Status` are always shown.
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

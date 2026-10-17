@@ -1,6 +1,6 @@
 ---
 name: review-plan
-model: claude-sonnet-5
+model: claude-sonnet-5-5
 category: planning
 userInvocable: true
 description: Validate an ad-hoc implementation plan through architect and quality-guard (and optionally security-auditor), then output a revised plan with adjustments applied.
