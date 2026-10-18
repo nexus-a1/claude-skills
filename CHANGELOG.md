@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.50.1] - 2026-10-18
+
+## What's Changed
+
+1 fix since v1.50.0 (plus merges). No breaking changes.
+
+### Bug Fixes
+
+- **pr-review**: The verdict now follows from the findings by one written rule, for both review paths and both modes. Any surviving critical or important finding means Request Changes (local: Needs major rework / Needs fixes first); none means Approve (local: Ready for PR). Needs Discussion can only stand in for Approve. Before this, only local mode had a rule. — CL-133 (#444)
+- **pr-review**: On the classic path, quality-guard (BLOCKING / IMPORTANT / ADVISORY) and security-auditor (CRITICAL / MEDIUM / LOW) levels are now mapped onto critical / important / minor before counting, so a BLOCKING finding can no longer miss the critical count. — CL-133
+- **rules**: `rules/pr-review.md` said "Needs Revision" where the skill says "Needs Discussion"; both now say "Needs Discussion". — CL-133
+
+### Other Changes
+
+- New `tests/pr-review/05-verdict-rules.test` pins the rule table, the mapping and the verdict names; one line added to `docs/skills.md`.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.50.0...v1.50.1
+
 ## [1.50.0] - 2026-10-18
 
 ## What's Changed

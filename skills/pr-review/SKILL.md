@@ -575,7 +575,23 @@ Then continue to the shared body below.
 
 #### If the classic path ran
 
-Merge agent outputs into a unified review. Header varies by mode:
+Merge agent outputs into a unified review.
+
+**One severity scale.** The classic-path agents report on three different scales, and the report
+and the verdict use only `critical` / `important` / `minor`. Fold every finding onto that scale
+before grouping it:
+
+| Agent says | Counts as |
+|---|---|
+| code-reviewer `CRITICAL`, quality-guard `BLOCKING`, security-auditor `CRITICAL` | critical |
+| code-reviewer `IMPORTANT`, quality-guard `IMPORTANT`, security-auditor `MEDIUM` | important |
+| code-reviewer `MINOR`, quality-guard `ADVISORY`, security-auditor `LOW` | minor |
+
+A finding two agents report at different levels takes the higher one, unless quality-guard
+refuted the higher claim with evidence. quality-guard's own gate result (`APPROVED` /
+`CONDITIONAL` / `REJECTED`) is not the review's verdict: only its findings carry over.
+
+Header varies by mode:
 
 **Remote mode header:**
 ```markdown
@@ -659,6 +675,23 @@ Merge agent outputs into a unified review. Header varies by mode:
 
 [Final summary]
 ```
+
+**Verdict rule (both paths, both modes).** The verdict is read off the surviving findings, not
+chosen. Count what is left after verification and refutation, then take the first row that fits:
+
+| Surviving findings | Remote recommendation | Local verdict |
+|---|---|---|
+| At least one critical | Request Changes | Needs major rework |
+| No critical, at least one important | Request Changes | Needs fixes first |
+| Neither | Approve | Ready for PR |
+
+`Needs Discussion` is remote-only and replaces `Approve` in the last row when the review ends
+on a question only the author can answer — an unclear requirement, a design choice the diff
+does not explain. Say what the question is. It never replaces `Request Changes`: a critical or
+important finding is a defect to fix, not a topic.
+
+A finding the second opinion contested (`does-not-hold`) still counts at its stated severity.
+It is reported as contested, and the verdict line says so.
 
 ---
 

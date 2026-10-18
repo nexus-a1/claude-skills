@@ -94,8 +94,12 @@ Nice-to-have improvements or low-impact optimizations.
 1. {Priority ordered actions}
 
 ## 💭 Overall Assessment
-**Recommendation**: [✅ Approve | 🔄 Request Changes | ⛔ Needs Revision]
+**Recommendation**: [✅ Approve | 🔄 Request Changes | 💬 Needs Discussion]
 ```
+
+The recommendation follows from the findings: any Critical or Important issue means Request
+Changes; none means Approve. Needs Discussion is for a review that found no such issue but
+ends on a question only the author can answer.
 
 ## Supply-Chain Review
 
