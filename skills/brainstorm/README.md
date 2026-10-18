@@ -94,7 +94,7 @@ After brainstorming, you have several options:
 /brainstorm promote {slug}
 /brainstorm promote {slug} JIRA-123
 ```
-Marks the brainstorm as promoted, updates the manifest, and launches `/create-requirements --from-brainstorm {slug}` with bidirectional linking. The requirements session will have the brainstorm's implementation picture and work breakdown loaded as prior art.
+Marks the brainstorm as promoted, updates the manifest, and prints the command that continues it: `/create-requirements --from-brainstorm {slug} --ticket JIRA-123` (without the `--ticket` part when no ticket was given). Running it links the two both ways. The requirements session will have the brainstorm's implementation picture and work breakdown loaded as prior art.
 
 ### Option 2: Create Detailed Requirements
 ```bash

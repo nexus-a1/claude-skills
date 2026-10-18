@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.50.0] - 2026-10-18
+
+## What's Changed
+
+19 commits since v1.49.0: 4 feat, 9 fix, 2 docs, 1 chore (plus merges). No breaking changes.
+
+### Features
+
+- **create-requirements**: Local ticket IDs for projects with no tracker. Set `project.ticket_prefix` (e.g. `MT`) in `.claude/configuration.yml`; when no ticket is given, the skill offers the next `MT-N` (highest N in branches, commit subjects and work folders, plus 1), re-checks it before creating the branch, and never picks a number without asking. With no prefix set, the `DRAFT-{slug}` path is unchanged. New `shared/local-ticket/next-id.sh`. — CL-151 (#446)
+- **create-requirements**: `--ticket <KEY>` and `--help`, with leading options read by a deterministic argument parser instead of the model. — CL-152 (#447)
+
+### Bug Fixes
+
+- **create-requirements**: Parser hardening from review: ASCII-only keys in any locale, one length cap, whole-value ticket check, guarded arguments-file delete, no reconcile verdict when arguments start with a blank line. — CL-152
+- **create-requirements**: A ticket typed at the local-ID prompt or re-check is validated; deferred brainstorm/meeting links are written once the ID is final; git errors other than "not a git repository" are reported, not treated as empty history. — CL-151
+- **validators**: D1 keeps running past the first shellcheck finding. — CL-152
+
+### Other Changes
+
+- Docs (`docs/configuration.md`, `docs/skills.md`, configuration template) and tests for the above.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.49.0...v1.50.0
+
 ## [1.49.0] - 2026-10-17
 
 ## What's Changed

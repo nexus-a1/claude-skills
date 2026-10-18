@@ -135,6 +135,13 @@ If `$ARGUMENTS` begins with `promote`, handle the promote flow instead of normal
    validation failure downstream). `/create-requirements` Stage 1.1 will prompt
    for the ticket itself when none was pre-filled.
 
+   **Check `{ticket-id}`, whether it was given or typed here.** The whole value
+   must be exactly `[A-Za-z]+-[0-9]+` and be at most 32 characters — the shape
+   `/create-requirements --ticket` accepts — and is stored uppercase (`proj-7` →
+   `PROJ-7`). If it does not match, say so and ask again; a blank answer leaves it
+   unset. Step 7 prints it after `--ticket`, where a value of another shape stops
+   `/create-requirements` with an error instead of asking for the ticket.
+
 5. **Update brainstorm state** (`$BRAINSTORM_ROOT/{slug}/state.json`):
    ```json
    {
@@ -157,12 +164,13 @@ If `$ARGUMENTS` begins with `promote`, handle the promote flow instead of normal
    ```
    Brainstorm '{slug}' promoted → {ticket-id}
 
-   Run: /create-requirements --from-brainstorm {slug} {ticket-id}
+   Run: /create-requirements --from-brainstorm {slug} --ticket {ticket-id}
    ```
-   **Omit the trailing `{ticket-id}` token entirely if it wasn't provided** — never
-   substitute `{slug}` in its place. `/create-requirements` Stage 1.1 takes a
-   `[A-Z]+-[0-9]+` token from its arguments as the ticket and asks for one when
-   there is none; Stage 1.3b loads the brainstorm context.
+   **Omit the whole `--ticket {ticket-id}` part if no ticket was provided** — never
+   substitute `{slug}` in its place, and never print `--ticket` without a value.
+   `/create-requirements` takes the ticket from `--ticket` and asks for one when
+   there is none; it no longer picks a ticket-shaped word out of free text.
+   Stage 1.3b loads the brainstorm context.
 
 ---
 

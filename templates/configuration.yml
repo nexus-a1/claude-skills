@@ -160,10 +160,20 @@ storage:
 #                without it: in a repository, the main checkout's folder name;
 #                outside every repository, this folder's name. Repositories
 #                below a parent configuration always use their own folder name.
+#
+#   ticket_prefix  For a project with no ticket tracker. When set (e.g. MT),
+#                /create-requirements started without a ticket offers the next
+#                local ID, MT-N (highest N in branches, commits and work
+#                folders, plus 1), for you to confirm. A confirmed ID works like
+#                any ticket. Uppercase letters A-Z only; DRAFT is reserved.
+#                Unset: today's DRAFT-{slug} behaviour. No lock or counter:
+#                two sessions at the same moment can pick the same N, and IDs
+#                on another clone are seen only once pushed and fetched.
 # -----------------------------------------------------------------------------
 # project:
 #   ecosystem: php-symfony
 #   name: my-project
+#   ticket_prefix: MT
 
 
 # -----------------------------------------------------------------------------

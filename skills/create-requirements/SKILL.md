@@ -3,8 +3,8 @@ name: create-requirements
 category: planning
 model: claude-opus-5-5
 userInvocable: true
-description: Run a multi-agent pipeline to produce detailed technical requirements and a ticket-ready summary. Creates a feature branch, persists session state, and supports resume. Optionally seeds from a prior brainstorm or meeting session, auto-fetches a known Jira ticket's description, or starts ticket-less via --no-ticket (reconcile with a real ticket later via the reconcile subcommand).
-argument-hint: "[--light] [--from-brainstorm <slug>] [--from-meeting <slug>] [--no-ticket] [feature-description] | reconcile <draft-id> <ticket-id> | --from-task <id> (handed off by /todo-work)"
+description: Run a multi-agent pipeline to produce detailed technical requirements and a ticket-ready summary. Creates a feature branch, persists session state, and supports resume. Optionally seeds from a prior brainstorm or meeting session, takes the ticket from --ticket <KEY> and auto-fetches its Jira description, or starts ticket-less via --no-ticket (reconcile with a real ticket later via the reconcile subcommand). --help prints usage and starts nothing.
+argument-hint: "[--help] [--ticket <KEY> | --no-ticket] [--light] [--from-brainstorm <slug>] [--from-meeting <ref>] [feature-description] | <TICKET-KEY> | reconcile <draft-id> <ticket-id> | --from-task <id> (handed off by /todo-work)"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, Workflow, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
 ---
 
@@ -127,8 +127,8 @@ backtick or a `$( )` in a feature description, or in task text handed off by
 /todo-work, runs. So **no fence in this skill reads the arguments placeholder.**
 A fence that needs the argument text reads it from a file you write.
 
-Before the first fence that reads it (Reconcile Step A, or §1.1's ticket fetch),
-create the directory in its own call:
+Argument Routing (below) creates the directory as its first step, unless the run
+is a /todo-work task handoff, which never uses it. Create it in its own call:
 
 ```bash
 mkdir -p -m 700 "$HOME/.claude/tmp" && chmod 700 "$HOME/.claude/tmp"
@@ -141,8 +141,10 @@ nothing else, in `<ARGS_DIR printed above>/arguments`. Write it once and reuse
 the file. The `chmod` matters: `-m 700` applies only to a directory `mkdir`
 creates, so an existing `~/.claude/tmp` at 755 would leave the text readable.
 
-Once the last fence that reads it has run (Reconcile Step C, or §1.1's ticket
-fetch), remove the directory so the typed text does not stay behind:
+Remove it on every way out, so the typed text does not stay behind: after
+`--help` or a parse error (Argument Routing), when Reconcile finishes or fails,
+when Stage 0 resumes an existing session, and at the end of §1.1 — after its
+ticket fetch, or where the fetch is skipped. Run this fence each time:
 
 ```bash
 ARGS_DIR_TO_REMOVE="<ARGS_DIR printed above>"
@@ -157,11 +159,85 @@ esac
 
 ---
 
+## Argument Routing
+
+Runs first, before Reconcile and before Stage 0. It decides once what the
+arguments mean, in code, and every later section reads that **verdict** — never
+the argument text. The one exception is Reconcile Steps A and C, which re-read the
+arguments file word by word; the parser sets `reconcile` only for the exact
+three-word shape those steps expect, so the two cannot disagree. Reading the text by eye is how a description that said "fix
+UTF-8 handling" used to start a session on ticket UTF-8.
+
+1. **Task handoff.** If the first line of the arguments begins with
+   `--from-task `, this is a /todo-work handoff: skip the rest of this section and
+   go to Stage 1 (§1.1, task mode). The parser never sees task text, so nothing in a
+   task description is ever read as an option or a ticket.
+2. **Parse.** Create the arguments directory and Write the arguments file (see
+   Arguments in Shell Code), then run the parser on it:
+
+   ```bash
+   [ -n "<ARGS_DIR printed above>" ] && [ -f "<ARGS_DIR printed above>/arguments" ] \
+     || { echo "ERROR: write the arguments file first — see Arguments in Shell Code" >&2; exit 1; }
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/create-requirements/parse-args.sh" ]; then
+     PARSER="${CLAUDE_PLUGIN_ROOT}/shared/create-requirements/parse-args.sh"
+   else
+     PARSER="$HOME/.claude/shared/create-requirements/parse-args.sh"
+   fi
+   PARSE_RC=0
+   bash "$PARSER" --op parse --input "<ARGS_DIR printed above>" || PARSE_RC=$?
+   echo "PARSE_RC=$PARSE_RC"
+   ```
+
+   It prints one JSON object, the verdict. Options are read only at the start of
+   the arguments; the first word that is not an option begins the description,
+   so option words inside a description do nothing.
+3. **Help.** If the verdict has `"help": true`, print the usage, show it to the
+   user exactly as printed, run the cleanup fence, and **stop**. No Stage 0, no
+   question, no state, no branch:
+
+   ```bash
+   if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/create-requirements/parse-args.sh" ]; then
+     bash "${CLAUDE_PLUGIN_ROOT}/shared/create-requirements/parse-args.sh" --op usage
+   else
+     bash "$HOME/.claude/shared/create-requirements/parse-args.sh" --op usage
+   fi
+   ```
+
+   Help wins over every other option and every error.
+4. **Parse error.** `PARSE_RC=20` means the arguments are wrong — an unknown
+   leading option, a bad or repeated `--ticket`, or `--ticket` with `--no-ticket`.
+   Show the verdict's `error` to the user, run the cleanup fence, and **stop**.
+   Any other non-zero `PARSE_RC` means the parser could not read the arguments:
+   say so, run the cleanup fence, and stop. A parser that read nothing decided
+   nothing — never carry on as if there were no ticket.
+5. **Reconcile.** If the verdict has `"reconcile": true`, go to Reconcile
+   Subcommand below.
+6. **Otherwise** keep the verdict as `{verdict}` and go to Stage 0. Later sections
+   read its fields: `ticket` (already uppercase, or null), `no_ticket`, `light`,
+   `from_brainstorm` and `from_meeting` (null when not given, `""` for a bare flag
+   that asks for the picker), and `description`. Nothing reads the raw argument
+   text after this point, so delete that file now and keep only the directory,
+   which §1.1's ticket fetch writes into:
+
+   ```bash
+   ARGS_DIR_OWN="<ARGS_DIR printed above>"
+   # Same shape check as the cleanup fence: only the directory mktemp printed.
+   case "${ARGS_DIR_OWN#"$HOME"/.claude/tmp/create-requirements-args.}" in
+     "$ARGS_DIR_OWN"|''|*[!A-Za-z0-9]*) exit 1 ;;
+   esac
+   [ -d "$ARGS_DIR_OWN" ] && [ ! -L "$ARGS_DIR_OWN" ] || exit 1
+   rm -f "$ARGS_DIR_OWN/arguments"
+   ```
+
+---
+
 ## Reconcile Subcommand
 
-**Detect before Stage 0.** If `$ARGUMENTS` is **exactly three** whitespace-separated
-tokens and the first token is literally `reconcile`, this is the reconcile
-subcommand, not a feature description — route here instead of Stage 0.
+**Detect before Stage 0.** Argument Routing sends a run here when the verdict's
+`reconcile` is true: the arguments are **exactly three** whitespace-separated
+tokens, the first is literally `reconcile`, and no option comes ahead of them
+(Steps A and C read the arguments file word by word, so a leading option would
+shift the identifiers by one).
 
 A description that merely starts with the word "reconcile" but doesn't match
 this exact three-token shape (e.g. `"reconcile the login and export flows"`,
@@ -273,11 +349,14 @@ echo "RECONCILE_RC=$rc NEW_ID=$new_id"
   already written for the user (the AC-3.3a collision message, the
   AC-3.3b rollback confirmation) — and stop. Do not paraphrase or retry.
 
+Either way — and when Step A stops on an invalid identifier — run the arguments
+cleanup fence before stopping.
+
 ---
 
 ## Lightweight Mode
 
-If `$ARGUMENTS` begins with `--light`, strip the flag and enable lightweight mode:
+If the verdict's `light` is true (Argument Routing), enable lightweight mode:
 
 - Output to user: "Lightweight mode enabled: business-analyst runs on Sonnet. Research agents and quality gates unchanged."
 - **context-builder**: unchanged
@@ -329,7 +408,7 @@ Active requirements sessions:
 Select session to resume, or [n] to start fresh:
 ```
 
-Use AskUserQuestion. It shows at most 4 options, so offer the three most recently updated sessions plus Start new session; the full list stays in the text above. On selection: load state from `$WORK_DIR/{identifier}/state.json` and resume from the recorded stage. On **n**: proceed to Stage 1.
+Use AskUserQuestion. It shows at most 4 options, so offer the three most recently updated sessions plus Start new session; the full list stays in the text above. On selection: run the arguments cleanup fence (Arguments in Shell Code), then load state from `$WORK_DIR/{identifier}/state.json` and resume from the recorded stage. On **n**: proceed to Stage 1.
 
 **If no active sessions:** Proceed directly to Stage 1.
 
@@ -382,9 +461,10 @@ place options or ticket keys are read from.
    - §1.2 uses the text **between the markers** as `{feature_description}` — the
      header lines are never part of it.
 
-**Otherwise, check for `--no-ticket`.** If `$ARGUMENTS` contains `--no-ticket`,
-strip the flag and set `{no_ticket_mode: true}`. Skip the ticket prompt
-below entirely — there is no `{ticket}` yet. The provisional `DRAFT-{slug}`
+**Otherwise, check for `--no-ticket`.** If the verdict's `no_ticket` is true,
+set `{no_ticket_mode: true}`. Skip the ticket prompt
+below entirely — there is no `{ticket}` yet, unless the **Local ticket ID**
+offer below turns this into a ticketed run. The provisional `DRAFT-{slug}`
 identifier is composed in §1.4 once the slug is known; §1.5 (base branch)
 and §1.6 (branch creation) are no-ops in this mode. A free-text
 feature description that happens to start with the word "reconcile" is
@@ -392,40 +472,83 @@ still just a description here — the `reconcile` subcommand is a distinct
 top-level routing decision made before Stage 0, not something this stage
 re-interprets.
 
-**Otherwise, check for a pre-filled ticket** — `/brainstorm promote` hands off with
-`--from-brainstorm {slug} {ticket-id}`, where `{ticket-id}` (if the user provided
-one) already matches the ticket format. If `$ARGUMENTS` (after stripping
-`--light` and `--from-brainstorm {slug}`) contains a token matching
-`[A-Z]+-[0-9]+`, use it directly as `{ticket}` and skip the prompt below.
+**Otherwise, use the verdict's ticket.** If the verdict's `ticket` is set, use it as
+`{ticket}` and skip the prompt below. It came from `--ticket <KEY>`, or from the
+shortcut where the whole argument is one ticket key (`/create-requirements PROJ-12`,
+and the older `/brainstorm promote` form `--from-brainstorm {slug} {ticket-id}`).
+A ticket-shaped word inside the description — `UTF-8`, `SHA-256`, "follow-up to
+PROJ-150" — is never the ticket: the verdict's `ticket` is null for it.
+
+**Local ticket ID (`project.ticket_prefix`).** Skip this in task mode. Otherwise
+run it when `{no_ticket_mode}` is true, or when the verdict has no ticket and
+the ticket prompt below is next — a plain run with no ticket, and a
+`--from-brainstorm` or `--from-meeting` run with no ticket, alike. It asks the shared script for the next local ID; the script
+prints nothing when the project sets no prefix:
+
+```bash
+LOCAL_ID=$(bash "${CLAUDE_PLUGIN_ROOT}/shared/local-ticket/next-id.sh")
+rc=$?
+# Use only a value of the ticket shape, whatever the script printed.
+[[ "$LOCAL_ID" =~ ^[A-Z]+-[0-9]+$ ]] || LOCAL_ID=""
+echo "LOCAL_ID_RC=$rc"
+echo "LOCAL_ID=$LOCAL_ID"
+```
+
+- `LOCAL_ID_RC` non-zero: show the script's stderr to the user (it names the bad
+  key or the source it could not read) and carry on exactly as if no prefix were
+  set. Never offer a guessed ID.
+- `LOCAL_ID` empty: no prefix is set. Carry on unchanged.
+- Otherwise, under `{no_ticket_mode}`, ask with AskUserQuestion:
+  `Use <LOCAL_ID printed above>` / `Continue as DRAFT (no branch)`, with the
+  tool's free-text Other for typing a ticket.
+  - **Use**: `{ticket}` = `<LOCAL_ID printed above>`, set `{ticket_derived: true}`,
+    clear `{no_ticket_mode}`. From here the run is ticketed: §1.5 and §1.6 run.
+  - **Continue as DRAFT**: nothing changes; the run is a draft exactly as today.
+  - **A typed ticket**: validate it as below and use it as-is. Clear
+    `{no_ticket_mode}`; `{ticket_derived}` stays false.
+- Otherwise (the ticket prompt is next): add the option
+  `Use <LOCAL_ID printed above> (next local ID)` to the prompt below. Choosing it
+  sets `{ticket}` to that ID and `{ticket_derived: true}`; a typed ticket is used
+  as-is with `{ticket_derived}` false.
+
+Never write the local ID into the arguments file or the ticket file: a local ID
+exists in no tracker, so the auto-fetch below is skipped for it.
 
 **Otherwise**, use AskUserQuestion:
 ```
 What is the ticket number for this work?
 
-Format: PROJECT-NUMBER (e.g., JIRA-123, PROJ-456, SKILLS-001)
+Format: PROJECT-NUMBER (e.g., JIRA-123, PROJ-456, SKILLS-001), any case
 ```
 
-**VALIDATION**: The ticket MUST match pattern `[A-Z]+-[0-9]+` (e.g., JIRA-123, SKILLS-001).
+**VALIDATION**: The answer MUST match `[A-Za-z]+-[0-9]+`, in any case,
+be at most 32 characters (the same rule as `--ticket`), and is stored uppercase: `proj-7` is stored as `PROJ-7`. This applies in task mode too.
 If user provides a slug instead of ticket number, ask them to provide the ticket number.
 
 Store as `{ticket}`. The full `{identifier}` is composed in §1.4 after the feature context is known.
 
 **Auto-fetch when no description was supplied yet** (skip if `{no_ticket_mode}`
-is true, since there is no `{ticket}` to look up): if `{ticket}` is set and
-$ARGUMENTS carries no feature description text, fetch the ticket read-only
-before asking §1.2's manual question. Re-derive the key inside this same
-fence via the same regex used above — never splice the previously-stored
-`{ticket}` text directly into the command line, since it only takes a
-`grep -oE` extraction (cheap, and it guarantees the value that reaches
-`jira.sh` can never carry shell metacharacters) to make this safe by
-construction rather than by convention:
+is true, since there is no `{ticket}` to look up, and skip if `{ticket_derived}`
+is true, since a local ID is in no tracker): if `{ticket}` is set and
+the verdict's `description` is empty, fetch the ticket read-only before asking
+§1.2's manual question. It looks up the resolved `{ticket}` — whichever way it
+was set — and never searches the arguments for a key. Use the **Write** tool to
+put `{ticket}`, and nothing else, in `<ARGS_DIR printed above>/ticket`; the fence
+reads it back and checks its shape in the same call, so model-written text never
+becomes part of a command line:
 
 ```bash
-[ -n "<ARGS_DIR printed above>" ] && [ -f "<ARGS_DIR printed above>/arguments" ] \
-  || { echo "ERROR: write the arguments file first — see Arguments in Shell Code" >&2; exit 1; }
-TICKET_KEY=$(grep -oE '[A-Z]+-[0-9]+' "<ARGS_DIR printed above>/arguments" | head -1)
-if [[ -n "$TICKET_KEY" ]]; then
+[ -n "<ARGS_DIR printed above>" ] && [ -f "<ARGS_DIR printed above>/ticket" ] \
+  || { echo "ERROR: write the ticket file first" >&2; exit 1; }
+# Byte-wise ranges: under a UTF-8 locale [A-Z] can match non-ASCII letters.
+export LC_ALL=C
+TICKET_KEY=""
+read -r TICKET_KEY < "<ARGS_DIR printed above>/ticket" || [ -n "$TICKET_KEY" ]
+if [ "${#TICKET_KEY}" -le 32 ] && [[ "$TICKET_KEY" =~ ^[A-Z]+-[0-9]+$ ]]; then
   bash "${CLAUDE_PLUGIN_ROOT}/shared/jira/jira.sh" --op view --key "$TICKET_KEY"
+else
+  echo "TICKET_KEY is not a ticket key; not looked up" >&2
+  exit 1
 fi
 ```
 
@@ -438,15 +561,20 @@ the user here. This reuses the same `jira.sh` the `/jira`
 command calls, including its ADF-to-plain-text rendering for rich
 descriptions.
 
+**Then run the arguments cleanup fence** (Arguments in Shell Code) — after the
+fetch, or here when the fetch was skipped. Nothing after §1.1 reads the
+directory. Task mode never created one, so it has nothing to remove.
+
 #### 1.1b Load Prior Meeting (Optional)
 
 **Goal**: When this work started life as a wrapped meeting, seed the feature
 description from it before any question is asked — same shape as
 §1.1's Jira auto-fetch, but for meeting records.
 
-If `$ARGUMENTS` contains `--from-meeting {ref}`, extract `{ref}`. Otherwise,
-if no `{ticket}` auto-fetch already produced a description (§1.1) and no
-feature description was supplied in `$ARGUMENTS`, ask:
+If the verdict's `from_meeting` is a non-empty string, use it as `{ref}`; `""`
+means the bare flag was given (see the picker below). Otherwise, if no `{ticket}`
+auto-fetch already produced a description (§1.1) and the verdict's `description`
+is empty, ask:
 
 ```
 AskUserQuestion:
@@ -528,7 +656,7 @@ composed until §1.4), so `promoted_to` would have nothing valid to write.
 untrusted-content markers — the markers kept around it, the header lines left
 out — and the rest of this step is skipped.
 
-If provided in $ARGUMENTS, store as `{feature_description}` and skip the rest of this step.
+If the verdict's `description` is non-empty, store it as `{feature_description}` and skip the rest of this step.
 
 **If §1.1b already set `{feature_description}` from a loaded meeting**
 (`{has_meeting_context: true}`), skip the rest of this step too — that path
@@ -552,7 +680,7 @@ On **Use as-is**, store the pulled text as `{feature_description}`. On
 **Edit**, let the user submit revised text and store that. On **Write my
 own**, fall through to the plain prompt below.
 
-**Plain prompt** (no `$ARGUMENTS` text, no meeting seed, §1.1's fetch failed
+**Plain prompt** (empty `description` in the verdict, no meeting seed, §1.1's fetch failed
 or was never attempted, or auto-seed was declined above), use
 AskUserQuestion:
 ```
@@ -627,7 +755,8 @@ Ask 3-5 targeted questions to refine the user's requirements. Use AskUserQuestio
 
 #### 1.3b Load Prior Brainstorm (Optional)
 
-If `$ARGUMENTS` contains `--from-brainstorm {slug}`, extract the slug. Otherwise, ask:
+If the verdict's `from_brainstorm` is a non-empty string, use it as the slug; `""` means
+the bare flag was given (see the picker below). Otherwise, ask:
 
 ```
 AskUserQuestion:
@@ -718,6 +847,7 @@ Proposed work identifier: {ticket}-{slug}
 Accept, or enter a different slug?
 ```
 **Compose `{identifier}` = `{ticket}-{slug}`** (per the Work Directory Naming Convention in `CLAUDE.md`).
+A local ID accepted in §1.1 (`{ticket_derived}` true) takes this path too.
 
 This will be used for:
 - Branch name: `feature/{identifier}` (drafts: no branch until reconciled — see §1.5/1.6)
@@ -730,6 +860,11 @@ This will be used for:
 **Goal**: `{identifier}` now exists (composed in §1.4 above) — write the
 brainstorm/meeting `promoted_to` links that §1.1b and §1.3b deferred, since
 they ran before `{identifier}` was known.
+
+**If `{ticket_derived}` is true, skip both link fences here and set
+`{links_deferred: true}`.** §1.6 may still find the local ID taken and switch to
+another one (or to a typed ticket), or the user may abort there. §1.8d runs the
+same two fences once the final `{identifier}` is settled.
 
 **If `{has_brainstorm_context}` is true**, one self-contained fence (config
 and `$BRAINSTORM_ROOT` don't survive from §1.3b's fence):
@@ -864,11 +999,44 @@ Every later stage assumes this branch exists, so do not continue past a failure 
 
 Create the branch locally. Remote push is deferred to Stage 2 (after initial context has been gathered).
 
+**If `{ticket_derived}` is true, check the local ID is still free first.** Other
+work (another session, another worktree, a fetched push) may have taken it since
+§1.1. This runs after §1.5's fetch, so pushed IDs are seen too. A failed fetch, or
+no remote at all, does not stop this check: it then uses the branches already on
+this machine:
+
+```bash
+LOCAL_ID=$(bash "${CLAUDE_PLUGIN_ROOT}/shared/local-ticket/next-id.sh")
+rc=$?
+[[ "$LOCAL_ID" =~ ^[A-Z]+-[0-9]+$ ]] || LOCAL_ID=""
+echo "RECHECK_RC=$rc"
+echo "LOCAL_ID=$LOCAL_ID"
+```
+
+- `<LOCAL_ID printed above>` equals `{ticket}`: nothing took it. Create the branch below.
+- A different ID: other work has used `{ticket}` or a higher number since §1.1.
+  Ask with AskUserQuestion — `Other work has used {ticket} or a higher number. Use
+  <LOCAL_ID printed above>?` — options `Use it` / `Abort`, with the free-text Other
+  for typing a ticket. **Use it**: set `{ticket}` to the new ID, re-compose
+  `{identifier}` = `{ticket}-{slug}` with the same slug, keep `{base_branch}`, and
+  run this check again. **A typed ticket**: it must match `^[A-Z]+-[0-9]+$` as in
+  §1.1 (ask again if it does not); then set `{ticket}` to it, set
+  `{ticket_derived}` false, re-compose `{identifier}`, and create the branch.
+  **Abort**: stop. Nothing has been created yet and no link has been written.
+- `RECHECK_RC` non-zero, or `LOCAL_ID` empty: show the script's stderr and offer
+  typing a ticket or aborting.
+
+Never pick the next number without asking: the user confirms every ID.
+
 Run inline — local branch creation has no hook restrictions beyond the existing guard:
 
 ```bash
 git checkout -b feature/{identifier} {base_branch}
 ```
+
+If that fails because `feature/{identifier}` already exists and `{ticket_derived}`
+is true, another session took the same ID with the same slug: run the check above
+again and take its re-confirm path. Any other failure goes to Error Handling.
 
 **VERIFICATION** (required):
 ```bash
@@ -1057,6 +1225,14 @@ Read or initialize manifest, then upsert item using `identifier` as unique key:
 ```
 
 Update `last_updated` and `total_items` in the envelope.
+
+#### 1.8d Write Deferred Links (local ID only)
+
+Skip unless `{links_deferred}` is true — not `{ticket_derived}`, which §1.6 clears
+when the user switches to a typed ticket. §1.4b skipped its link fences for a local
+ID because §1.6 could still change the ID. `{identifier}` is final now: run
+§1.4b's brainstorm fence if `{has_brainstorm_context}` is true, and its meeting
+fence if `{has_meeting_context}` is true, exactly as written there.
 
 #### 1.9 Register Active Session (for auto-context hook)
 

@@ -1,7 +1,7 @@
 # Quality Checklist (Create Requirements)
 
 ## Stage 1: Setup
-- [ ] Identifier established: `{TICKET}-{slug}`, or `DRAFT-{slug}` with `--no-ticket`
+- [ ] Identifier established: `{TICKET}-{slug}` (a confirmed local ID from `project.ticket_prefix` counts as a ticket), or `DRAFT-{slug}` with `--no-ticket`
 - [ ] Feature branch created locally: `feature/{identifier}` (none with `--no-ticket`)
 - [ ] Verified on feature branch (not release/main/master)
 - [ ] Work directory initialized
