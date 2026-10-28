@@ -44,8 +44,10 @@ If any fixes were applied successfully:
    > skips the credential scan and the push gate.
 
    ```bash
-   git commit -m "[{identifier}] fix: address critical QA findings"
+   git commit -m "[{ticket}] fix: address critical QA findings"
    ```
+
+   Drop `[{ticket}] ` when `{ticket}` is null (Phase 3.0).
 
 3. Update `state.json` with the new commit:
 

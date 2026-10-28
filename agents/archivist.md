@@ -447,6 +447,9 @@ Archive completed requirements after PR creation.
    git commit -m "[{TICKET}] chore(requirements): archive {identifier} to the knowledge base" -- "{identifier}/" index.json
    ```
 
+   `{TICKET}` is the leading `[A-Z]+-[0-9]+` of `{identifier}`. If it has none (a draft or a
+   bare slug), drop the bracketed prefix entirely.
+
    Verify a commit object was actually created before reporting success — a "nothing to commit"
    exit is a failed archive, not a quiet no-op.
 

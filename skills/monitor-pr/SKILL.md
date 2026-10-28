@@ -783,7 +783,7 @@ STATE_FILE="/tmp/monitor-pr-${PR_NUMBER}-state.json"
 jq '.iter_fixes_pushed += 1' "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
 ```
 
-Use the **ticket key this PR's work belongs to** as `{TICKET}` (e.g., `[PROJ-123]`, taken from the branch name or PR title) — the prefix is always the originating ticket, never the PR number. If the project's commits carry no ticket prefix, drop the bracketed part. Pushing a new commit updates `HEAD_SHA`; the next loop iteration will pick it up.
+Use the **ticket key this PR's work belongs to** as `{TICKET}` (e.g., `[PROJ-123]`, taken from the branch name or PR title) — the prefix is always the originating ticket, never the PR number. If this PR has no ticket, drop the bracketed part — never ask or invent one here, since this loop runs unattended. Pushing a new commit updates `HEAD_SHA`; the next loop iteration will pick it up.
 
 ### 3.4 Check for New Review Comments
 

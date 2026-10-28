@@ -113,7 +113,7 @@ too.
 | Hook name | Class | `minimal` | `off` | Purpose |
 |-----------|-------|:---------:|:-----:|---------|
 | `git-mutation-guard` | **safety** | ✅ active | ❌ off | Branch protection, credential scan, push audit gate |
-| `validate-commit` | **safety** | ✅ active | ❌ off | Enforce ticket-number pattern in commit messages |
+| `validate-commit` | **safety** | ✅ active | ❌ off | Warn when a commit message has no ticket number (never blocks) |
 | `redact-output` | **safety** | ✅ active | ❌ off | Rewrite every Bash command so its output streams through `redact-stream.sh`: secrets become stable `<REDACTED:kind:n>` placeholders before the model sees them |
 | `read-guard` | **safety** | ✅ active | ❌ off | Refuse Read, Grep and Glob on files that exist to hold secrets (`.env*`, `*.pem`, `*credentials*`, the redaction map, …) — by path or by filename filter — and redirect to the Bash equivalent (`grep` for a Grep, `cat` otherwise), whose output is redacted (unless the project has turned redaction off, in which case the message says so and asks the agent to ask the user) |
 | `reverse-substitute` | **safety** | ✅ active | ❌ off | On Write, Edit and MultiEdit: turn a `<REDACTED:kind:n>` placeholder the model wrote into the real value from the session map, so a file can carry a value the conversation never held. Refuses outside the repository and on sensitive paths unless the file already contains that value; logs every substitution without the value |
@@ -450,7 +450,7 @@ unredacted — the same choice as a missing filter.
   protection, credential scanning, and the push audit gate. Use only when
   you understand the risks, and prefer `minimal` or `NEXUS_DISABLED_HOOKS`
   for targeted suppression.
-- Disabling `validate-commit` means commit messages will no longer be
-  validated for ticket numbers. CI may still enforce this separately.
+- Disabling `validate-commit` silences its warning for commit messages
+  with no ticket number. It never blocks, so nothing else changes.
 - Hook state is process-scoped — environment variables do not persist
   between Claude Code sessions unless you add them to your shell profile.

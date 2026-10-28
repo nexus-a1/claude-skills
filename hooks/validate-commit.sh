@@ -1,6 +1,6 @@
 #!/bin/bash
-# Hook: Validate git commit messages contain a ticket number
-# Pattern: PROJ-123, ABC-1, etc.
+# Hook: Warn when a git commit message has no ticket number (PROJ-123, ABC-1).
+# A ticket is preferred, never required: a missing one warns and allows (CL-153).
 
 # ── Kill-switch ──────────────────────────────────────────────────────────────
 # NEXUS_HOOK_PROFILE=off      → disable ALL hooks (nuclear option)
@@ -93,13 +93,10 @@ if [[ "$COMMIT_CMD" =~ git[[:space:]]+commit ]]; then
     # Trim leading whitespace from message
     MESSAGE="${MESSAGE#"${MESSAGE%%[![:space:]]*}"}"
 
-    # Check for ticket pattern (e.g., PROJ-123, ABC-1)
+    # Check for ticket pattern (e.g., PROJ-123, ABC-1). Warn, never block: work
+    # without a ticket is allowed, and the skills ask for one before committing.
     if [[ ! "$MESSAGE" =~ [A-Z]+-[0-9]+ ]]; then
-        # stderr: on a blocking exit the model never sees stdout, so a message
-        # written there is a block with no stated reason.
-        echo "BLOCKED: Commit message must contain a ticket number (e.g., PROJ-123)" >&2
-        echo "Message: $MESSAGE" >&2
-        exit 2
+        echo "WARN: no ticket number in commit message (e.g. PROJ-123) — committing without one." >&2
     fi
 fi
 

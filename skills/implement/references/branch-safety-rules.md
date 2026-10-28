@@ -9,8 +9,8 @@
 
 ## Before Committing (Phase 3)
 - Verify still on `feature/*` branch
-- Extract ticket from branch name for commit message
-- Commit format: `[TICKET-123] type(scope): description`
+- Use the ticket settled in Phase 3.0 (asked once if none is found)
+- Commit format: `[TICKET-123] type(scope): description`, or `type(scope): description` with no ticket
 
 ## Before Pushing (Phase 5.1)
 - NEVER push to `release/*` branches directly

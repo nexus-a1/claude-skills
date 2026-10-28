@@ -643,7 +643,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/hooks/record-audit.sh"
 git push
 ```
 
-**Commit message format:**
+**Commit message format** — `[TICKET-123]` comes from the branch name. If the branch has none,
+ask once for a ticket; on a decline or an unattended run, drop the bracket part
+(`fix(api): …`):
 ```
 [TICKET-123] fix(api): change /api/users to return 200 instead of 202
 

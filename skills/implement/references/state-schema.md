@@ -52,6 +52,9 @@
     ]
   },
 
+  "ticket": "JIRA-123",
+  "ticket_asked": true,
+
   "implemented_files": ["src/Service/...", "src/Controller/..."],
   "commits": ["abc123", "def456"],
   "pr": null,
@@ -67,3 +70,6 @@ by the Phase 0.3 type transition (`requirements` → `implementation`). On
 resume, read it with a fallback to the pre-transition top-level shape:
 `jq -r '.requirements.branches.base // .branches.base'` — Phase 5.2's PR
 target depends on this resolving correctly.
+
+`ticket` is the key used as the commit and PR-title prefix, or `null` when the run has none.
+`ticket_asked` is `true` once Phase 3.0 has settled it, so a resumed run never asks again.

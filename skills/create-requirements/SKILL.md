@@ -852,7 +852,7 @@ A local ID accepted in §1.1 (`{ticket_derived}` true) takes this path too.
 This will be used for:
 - Branch name: `feature/{identifier}` (drafts: no branch until reconciled — see §1.5/1.6)
 - Work directory: `$WORK_DIR/{identifier}/`
-- Commit messages: `[{ticket}] type(scope): description` (commit prefix stays ticket-only; N/A for drafts)
+- Commit messages: `[{ticket}] type(scope): description` (the prefix is the ticket when there is one; drafts have no prefix)
 - Output files: `spec.md`, `plan.md`, `tasks.md`, `{identifier}-JIRA_TICKET.md`
 
 #### 1.4b Write Deferred Bidirectional Links (Conditional)

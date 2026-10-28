@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.51.0] - 2026-10-28
+
+## What's Changed
+
+The ticket number is now optional for commits and pull requests (#448, CL-153). Skills still find a ticket from the argument, the branch name or the work identifier, ask once when they cannot, and carry on without one if none is given. 8 commits: 2 feat, 3 fix, 2 docs, 1 test. No breaking changes.
+
+### Features
+
+- **commit**: ask once for a ticket, commit without one. A typed ticket must match `PROJ-123` as a whole and is uppercased. — CL-153
+- **implement**: new Phase 3.0 settles the ticket once per run and stores it in `state.json`, so a resumed run does not ask again. Only a real `PROJ-123` key is used as the prefix, never the whole work identifier; with no ticket, commits and the PR title drop the prefix and the PR body says `N/A`. — CL-153
+
+### Bug Fixes
+
+- **hooks**: `validate-commit` warns on stderr instead of blocking a commit with no ticket. Its other fail-closed paths are unchanged. — CL-153
+- **review**: validate typed tickets, settle casing, and anchor the ticket pattern on typed input. — CL-153
+
+### Other Changes
+
+- **skills**: troubleshoot, monitor-pr, git-operator and archivist allow ticket-less commits. — CL-153
+- **hooks**: docs describe `validate-commit` as a warning. — CL-153
+- **validators**: tests follow the new `{ticket}` prefix placeholder. — CL-153
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.50.1...v1.51.0
+
 ## [1.50.1] - 2026-10-18
 
 ## What's Changed

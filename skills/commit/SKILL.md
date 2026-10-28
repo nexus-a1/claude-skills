@@ -3,7 +3,7 @@ name: commit
 category: release-management
 model: claude-haiku-5-5
 userInvocable: true
-description: Stage and commit changes with a conventional commit message. Runs pre-commit checks automatically. Optionally prefixes with a ticket number.
+description: Stage and commit changes with a conventional commit message. Runs pre-commit checks automatically. Prefixes the ticket number when there is one, asks once when there is not, and commits without it if none is given.
 argument-hint: "[ticket-number]"
 allowed-tools: "Bash(cat:*), Bash(echo:*), Bash(grep:*), Bash(git commit:*), Bash(git add:*), Bash(git reset:*), Bash(git status:*), Bash(git diff:*), Bash(git checkout:*), Bash(git branch:*), Bash(git log:*), Bash(./vendor/bin/php-cs-fixer:*), Bash(php-cs-fixer:*), Bash(test:*), Bash(which:*), AskUserQuestion"
 ---
@@ -24,15 +24,19 @@ Run everything inline — no agent delegation. The `git-mutation-guard.sh` PreTo
 
 Priority order (argument: $ARGUMENTS):
 
-1. **From argument**: If provided, validate against `[A-Z]+-[0-9]+`.
+1. **From argument**: If provided, validate the whole argument against `^[A-Za-z]+-[0-9]+$` and uppercase it.
 2. **From branch name**: Extract with:
    ```bash
    branch=$(git branch --show-current)
    ticket=$(echo "$branch" | grep -oE '[A-Z]+-[0-9]+' | head -1)
    ```
-3. **None**: Only if the branch has no ticket pattern.
+3. **Ask once**: if neither gives one, ask the user for a ticket with AskUserQuestion — a ticket
+   is good to have. Offer "No ticket" as an option. A typed answer must match `^[A-Za-z]+-[0-9]+$` as a whole
+   (stored uppercase); treat anything else as "No ticket". If the user declines, or AskUserQuestion is not
+   available (an unattended run), continue without one. Ask at most once per run.
 
-The ticket MUST appear in the commit message as `[TICKET-123]` (brackets, original casing).
+With a ticket, it appears in the commit message as `[TICKET-123]` (brackets, uppercase).
+Without one, drop the bracket part — never invent a ticket or write a placeholder.
 
 ### 2. Check Branch Safety
 
@@ -41,6 +45,8 @@ If on `main` or `master`, create a feature branch before committing:
 ```bash
 git checkout -b feature/[ticket]-description
 ```
+
+With no ticket, use `feature/description`.
 
 ### 3. Run PHP CS Fixer (if available)
 
@@ -80,6 +86,8 @@ Format:
 
 Optional body wrapped at 72 chars explaining the WHY.
 ```
+
+With no ticket the subject is just `type(scope): short description`.
 
 Types: `feat` | `fix` | `refactor` | `test` | `docs` | `chore` | `style` | `perf`
 

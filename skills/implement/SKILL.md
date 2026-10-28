@@ -829,6 +829,23 @@ From here on, Phase 3/4/5/6 prompts use this summary. Re-`Read()` a Phase 2 cont
 
 **Goal**: Execute the implementation plan, committing each chunk.
 
+#### 3.0 Resolve Ticket (once per run)
+
+Before the first commit, settle `{ticket}`. Every commit and the PR title in this run use it.
+
+1. If `state.json` already has `ticket_asked: true`, reuse its `ticket` (a string or `null`) and
+   skip the rest — a resumed run never asks twice.
+2. Otherwise take the leading `[A-Z]+-[0-9]+` of `{identifier}`, else of the feature branch name.
+   Only that key is the ticket — never the whole identifier: `PROJ-12-export` gives `PROJ-12`,
+   and `DRAFT-export` or a bare slug gives none.
+3. If none was found, ask once with AskUserQuestion — a ticket is good to have — offering
+   "No ticket". A typed answer must match `^[A-Za-z]+-[0-9]+$` and is stored uppercase. On a
+   decline, or when AskUserQuestion is not available (an unattended run), `{ticket}` is `null`.
+4. Write `ticket` and `ticket_asked: true` to `state.json`.
+
+With a ticket, commit subjects and the PR title start with `[{ticket}] `. With `{ticket}` null,
+drop that prefix: the subject is plain `<type>(<scope>): <description>`.
+
 #### 3.1 Resume Check
 
 If resuming, skip completed chunks:
@@ -873,10 +890,12 @@ For each chunk:
    Author the message in this shape:
 
    ```text
-   [{identifier}] <type>(<scope>): <description>
+   [{ticket}] <type>(<scope>): <description>
 
    Chunk: {chunk_description}
    ```
+
+   Drop `[{ticket}] ` when `{ticket}` is null (see 3.0).
 
    > **The message never passes through shell source.** It summarises the diff
    > and the ticket text, so by the provenance rule in
@@ -1557,8 +1576,10 @@ git add <files>
 > skips the credential scan and the push gate.
 
 ```bash
-git commit -m "[TICKET-123] fix(review): address review feedback"
+git commit -m "[{ticket}] fix(review): address review feedback"
 ```
+
+Drop `[{ticket}] ` when `{ticket}` is null (see 3.0).
 
 #### 4.5 Report QA Summary
 
@@ -1979,11 +2000,11 @@ a heredoc. `Write` them to this session's own work directory, each the exact
 value and nothing else; `Write` does not expand `$WORK_DIR`, so pass resolved
 absolute paths.
 
-Author the title in this shape — the ticket prefix is not optional, and it is
-the only place the convention is stated for the PR:
+Author the title in this shape — it is the only place the convention is stated
+for the PR. Drop `[{ticket}] ` when `{ticket}` is null (see 3.0):
 
 ```text
-[{identifier}] <type>(<scope>): <description>
+[{ticket}] <type>(<scope>): <description>
 ```
 
 Author the body in this shape:
@@ -1993,7 +2014,7 @@ Author the body in this shape:
 {feature_summary}
 
 ## Ticket
-{identifier}
+{ticket, or N/A when null}
 
 ## Changes
 - {bullet per logical change}
@@ -2414,7 +2435,7 @@ Read `references/branch-safety-rules.md` for the branch safety rules. They apply
 - **PR workflow**: Target branch from requirements phase, with confirmation
 - **Review integration**: Offers `/pr-review` after PR creation
 - **Branch protection**: NEVER push directly to release/main/master branches
-- **Ticket requirement**: Commit messages MUST include ticket number from branch in `[TICKET-123]` format
+- **Ticket**: Commits and the PR title carry `[TICKET-123]` when a ticket is known; with none, Phase 3.0 asks once and then continues without the prefix
 - **Worktree isolation**: When `worktree.enabled: true`, implementation runs in an isolated worktree. State files persist in the original workspace root. On completion, the worktree is kept (not removed) so the user can inspect or continue work
 
 ## Completion Cleanup
