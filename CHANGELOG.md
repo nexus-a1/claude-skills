@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.52.0] - 2026-11-09
+
+## What's Changed
+
+4 commits: 1 feat, 3 fix. No breaking changes.
+
+### Features
+
+- **skills**: add `--auto-fix` loop to `/pr-review` — review, fix the verified critical/important findings, commit, re-review the new HEAD, push, repeat until clean or a stop rule fires (#450)
+
+### Bug Fixes
+
+- **skills**: address second-opinion findings on `/pr-review --auto-fix` — require `.claude/session-state/` to be git-ignored, push only after a review with nothing blocking, classic path fixes criticals only, `--max-rounds` floor of 2, no branch names substituted into shell commands (#450)
+- **skills**: close two audit notes on `/pr-review --auto-fix` — local base branch is quoted and checked; the push confirmation is recorded only if HEAD still equals the reviewed commit (#450)
+- **tests**: stop piping into an early-exit grep in `tests/` — CL-154 (#449)
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.51.0...v1.52.0
+
 ## [1.51.0] - 2026-10-28
 
 ## What's Changed

@@ -3,9 +3,9 @@ name: pr-review
 model: claude-sonnet-5-5
 category: code-quality
 userInvocable: true
-description: Review a pull request (or local branch with --local) with thorough analysis, measured severity, a read-only second opinion on every serious finding (Opus by default, Fable with --ultra), and actionable feedback
-argument-hint: "[--local [base-branch]] | [--interactive] [pr-number] [--ultra]"
-allowed-tools: "Read, Write, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(cat:*), Bash(mkdir:*), Bash(chmod:*), Bash(jq:*), Bash(rm:*), Bash(bash:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr review:*), Bash(gh pr create:*), Bash(gh api:*), Bash(gh repo view:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git merge-base:*), Bash(git rev-parse:*), Bash(git status:*), Bash(git push:*), Task, Workflow, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
+description: Review a pull request (or local branch with --local) with thorough analysis, measured severity, a read-only second opinion on every serious finding (Opus by default, Fable with --ultra), and actionable feedback; --auto-fix loops review, fix, re-review until nothing verified is left to address
+argument-hint: "[--local [base-branch]] | [--interactive] [pr-number] [--ultra] [--auto-fix [--max-rounds N]]"
+allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(cat:*), Bash(mkdir:*), Bash(chmod:*), Bash(jq:*), Bash(rm:*), Bash(bash:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr review:*), Bash(gh pr create:*), Bash(gh api:*), Bash(gh repo view:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git merge-base:*), Bash(git rev-parse:*), Bash(git status:*), Bash(git fetch:*), Bash(git add:*), Bash(git commit:*), Bash(git push:*), Task, Workflow, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
 ---
 
 # Review Pull Request Command
@@ -55,6 +55,13 @@ This command performs a thorough code review by orchestrating specialized agents
 
 `--local` and `--interactive` are mutually exclusive.
 
+**Auto-fix** (`--auto-fix`, either mode): runs the review, fixes the critical and important
+findings that survived verification, commits, reviews the new HEAD, pushes it (remote mode),
+and repeats until a round leaves nothing to address or a stop rule fires — without asking
+between rounds. It never merges, never posts a review, never rewrites history, and never
+touches minor, unverified or contested findings. The full loop is in
+`references/auto-fix-loop.md`.
+
 **Second opinion** (orchestrated path only): every finding that survives the panel at `critical`
 or `important` is handed, as a neutral brief, to the read-only `second-reader` agent and asked
 what would have to be true for it to be wrong. **Opus by default** — the same tier the four
@@ -73,6 +80,8 @@ is an unrelated alias of `/code-review ultra`.
 - `--local` flag: switch to local branch mode. May be followed by an optional base branch name.
 - `--interactive` flag: enable interactive posting to GitHub (remote mode only).
 - `--ultra` flag (alias `--ultrareview`): run the second-opinion stage on Fable instead of Opus. Valid in both modes, independent of the other flags.
+- `--auto-fix` flag: run the review → fix → re-review loop in `references/auto-fix-loop.md`. Valid in both modes.
+- `--max-rounds N` (with `--auto-fix` only): cap on review rounds, an integer from 2 to 10. Default 5.
 - PR number: numeric PR identifier (remote mode).
 
 **Examples:**
@@ -83,10 +92,18 @@ is an unrelated alias of `/code-review ultra`.
 - `/pr-review --local main` → review current branch vs `main`.
 - `/pr-review --ultra 123` → review PR 123 with the second opinion on Fable.
 - `/pr-review --local --ultrareview` → local review, second opinion on Fable.
+- `/pr-review --auto-fix 123` → review PR 123, fix what the review verified, push, re-review; repeat.
+- `/pr-review --local --auto-fix --max-rounds 3` → the same loop on the current branch, committing locally, at most 3 rounds.
 
 **Validation:**
 - If both `--local` and `--interactive` present, stop: "`--local` and `--interactive` are mutually exclusive — `--interactive` posts to a remote PR; `--local` runs before one exists."
 - If `--local` and a numeric PR number both present, stop with the same conflict.
+- If both `--auto-fix` and `--interactive` present, stop: "`--auto-fix` and `--interactive` are mutually exclusive — `--interactive` asks before posting each comment; `--auto-fix` fixes the findings instead of posting them."
+- If `--max-rounds` is present without `--auto-fix`, or its value is not an integer from 2 to 10, stop and say which.
+
+**If `--auto-fix` is set, read `references/auto-fix-loop.md` now.** Steps 2R/3R or 2L/3L run
+as written; its pre-flight (A.1) runs right after them, and its loop (A.2) then runs Steps 3.5
+through 5.5 once per round in place of running them once. It also says where the command ends.
 
 If `--local` is set, jump to **Step 2L**. Otherwise continue with **Step 2R**.
 
@@ -168,6 +185,8 @@ git status --short
 If there are uncommitted changes, use AskUserQuestion:
 - "You have uncommitted changes. How would you like to proceed?"
 - Options: Stash and continue / Review with uncommitted changes included / Cancel
+
+With `--auto-fix`, do not ask: the loop needs a clean tree, and its pre-flight stops the command instead (`references/auto-fix-loop.md`, A.1).
 
 **Check current branch is not main/master:** If on `main`, `master`, or `develop`, stop: "You're on a base branch. Switch to a feature branch first."
 
@@ -738,6 +757,7 @@ Report structure:
 **Mode**: team | team (partial: {roles}) | subagent | subagent (fallback: team start failed at {step}) — classic path only; omit on orchestrated
 **Generated**: {timestamp}
 **Head**: {head_sha}
+**Auto-fix**: round {k} of at most {max_rounds} — only with `--auto-fix`; omit otherwise
 
 ## Deterministic gates
 {name}: {PASS|FAIL} (exit {code})     — or "none configured"
@@ -1057,6 +1077,7 @@ gh pr create \
 - **Architecture gate**: `architect` is the only agent here that runs conditionally — include it for structural/boundary/pattern changes, skip it for localized fixes, config, or test-only diffs. State the gate decision before dispatching.
 - **Team mode**: When `PR_REVIEW_EXEC_MODE` = `"team"`, agents cross-pollinate findings via SendMessage. `team` is the preferred mode: if the team cannot start, the sub-agent path runs and the `**Mode**:` line says so. `**Mode**` and `**Path**` are separate records — the team fallback never changes Path.
 - **Local review is local-only**: No GitHub interaction in `--local` mode unless the user explicitly opts in to PR creation in Step 7L.
+- **Auto-fix is bounded, not open-ended**: `--auto-fix` edits, commits and (remote) pushes without asking between rounds, but only on the user's own open, same-repository PR checked out at its head, on a clean tree; it fixes only verified critical/important findings, within the files the diff already touches; it pushes a HEAD only after a security review ran on that exact HEAD and that round found nothing blocking; and it stops on the round cap, on a round that does not reduce the addressable count, or on any safety rule in `references/auto-fix-loop.md`. No `--force`, no merge, no posted review.
 - **Pending reviews**: Interactive mode creates a pending review (not submitted). User decides when to submit and with what verdict.
 - **Honest verdicts**: Don't sugarcoat — if there are critical issues, say so clearly.
 - **Verify after posting**: Always confirm the review URL matches the intended repository.
