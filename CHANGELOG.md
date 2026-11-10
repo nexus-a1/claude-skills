@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.53.0] - 2026-11-10
+
+## What's Changed
+
+One feature (CL-155, PR #451): 3 feat, 7 fix, 1 test, 1 docs, 1 chore commits. No breaking changes.
+
+### Features
+
+- **create-requirements**: new `--review-plan` flag. After the plan is written, Stage 4.8.10 reviews it, sends the findings to a fix step, and reviews again (up to 2 fixes). Then you choose Accept, Override or Abort. — CL-155
+- **create-requirements**: new reviewer and fix prompts under `references/`. — CL-155
+- **create-requirements**: the argument parser accepts `--review-plan`. — CL-155
+
+### Bug Fixes
+
+- **review**: a fix may not change any security criterion (`AC-SEC-*`). The whole block is compared before and after the fix, and a change rolls the fix back. — CL-155
+- **review**: the round counter is saved together with the end of a fix, so resuming no longer repeats a round. — CL-155
+- **review**: Accept and Override cite findings by label instead of copying reviewer text into the plan. — CL-155
+- **resume**: `/resume-work` and Stage 0 send an unfinished plan review straight back to Stage 4.8.10, not to synthesis. — CL-155
+- **create-requirements**: a resumed run restores the backup only for a fix that did not finish. — CL-155
+- **review**: the documents stay in place during a fix. — CL-155
+- **tests**: the `{round}` placeholder is allowlisted. — CL-155
+
+### Other Changes
+
+- Tests pin the plan review loop contract (`tests/create-requirements/06-review-plan-loop.test`).
+- `docs/skills.md` documents `--review-plan`.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.52.0...v1.53.0
+
 ## [1.52.0] - 2026-11-09
 
 ## What's Changed

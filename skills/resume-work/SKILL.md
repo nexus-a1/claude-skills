@@ -332,7 +332,18 @@ Completed agents: context-builder, archaeologist
 Continuing requirements gathering...
 ```
 
-**Next steps:**
+**First, the plan review loop.** If `state.json` has `stages.plan_review` with `status`
+`in_progress` or `aborted`, the documents are already written and only `/create-requirements`'
+`--review-plan` loop (Stage 4.8.10) is unfinished. Do **not** run the steps below: re-running
+agents or synthesis would overwrite the documents the loop was reviewing. Print this and stop:
+
+```
+Resuming: {identifier} — the plan review loop (--review-plan) did not finish.
+The documents are written; only the review is left.
+Continue with: /create-requirements, then pick {identifier} — it resumes at the plan review.
+```
+
+**Next steps (no unfinished plan review):**
 1. Check which agents have already run (from `context/` directory)
 2. Continue with remaining agents
 3. Proceed to business-analyst for synthesis

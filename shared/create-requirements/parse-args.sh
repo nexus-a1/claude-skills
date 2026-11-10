@@ -25,6 +25,7 @@
 #
 #   --help                    print usage and stop (beats every error)
 #   --light                   lightweight mode
+#   --review-plan             review the written plan, fix and re-review (Stage 4.8.10)
 #   --no-ticket               draft session, no ticket yet
 #   --ticket <KEY>            the ticket, any case, stored uppercase
 #   --from-brainstorm [slug]  seed from a brainstorm (bare flag = picker)
@@ -37,7 +38,7 @@
 # Output (stdout, one JSON object):
 #   {"ok":true,"help":true}                                       exit 0
 #   {"ok":true,"help":false,"ticket":"PROJ-1"|null,"no_ticket":bool,
-#    "light":bool,"from_brainstorm":"slug"|""|null,
+#    "light":bool,"review_plan":bool,"from_brainstorm":"slug"|""|null,
 #    "from_meeting":"ref"|""|null,"reconcile":bool,
 #    "description":"..."}                                          exit 0
 #   {"ok":false,"error":"..."}                                     exit 20
@@ -101,6 +102,10 @@ description, so option words inside a description do nothing):
   --no-ticket               Start a DRAFT-<slug> session with no ticket, no
                             branch and no push. Cannot be combined with --ticket.
   --light                   Cheaper run (see the skill for what it changes).
+  --review-plan             Once the documents are written, review the plan
+                            (architect + quality-guard), fix what the review
+                            finds and review again, at most 2 fix rounds.
+                            Asks you only if it cannot reach a sound verdict.
   --from-brainstorm [slug]  Seed from a saved brainstorm. Without a slug, pick one.
   --from-meeting [ref]      Seed from a wrapped meeting. Without a ref, pick one.
                             The word after either flag is its slug, so to get
@@ -138,7 +143,7 @@ _parse() {
     || _die "$input/arguments is missing"
   text="$(cat "$input/arguments")" || _die "could not read $input/arguments"
 
-  local help=false light=false no_ticket=false ticket="" ticket_seen=false
+  local help=false light=false review_plan=false no_ticket=false ticket="" ticket_seen=false
   local from_brainstorm="" from_meeting="" fb_given=false fm_given=false err=""
   rest="$text"
   # Each step: drop leading whitespace, take one token, consume it if it is an
@@ -162,6 +167,7 @@ _parse() {
     case "$tok" in
       --help) help=true; _take ;;
       --light) light=true; _take ;;
+      --review-plan) review_plan=true; _take ;;
       --no-ticket) no_ticket=true; _take ;;
       --ticket)
         if [ "$ticket_seen" = true ]; then
@@ -229,13 +235,14 @@ _parse() {
     --arg ticket "$ticket" \
     --argjson no_ticket "$no_ticket" \
     --argjson light "$light" \
+    --argjson review_plan "$review_plan" \
     --arg fb "$from_brainstorm" --argjson fb_given "$fb_given" \
     --arg fm "$from_meeting" --argjson fm_given "$fm_given" \
     --argjson reconcile "$reconcile" \
     --arg desc "$rest" \
     '{ok: true, help: false,
       ticket: (if $ticket == "" then null else $ticket end),
-      no_ticket: $no_ticket, light: $light,
+      no_ticket: $no_ticket, light: $light, review_plan: $review_plan,
       from_brainstorm: (if $fb_given then $fb else null end),
       from_meeting: (if $fm_given then $fm else null end),
       reconcile: $reconcile,
