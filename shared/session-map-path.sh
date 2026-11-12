@@ -105,3 +105,17 @@ nexus_redaction_state_dir() {
 
     printf '%s' "$root/.claude/session-state"
 }
+
+# True when any given path is a symlink. Every writer into session-state calls
+# it first: a cloned repository can commit .claude/session-state, or a file in
+# it, as a link, and a write through that link lands where the repository's
+# author chose — `[ -e ]` is false for a dangling link, so "create if absent"
+# would follow it. Reads matter too: a linked redaction map hands
+# reverse-substitute values the repository's author picked.
+nexus_state_has_link() {
+    local p
+    for p in "$@"; do
+        [ -L "$p" ] && return 0
+    done
+    return 1
+}

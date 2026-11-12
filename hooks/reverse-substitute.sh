@@ -142,6 +142,10 @@ type nexus_redaction_state_dir >/dev/null 2>&1 || _bail "the session-map locator
 _state="$(nexus_redaction_state_dir)"
 _map="$_state/redaction-map.tsv"
 _audit="$_state/redaction-audit.log"
+_state_parent="${_state%/*}"   # not ~/.claude: see redact-output.sh
+[ "$_state_parent" = "${HOME:-/tmp}/.claude" ] && _state_parent=""
+! nexus_state_has_link "$_state_parent" "$_state" "$_state/.gitignore" "$_map" "$_audit" \
+    || _bail "$_state or a file in it is a symlink"
 [ -r "$_map" ] || _bail "no readable session map at $_map"
 
 # ── Path resolution ─────────────────────────────────────────────────────────

@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.53.1] - 2026-11-12
+
+## What's Changed
+
+One fix PR (#452): 2 fix, 1 test commits. No breaking changes.
+
+### Bug Fixes
+
+- **hooks**: `record-audit.sh` now writes a `*` `.gitignore` into `.claude/session-state/`, as `redact-output.sh` already did. Without it, `git add -A` could commit `git-audit.json`, every push confirmation then dirtied the working tree, and `/pr-review --auto-fix` failed its clean-tree pre-flight. The pre-flight message now also covers a file that is already tracked and names the fix (`git rm -r --cached .claude/session-state`). Repositories that already committed the file need that one-time step.
+- **hooks**: session state is never written or read through a symlink. A cloned repository could commit `.claude`, `.claude/session-state` or a file in it as a link, and the hooks' "create if absent" writes followed it. A shared check, `nexus_state_has_link`, now runs before every session-state write in `record-audit.sh`, `redact-output.sh`, `reverse-substitute.sh`, `jira-write.sh` and `pr-review/report-path.sh`. Outside a repository, a linked `~/.claude` (dotfiles) is still allowed. Inside one, a linked `.claude` is refused; a repository that links it on purpose needs `SECURITY_AUDITOR_BYPASS=1` to push.
+
+### Other Changes
+
+- **tests**: new `tests/hooks/record-audit.test`; symlink cases added to `redact-output.test` and `02-report-path.test`; `06-auto-fix-contract.test` pins the tracked-file pre-flight message.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.53.0...v1.53.1
+
 ## [1.53.0] - 2026-11-10
 
 ## What's Changed

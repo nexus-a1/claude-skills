@@ -58,9 +58,12 @@ clean-tree check above:
 git check-ignore -q .claude/session-state/git-audit.json
 ```
 
-A non-zero exit stops the command: "`--auto-fix` needs `.claude/session-state/` in
-`.gitignore` — add that line, commit it, then re-run." Do not add the line yourself; the
-working tree must stay clean.
+A non-zero exit stops the command. If `git ls-files --error-unmatch
+.claude/session-state/git-audit.json` succeeds, the file is **tracked** (an ignore rule does
+not apply to a tracked file): "`--auto-fix` needs `.claude/session-state/` untracked — run
+`git rm -r --cached .claude/session-state`, commit, then re-run." Otherwise: "`--auto-fix`
+needs `.claude/session-state/` in `.gitignore` — add that line, commit it, then re-run." Do
+not fix either yourself; the working tree must stay clean.
 
 **Remote mode — the PR must be yours, open, pushable, and checked out at its head:**
 

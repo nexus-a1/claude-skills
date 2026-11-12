@@ -56,6 +56,8 @@ set -euo pipefail
 JIRA_LIB_DIR="${BASH_SOURCE[0]%/*}"
 # shellcheck source=./lib.sh
 source "$JIRA_LIB_DIR/lib.sh"
+# shellcheck source=../session-map-path.sh
+source "$JIRA_LIB_DIR/../session-map-path.sh"
 
 # ---------------------------------------------------------------------------
 # Temp files and cleanup
@@ -137,6 +139,10 @@ _audit_write() {
   # write's own outcome (already printed/returned) stands regardless. But
   # AC-SEC-5 requires a record for every attempt, so a failure to produce
   # one is surfaced loudly (stderr), never swallowed silently.
+  if nexus_state_has_link "$repo_root/.claude" "$audit_dir" "$audit_dir/jira-write-audit.jsonl"; then
+    _log "WARNING: $audit_dir, its parent or its audit log is a symlink — this write's audit record was not persisted (AC-SEC-5)." || true
+    return 0
+  fi
   if ! mkdir -p "$audit_dir" 2>/dev/null; then
     # `|| true`: this runs inside the EXIT trap under `set -e`. If stderr
     # itself is unwritable (closed fd, EPIPE, full disk), a failing _log

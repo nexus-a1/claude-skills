@@ -31,6 +31,21 @@ set -u
 
 REPORT_SUBDIR=".claude/session-state/pr-review"
 
+# shellcheck source=../session-map-path.sh
+. "${BASH_SOURCE[0]%/*}/../session-map-path.sh"
+
+# A cloned repository can commit any level of the report path as a symlink;
+# reports and the gate-approval ledger must not be written or read through one.
+_refuse_linked() {
+    local dir="$1" file="$2" claude="${1%/session-state/pr-review}"
+    # Fail closed: an unloaded check returns 127, which `if` reads as "no link".
+    type nexus_state_has_link >/dev/null 2>&1 || { echo "pr-review: cannot load session-map-path.sh" >&2; return 1; }
+    if nexus_state_has_link "$claude" "${dir%/pr-review}" "$dir" "$file"; then
+        echo "pr-review: $claude/session-state/pr-review or a file in it is a symlink — refusing to use it" >&2
+        return 1
+    fi
+}
+
 # Absolute path of the directory reports live in for the current repository.
 _report_dir() {
     local root
@@ -126,6 +141,7 @@ resolve_report_path() {
             ;;
     esac
 
+    _refuse_linked "$dir" "$dir/$base.md" || return 1
     printf '%s/%s.md\n' "$dir" "$base"
 }
 
@@ -141,5 +157,6 @@ resolve_ledger_path() {
         return 1
     fi
 
+    _refuse_linked "$dir" "$dir/gates.accepted" || return 1
     printf '%s/gates.accepted\n' "$dir"
 }

@@ -288,7 +288,12 @@ _map="$_state/redaction-map.tsv"
 # mode 0600; a .gitignore of `*` beside it, because a user's project has no
 # reason to ignore .claude/session-state/ and `git add -A` would stage it;
 # and read-guard, whose sensitive-path list names it.
+# Outside a repository the state lives in ~/.claude, which users often link to
+# a dotfiles checkout; inside one, a linked .claude is the repository's choice.
+_state_parent="${_state%/*}"
+[ "$_state_parent" = "${HOME:-/tmp}/.claude" ] && _state_parent=""
 ( umask 077
+  nexus_state_has_link "$_state_parent" "$_state" "$_state/.gitignore" "$_map" && exit 1
   mkdir -p "$_state" 2>/dev/null || exit 1
   [ -e "$_state/.gitignore" ] || printf '*\n' > "$_state/.gitignore"
   [ -e "$_map" ] || : > "$_map"
