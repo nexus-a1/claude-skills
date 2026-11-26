@@ -5,7 +5,7 @@ category: code-quality
 userInvocable: true
 description: Review a pull request (or local branch with --local) with thorough analysis, measured severity, a read-only second opinion on every serious finding (Opus by default, Fable with --ultra), and actionable feedback; --auto-fix loops review, fix, re-review until nothing verified is left to address
 argument-hint: "[--local [base-branch]] | [--interactive] [pr-number] [--ultra] [--auto-fix [--max-rounds N]]"
-allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(cat:*), Bash(mkdir:*), Bash(chmod:*), Bash(jq:*), Bash(rm:*), Bash(bash:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr review:*), Bash(gh pr create:*), Bash(gh api:*), Bash(gh repo view:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git merge-base:*), Bash(git rev-parse:*), Bash(git status:*), Bash(git fetch:*), Bash(git add:*), Bash(git commit:*), Bash(git push:*), Task, Workflow, AskUserQuestion, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
+allowed-tools: "Read, Write, Edit, Glob, Grep, Bash(source:*), Bash(echo:*), Bash(cat:*), Bash(mkdir:*), Bash(chmod:*), Bash(jq:*), Bash(rm:*), Bash(bash:*), Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr review:*), Bash(gh pr create:*), Bash(gh api:*), Bash(gh repo view:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git merge-base:*), Bash(git rev-parse:*), Bash(git status:*), Bash(git fetch:*), Bash(git add:*), Bash(git commit:*), Bash(git push:*), Task, Workflow, AskUserQuestion, EnterWorktree, ExitWorktree, TeamCreate, TeamDelete, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage"
 ---
 
 # Review Pull Request Command
@@ -134,7 +134,7 @@ gh pr list --repo "$REPO" --json number,title,author,headRefName,updatedAt --lim
 ```bash
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 [ -n "$REPO" ] || { echo "ERROR: could not resolve the repository" >&2; exit 1; }
-gh pr view {PR_NUMBER} --repo "$REPO" --json title,author,body,baseRefName,headRefName,additions,deletions,changedFiles,commits,labels
+gh pr view {PR_NUMBER} --repo "$REPO" --json title,author,body,baseRefName,headRefName,headRefOid,isCrossRepository,additions,deletions,changedFiles,commits,labels
 gh pr diff {PR_NUMBER} --repo "$REPO"
 gh pr view {PR_NUMBER} --repo "$REPO" --json files --jq '.files[].path'
 ```
@@ -150,7 +150,56 @@ gh pr view {PR_NUMBER} --repo "$REPO" --json files --jq '.files[].path'
 > this rule in every diff-carrying agent prompt for that reason. See
 > `${CLAUDE_PLUGIN_ROOT}/shared/prompt-defense.md`.
 
-Skip Step 2L/3L and proceed to **Step 4**.
+#### 3R.1 Where to review (remote mode)
+
+Reviewers read files from the session's working directory, so it must be the PR head, not
+whatever the user has checked out. Decide once, here. Skip this sub-step with `--interactive`:
+that mode reviews in place, as before.
+
+```bash
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/pr-worktree.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/pr-worktree.sh"
+else
+  source "$HOME/.claude/shared/pr-review/pr-worktree.sh"
+fi
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+[ -n "$REPO" ] || { echo "ERROR: could not resolve the repository" >&2; exit 1; }
+# Read from gh into variables, never substituted: a fork's branch name is
+# written by its author, and the helper validates every value again.
+PR_JSON=$(gh pr view {PR_NUMBER} --repo "$REPO" --json headRefName,headRefOid,isCrossRepository) || exit 1
+HEAD_REF=$(jq -r .headRefName <<< "$PR_JSON")
+HEAD_OID=$(jq -r .headRefOid <<< "$PR_JSON")
+IS_CROSS=$(jq -r .isCrossRepository <<< "$PR_JSON")
+LAUNCH_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+echo "LAUNCH_ROOT=$LAUNCH_ROOT"
+# Checked here, before the value is ever substituted into a later command.
+prw_check_launch_root "$LAUNCH_ROOT" && echo "LAUNCH_ROOT_OK=yes" || echo "LAUNCH_ROOT_OK=no"
+echo "HEAD_OID=$HEAD_OID"
+prw_need_worktree "$(git branch --show-current)" "$HEAD_REF" "$IS_CROSS" "$(git rev-parse HEAD 2>/dev/null)" "$HEAD_OID"
+```
+
+Keep the printed `LAUNCH_ROOT`, `HEAD_OID` and decision, `unchanged` or `worktree`, for the
+rest of the run. `HEAD_OID` is read once, here, so the decision, the worktree and the report all
+name the same commit; a push to the PR mid-run makes the later fetch check fail rather than
+review a different commit. With `LAUNCH_ROOT_OK=no` treat a `worktree` decision as a failed
+worktree: plain review continues diff-only in place, `--auto-fix` stops.
+
+- `unchanged` — the checkout already is the PR head. Nothing below changes; `{state_root_env}`
+  stays empty for the whole run.
+- `worktree` — plain review creates the worktree in Step 3.7. `--auto-fix` creates it in its
+  pre-flight (A.1 in `references/auto-fix-loop.md`) instead, which runs before Step 3.5, and
+  Step 3.7 is skipped.
+
+**`{state_root_env}`** appears in front of the gate-ledger and report calls in Steps 3.5 and
+5.5. Substitute it with **nothing** unless this run has entered a worktree (Step 3.7, or A.1 for
+`--auto-fix`). After entry, substitute `PR_REVIEW_STATE_ROOT='<LAUNCH_ROOT printed above>' `
+(trailing space included), so reports and gate approvals stay in the user's own checkout and
+outlive the worktree. Empty, every fence runs exactly the command it ran before this change —
+which is how `--local`, `--interactive` and the `unchanged` path keep today's behaviour. Only
+those four calls carry it.
+
+Skip Step 2L/3L. Continue with Step 3.5, then Step 3.7, then Step 4 — Step 3.7 is where a
+`worktree` decision is acted on, and it skips itself when there is nothing to do.
 
 ---
 
@@ -242,7 +291,7 @@ gate_load_config {base_ref}
 ```
 
 **If that prints nothing:** no gates configured. Say so in one line, set `GATE_RESULTS=[]`,
-and continue to Step 4.
+and continue to Step 3.7.
 
 **Otherwise, before running anything, confirm the gate set.** Gate definitions come from a
 file any contributor can write, so the first run in a project — and every run after the
@@ -267,7 +316,7 @@ if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/gate-runner.sh" ]; then
 else
   source "$HOME/.claude/shared/pr-review/gate-runner.sh"
 fi
-gate_is_approved {base_ref}; echo "GATES_APPROVED_RC=$?"
+{state_root_env}gate_is_approved {base_ref}; echo "GATES_APPROVED_RC=$?"
 ```
 
 Read the printed code, not the fence's status. On a first run `gate_is_approved`
@@ -278,7 +327,8 @@ non-zero read as failure stops the gates. `$?` is used rather than an
 distinct from **1** (simply not approved yet): those are different situations and
 only one of them means "ask the user".
 
-If `GATES_APPROVED_RC` is 0, skip to the run. If it is 1, describe the set and ask. If it is 2, report the ledger error and treat the gates as unapproved:
+If `GATES_APPROVED_RC` is 0, skip to the run — except with `--auto-fix` when A.1 listed commits
+by someone other than the PR author: then describe the set and ask anyway, naming those commits. If it is 1, describe the set and ask. If it is 2, report the ledger error and treat the gates as unapproved:
 
 ```bash
 if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/gate-runner.sh" ]; then
@@ -294,13 +344,14 @@ Then use AskUserQuestion, showing that output:
 ```text
 These checks will run before the review:
 {gate_describe output}
+{only in an --auto-fix run that entered a worktree: "They run in the PR worktree at <PRW_PATH printed above>, on the PR's code."}
 
 Run them?
 [Run and remember]  [Run once]  [Skip gates]  [Cancel review]
 ```
 
 On **Run once**, proceed without recording. On **Skip gates**, set `GATE_RESULTS=[]`
-and continue to Step 4. On **Cancel review**, stop. On **Run and remember**, record
+and continue to Step 3.7. On **Cancel review**, stop. On **Run and remember**, record
 the approval — again in its own sourced fence:
 
 ```bash
@@ -309,7 +360,7 @@ if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/gate-runner.sh" ]; then
 else
   source "$HOME/.claude/shared/pr-review/gate-runner.sh"
 fi
-gate_record_approval {base_ref}
+{state_root_env}gate_record_approval {base_ref}
 ```
 
 ```bash
@@ -322,7 +373,7 @@ else
   source "$HOME/.claude/shared/pr-review/gate-runner.sh"
 fi
 
-gate_run_all {base_ref}
+{state_root_env}gate_run_all {base_ref}
 ```
 
 Collect the TSV output as `GATE_RESULTS` — one `{name, status, exitCode}` per line.
@@ -333,8 +384,14 @@ changed before and will again; the exit code is the durable contract.
 | Exit | Meaning | What to do |
 |---|---|---|
 | `0` | every gate passed, or none configured | continue |
-| `1` | at least one gate failed | **continue to Step 4 anyway** — reviewers get the failures as input — and mark the run FAILED |
+| `1` | at least one gate failed | **continue to Step 3.7 and Step 4 anyway** — reviewers get the failures as input — and mark the run FAILED |
 | `2` | configuration or approval error; nothing executed | report plainly, treat gates as not run, continue |
+
+**Plain review with the `worktree` decision:** the gates above ran in the user's checkout,
+which is not the PR head. Label `GATE_RESULTS` "launch checkout, not the PR head" wherever they
+appear (reviewer input, the summary, the report), and do **not** mark the run FAILED on them —
+they test the user's branch, not the PR. They still run there, unchanged: a plain review never
+runs the PR's own code.
 
 A failed gate means **the run is reported as failed and the command exits non-zero**. Reviewer
 dispatch still happens, because a failing test suite is exactly when review is most useful. No
@@ -345,6 +402,48 @@ reproducible and agent panels are not.
 it passes through intact — but it is sent to six or seven agents (the second reader receives it too), so cost scales with it. Above
 roughly 200KB, tell the user the size and ask whether to proceed. Never silently abandon the
 review, and never silently run it at unbounded cost.
+
+---
+
+### 3.7. Enter the PR worktree (plain remote review, `worktree` decision only)
+
+Skip unless Step 3R.1 printed `worktree` and the run is neither `--auto-fix` (A.1 already did
+this) nor `--interactive`. Create it without asking:
+
+```bash
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/pr-worktree.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/pr-worktree.sh"
+else
+  source "$HOME/.claude/shared/pr-review/pr-worktree.sh"
+fi
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+[ -n "$REPO" ] || { echo "ERROR: could not resolve the repository" >&2; exit 1; }
+# Still in the launch checkout, so its toplevel is the launch root.
+LAUNCH_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+# The commit Step 3R.1 printed: 40 hex characters, checked again by the helper.
+HEAD_OID='<HEAD_OID printed above>'
+PRW_RC=0
+PRW_PATH=$(prw_create_plain "$LAUNCH_ROOT" {PR_NUMBER} "$HEAD_OID" "$REPO") || PRW_RC=$?
+echo "PRW_RC=$PRW_RC"
+echo "PRW_PATH=$PRW_PATH"
+```
+
+The helper fetches the PR's numeric pull ref, checks the fetched commit is `headRefOid`, adds a
+detached worktree at `<LAUNCH_ROOT>/.claude/worktrees/pr-review-{PR_NUMBER}`, and — before the
+session goes anywhere near it — removes from it every PR file Claude Code or this plugin would
+load as memory, settings or instructions (`CLAUDE.md`, anything under `.claude/`, `.mcp.json`,
+symlinks out of the tree). Reviewers still see those files' changes in the diff.
+
+- **`PRW_RC` is 0:** say `Reviewing PR #{PR_NUMBER} in a worktree at <PRW_PATH printed above>`,
+  then call `EnterWorktree` with `path` set to that literal path. From here, substitute
+  `{state_root_env}` as Step 3R.1 says.
+- **Anything else:** say the cause the helper printed, then continue with today's diff-only
+  review in the current checkout, `{state_root_env}` empty. If the helper reports that it kept
+  a half-made worktree, name its path. Never enter a worktree the helper did not print.
+
+**Every exit after `EnterWorktree` goes through Step 5.6** — the normal end after Step 5.5,
+Cancel at any later prompt, declining the diff-size question, and a Workflow or reviewer-agent
+failure alike. A missed exit leaves the session inside the PR tree and the worktree on disk.
 
 ---
 
@@ -729,7 +828,7 @@ fi
 
 # Remote mode: resolve_report_path pr {number}
 # Local mode:  resolve_report_path branch {current_branch}
-resolve_report_path {mode} {identifier}
+{state_root_env}resolve_report_path {mode} {identifier}
 ```
 
 **If that exits non-zero, do not write the report anywhere else.** It refused because the
@@ -757,6 +856,7 @@ Report structure:
 **Mode**: team | team (partial: {roles}) | subagent | subagent (fallback: team start failed at {step}) — classic path only; omit on orchestrated
 **Generated**: {timestamp}
 **Head**: {head_sha}
+**Worktree**: {path} — only when the review ran in a PR worktree (Step 3.7 or A.1); omit otherwise
 **Auto-fix**: round {k} of at most {max_rounds} — only with `--auto-fix`; omit otherwise
 
 ## Deterministic gates
@@ -791,6 +891,34 @@ Second opinion: {model requested} — {ran | unavailable}
 **On the classic path, render the verification sections as `not-performed`** rather than
 omitting them. An absent section reads as "nothing was dropped"; an explicit `not-performed`
 reads as "this was not checked". Those are different claims and the file should not blur them.
+
+---
+
+### 5.6. Leave and clean up the PR worktree
+
+Runs whenever this run entered a worktree (Step 3.7, or A.1 for `--auto-fix`), and on every
+exit after that entry — never skipped because an earlier step stopped. Skip it otherwise.
+
+First call `ExitWorktree` with `action: "keep"`. It never deletes a worktree entered by path; it
+only returns the session to the launch directory. Then:
+
+```bash
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/pr-worktree.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/pr-worktree.sh"
+else
+  source "$HOME/.claude/shared/pr-review/pr-worktree.sh"
+fi
+# The literal Step 3R.1 printed (and quote-checked), never re-derived here: if
+# ExitWorktree did not leave the tree, the cwd's toplevel is the worktree, and
+# only the real launch root lets the helper see that and refuse.
+# {cleanup_mode}: plain after Step 3.7, autofix after --auto-fix's A.1.
+prw_cleanup '<LAUNCH_ROOT printed above>' {PR_NUMBER} {cleanup_mode}
+```
+
+Show its output as is. It removes the worktree only when it holds no uncommitted change and,
+with `--auto-fix`, no unpushed commit; if it cannot tell, or the session is somehow still
+inside the tree, it keeps the worktree and prints its path with the reason and the command to
+remove it. Removal is never forced. With `--auto-fix` the local branch is kept either way.
 
 ---
 
@@ -1065,6 +1193,7 @@ gh pr create \
 - **No commits on branch** (local): Suggest making commits first.
 - **Base branch doesn't exist** (local): Show available branches, ask user to pick.
 - **Agent timeout**: Show partial results with warning.
+- **PR worktree cannot be created** (remote): plain review says why and falls back to the diff-only review in place; `--auto-fix` stops with the reason. Neither ever reuses or forces an existing worktree.
 - **Push fails** (local PR creation): Show error, suggest manual push.
 
 ---
@@ -1077,7 +1206,8 @@ gh pr create \
 - **Architecture gate**: `architect` is the only agent here that runs conditionally — include it for structural/boundary/pattern changes, skip it for localized fixes, config, or test-only diffs. State the gate decision before dispatching.
 - **Team mode**: When `PR_REVIEW_EXEC_MODE` = `"team"`, agents cross-pollinate findings via SendMessage. `team` is the preferred mode: if the team cannot start, the sub-agent path runs and the `**Mode**:` line says so. `**Mode**` and `**Path**` are separate records — the team fallback never changes Path.
 - **Local review is local-only**: No GitHub interaction in `--local` mode unless the user explicitly opts in to PR creation in Step 7L.
-- **Auto-fix is bounded, not open-ended**: `--auto-fix` edits, commits and (remote) pushes without asking between rounds, but only on the user's own open, same-repository PR checked out at its head, on a clean tree; it fixes only verified critical/important findings, within the files the diff already touches; it pushes a HEAD only after a security review ran on that exact HEAD and that round found nothing blocking; and it stops on the round cap, on a round that does not reduce the addressable count, or on any safety rule in `references/auto-fix-loop.md`. No `--force`, no merge, no posted review.
+- **Auto-fix is bounded, not open-ended**: `--auto-fix` edits, commits and (remote) pushes without asking between rounds, but only on the user's own open, same-repository PR, in a checkout at its head (the user's own, or a worktree A.1 makes), on a clean tree; it fixes only verified critical/important findings, within the files the diff already touches; it pushes a HEAD only after a security review ran on that exact HEAD and that round found nothing blocking; and it stops on the round cap, on a round that does not reduce the addressable count, or on any safety rule in `references/auto-fix-loop.md`. No `--force`, no merge, no posted review.
+- **PR worktree**: a plain remote review or `--auto-fix` run from a checkout that is not at the PR head reviews in `<checkout>/.claude/worktrees/pr-review-<N>`, created without asking and announced. It is not governed by `worktree.enabled`. PR memory, settings and MCP files are removed from it before entry (`--auto-fix`: only `.claude/configuration.yml`), reports and approvals stay in the user's checkout, and Step 5.6 removes it only when nothing in it can be lost.
 - **Pending reviews**: Interactive mode creates a pending review (not submitted). User decides when to submit and with what verdict.
 - **Honest verdicts**: Don't sugarcoat — if there are critical issues, say so clearly.
 - **Verify after posting**: Always confirm the review URL matches the intended repository.

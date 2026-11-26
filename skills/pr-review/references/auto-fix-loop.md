@@ -37,7 +37,91 @@ Runs after Step 2R/3R (remote) or 2L/3L (local) and before the first Step 3.5. A
 **stops the command before any round runs** — print which check failed and what the user can
 do, and do not fall back to a plain review, because the user asked for something else.
 
-**Clean working tree, both modes.** The loop's commits must contain its own edits and nothing
+**Remote mode, first, in the launch checkout — the PR must be yours, open and pushable:**
+
+```bash
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+[ -n "$REPO" ] || { echo "ERROR: could not resolve the repository" >&2; exit 1; }
+PR_JSON=$(gh pr view {PR_NUMBER} --repo "$REPO" --json state,isCrossRepository,author,headRefName,headRefOid,baseRefName) || exit 1
+printf '%s\n' "$PR_JSON"
+HEAD_OID=$(jq -r .headRefOid <<< "$PR_JSON")
+echo "HEAD_OID=$HEAD_OID"
+gh api user --jq '.login'
+```
+
+Stop, naming the failing check, unless **all** of these hold:
+
+| Check | Why |
+|---|---|
+| `state` is `OPEN` | Nothing to fix on a merged or closed PR |
+| `isCrossRepository` is `false` | A fork's branch is not pushable from here |
+| `author.login` equals the `gh api user` login | The loop pushes commits; it does that only to the user's own PRs, never to someone else's branch |
+| `HEAD_OID` equals the one SKILL.md Step 3R.1 printed | The PR moved since the review started; re-run so the decision and the diff are about the same commit |
+
+No worktree exists until all of these pass.
+
+**Remote mode — commits by someone else.** A branch the user owns can still carry commits a
+collaborator pushed. Checked before any worktree exists, because entering one loads the files
+in it, and round 1 would otherwise run gates on them under an approval the user gave for their
+own code:
+
+```bash
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+[ -n "$REPO" ] || { echo "ERROR: could not resolve the repository" >&2; exit 1; }
+AUTHOR=$(gh pr view {PR_NUMBER} --repo "$REPO" --json author -q .author.login)
+gh api "repos/$REPO/pulls/{PR_NUMBER}/commits" --paginate \
+  | jq -r --arg a "$AUTHOR" '.[] | select((.author.login // "") != $a) | .sha[0:7]'
+```
+
+If it lists any sha: create the worktree below in `strict` mode (pass `strict` as the last
+argument), which strips the same instruction and settings files a plain review does, so files a
+collaborator wrote do not load into a session that edits and pushes; and round 1's Step 3.5 asks
+even when an approval is recorded, naming those commits. Runs only after the three checks above.
+
+**Remote mode, where the loop commits.** Step 3R.1 printed `unchanged` or `worktree`.
+
+- `unchanged` — the current checkout is the PR head. Continue below in it.
+- `worktree` — fixes are committed on a local branch named `headRefName` in a worktree for the
+  PR, created without asking:
+
+```bash
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/pr-worktree.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/pr-worktree.sh"
+else
+  source "$HOME/.claude/shared/pr-review/pr-worktree.sh"
+fi
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+[ -n "$REPO" ] || { echo "ERROR: could not resolve the repository" >&2; exit 1; }
+# The branch name is read from gh, never substituted: a collaborator chose it,
+# and the helper validates it again.
+HEAD_REF=$(gh pr view {PR_NUMBER} --repo "$REPO" --json headRefName -q .headRefName)
+# The commit SKILL.md Step 3R.1 printed: 40 hex characters, checked by the helper.
+HEAD_OID='<HEAD_OID printed above>'
+# Still in the launch checkout here, so its toplevel is the launch root.
+LAUNCH_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+PRW_RC=0
+# {strict} is the word strict when the check above listed commits, else empty.
+PRW_PATH=$(prw_create_autofix "$LAUNCH_ROOT" {PR_NUMBER} "$HEAD_REF" "$HEAD_OID" "$REPO" {strict}) || PRW_RC=$?
+echo "PRW_RC=$PRW_RC"
+echo "PRW_PATH=$PRW_PATH"
+```
+
+  The helper validates the branch name first, and refuses — each with its own
+  message — a remote for the repository that is not `origin`, the branch already checked out in
+  another worktree, a local branch of that name at a different commit, an existing worktree
+  path, and a fetched commit that is not `headRefOid`. It removes only
+  `.claude/configuration.yml` from the tree (the user's own PR keeps its other files), so the
+  plugin's settings still come from the user's checkout.
+
+  **`PRW_RC` non-zero stops the command** with the helper's message — never a fall-back to the
+  launch checkout or to a plain review. On 0, say
+  `Auto-fixing PR #{PR_NUMBER} in a worktree at <PRW_PATH printed above>`, call `EnterWorktree`
+  with that literal path, and from here substitute `{state_root_env}` as SKILL.md Step 3R.1
+  says — in every round's Step 3.5 and Step 5.5 calls, so approvals and reports stay in the
+  user's checkout. **Every stop or end after this point runs SKILL.md Step 5.6** with
+  `autofix` as the mode.
+
+**Clean working tree, both modes** — in the checkout the loop commits in: the worktree when one was entered above, otherwise the current one. The loop's commits must contain its own edits and nothing
 else, so it cannot start on uncommitted work:
 
 ```bash
@@ -63,30 +147,22 @@ A non-zero exit stops the command. If `git ls-files --error-unmatch
 not apply to a tracked file): "`--auto-fix` needs `.claude/session-state/` untracked — run
 `git rm -r --cached .claude/session-state`, commit, then re-run." Otherwise: "`--auto-fix`
 needs `.claude/session-state/` in `.gitignore` — add that line, commit it, then re-run." Do
-not fix either yourself; the working tree must stay clean.
+not fix either yourself; the working tree must stay clean. A worktree made above already
+passes this: the helper writes a self-ignoring `.claude/session-state/.gitignore` into it.
 
-**Remote mode — the PR must be yours, open, pushable, and checked out at its head:**
+**Remote mode — the checkout is the PR head.** In the checkout the loop commits in:
 
 ```bash
-REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-[ -n "$REPO" ] || { echo "ERROR: could not resolve the repository" >&2; exit 1; }
-gh pr view {PR_NUMBER} --repo "$REPO" --json state,isCrossRepository,author,headRefName,headRefOid,baseRefName
-gh api user --jq '.login'
-git branch --show-current
 git rev-parse HEAD
 ```
 
-Stop, naming the failing check, unless **all** of these hold:
-
 | Check | Why |
 |---|---|
-| `state` is `OPEN` | Nothing to fix on a merged or closed PR |
-| `isCrossRepository` is `false` | A fork's branch is not pushable from here |
-| `author.login` equals the `gh api user` login | The loop pushes commits; it does that only to the user's own PRs, never to someone else's branch |
-| the current branch equals `headRefName` | Fixes are committed to the branch that is checked out. Tell the user to run `gh pr checkout {PR_NUMBER}` themselves; this skill does not switch branches |
 | `git rev-parse HEAD` equals `headRefOid` | Otherwise the local diff is not the PR's diff. Tell the user to pull or push first |
 
-Then pin the merge base. It is fixed for the whole loop, so every round reviews the same
+Then pin the merge base — last, after the worktree (if any) was entered and the HEAD check
+passed, so `HEAD` below is the PR head and never the launch branch. Run in the launch checkout
+of a `worktree` run, every round would review the wrong range and nothing would say so. It is fixed for the whole loop, so every round reviews the same
 range — the PR's commits plus the loop's own. The base branch name is read from gh into a
 variable and checked, never substituted into the command line: git allows `$`, backticks and
 parentheses in branch names, and those would run inside double quotes.
@@ -322,6 +398,23 @@ ones; the scope check
 above has just shown those are exactly the files this step edited, and it keeps every path —
 diff-authored text — off the command line:
 
+In a worktree run, first make sure no edit recreated a file the helper stripped. Git ignores
+changes to it, so `git status` above cannot show one, and a recreated
+`.claude/configuration.yml` would change the plugin's settings for the rest of the session:
+
+```bash
+if [ -f "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/pr-worktree.sh" ]; then
+  source "${CLAUDE_PLUGIN_ROOT}/shared/pr-review/pr-worktree.sh"
+else
+  source "$HOME/.claude/shared/pr-review/pr-worktree.sh"
+fi
+prw_recreated "$(git rev-parse --show-toplevel)"
+echo "RECREATED_RC=$?"
+```
+
+Any `RECREATED:` line (`RECREATED_RC=0`) stops the loop (`stopped`), naming the file: the fix touched a stripped
+file, which the user has to handle.
+
 ```bash
 git add -u
 ```
@@ -373,7 +466,9 @@ Reports: {one path per round}
 
 Then:
 
-- **Remote mode** ends here. Never merge and never post a review; the user decides both.
+- **Remote mode** ends here. Never merge and never post a review; the user decides both. If
+  A.1 entered a worktree, run SKILL.md Step 5.6 (`autofix`) first, on every status: it keeps the
+  worktree while it holds unpushed commits and says so, and never deletes the local branch.
 - **Local mode** continues to Step 6L with the final round's verdict. Step 7L's security
   assertion is met by the final round's review, which covered the HEAD it would push.
 

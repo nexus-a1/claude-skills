@@ -46,10 +46,43 @@ _refuse_linked() {
     fi
 }
 
+# PR_REVIEW_STATE_ROOT, when set, names the checkout whose state directory holds
+# reports and the approval ledger. /pr-review sets it only after it has moved the
+# session into a throwaway worktree for the PR, so reports and approvals stay in
+# the user's own checkout and survive the worktree's removal. It must be the
+# toplevel of a checkout of the SAME repository; anything else is refused, never
+# replaced by the cwd, because a silent fallback would put approvals back in the
+# worktree that is about to be deleted.
+_abs_common_dir() {
+    local d="$1" c
+    c=$(git -C "$d" rev-parse --git-common-dir 2>/dev/null) || return 1
+    [[ "$c" == /* ]] || c="$d/$c"
+    (cd "$c" 2>/dev/null && pwd -P)
+}
+
+_validated_state_root() {
+    local want="$1" top cd_common want_common
+    [[ "$want" == /* && -d "$want" ]] || {
+        echo "pr-review: PR_REVIEW_STATE_ROOT is not an absolute directory: $want" >&2; return 2; }
+    top=$(git -C "$want" rev-parse --show-toplevel 2>/dev/null) || top=""
+    [[ -n "$top" && "$top" == "$want" ]] || {
+        echo "pr-review: PR_REVIEW_STATE_ROOT is not the toplevel of a checkout: $want" >&2; return 2; }
+    # Not --path-format=absolute: git before 2.31 echoes that flag back.
+    want_common=$(_abs_common_dir "$want") || want_common=""
+    cd_common=$(_abs_common_dir "$PWD") || cd_common=""
+    [[ -n "$want_common" && "$want_common" == "$cd_common" ]] || {
+        echo "pr-review: PR_REVIEW_STATE_ROOT is not a checkout of this repository: $want" >&2; return 2; }
+    printf '%s\n' "$want"
+}
+
 # Absolute path of the directory reports live in for the current repository.
 _report_dir() {
     local root
-    root=$(git rev-parse --show-toplevel 2>/dev/null) || return 2
+    if [[ -n "${PR_REVIEW_STATE_ROOT:-}" ]]; then
+        root=$(_validated_state_root "$PR_REVIEW_STATE_ROOT") || return 2
+    else
+        root=$(git rev-parse --show-toplevel 2>/dev/null) || return 2
+    fi
     [[ -n "$root" ]] || return 2
     printf '%s/%s\n' "$root" "$REPORT_SUBDIR"
 }
@@ -65,7 +98,9 @@ _report_dir() {
 verify_report_dir_excluded() {
     local dir
     dir=$(_report_dir) || return 2
-    git check-ignore -q "$dir" 2>/dev/null
+    # Asked of the checkout that owns the directory, so an overridden root is
+    # judged by its own ignore rules, not by the PR worktree's.
+    git -C "${dir%/"$REPORT_SUBDIR"}" check-ignore -q "$dir" 2>/dev/null
 }
 
 # Emit remediation the user can act on, rather than a bare refusal.

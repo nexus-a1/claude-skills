@@ -346,7 +346,7 @@ All skills that use multiple agents support configurable execution mode (`"subag
 
 | Key | Default | Purpose |
 |-----|---------|---------|
-| `worktree.enabled` | `false` | Opt-in toggle; code-modifying skills work in isolated worktrees |
+| `worktree.enabled` | `false` | Opt-in toggle; code-modifying skills work in isolated worktrees. Not consulted by `/pr-review`, which reviews a PR in its own worktree whenever the checkout is not at the PR head |
 | `worktree.root` | `.worktrees` | Multi-repo only: where ticket workspace directories are created |
 
 **`workspace`** — Multi-repo workspace definition. Optional.

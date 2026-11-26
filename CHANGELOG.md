@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.54.0] - 2026-11-26
+
+## What's Changed
+
+10 commits: 4 feat, 3 fix, 2 test, 1 merge. No breaking changes. One change, CL-157 (#454): `/pr-review` now reviews a pull request in its own git worktree when the checkout is not at the PR head.
+
+### Features
+
+- **pr-review**: a plain remote review (`/pr-review <number>`) run from another branch, a detached HEAD, a same-name branch at a different commit, or for a fork PR now creates a worktree at the PR head without asking, announces its path, and reviews there, so reviewers read the PR's files instead of the local checkout's — CL-157
+- **pr-review**: `--auto-fix` now works from any branch: it creates a worktree on a local branch named after the PR head (your own same-repository PR, through `origin` only), fixes, commits and pushes from there — CL-157
+- **pr-review**: new helper `plugin/shared/pr-review/pr-worktree.sh` holds every worktree decision, creation, strip and cleanup step — CL-157
+- **pr-review**: `report-path.sh` takes an optional, validated `PR_REVIEW_STATE_ROOT`, so reports and gate approvals stay in your own checkout and survive the worktree's removal — CL-157
+
+### Safety
+
+- Before the session enters a PR worktree, PR files Claude Code or the plugin would load as memory, settings or instructions are removed from it: `CLAUDE.md`, anything under `.claude/`, `.mcp.json`, and symlinks with an absolute or `..` target, matched ignoring case. Auto-fix on your own PR removes only `.claude/configuration.yml`, unless someone else has commits on the PR.
+- Checkout runs with git hooks and LFS smudge turned off. A PR tree with a newline in a path, a case collision on one of those names, or (auto-fix) a tracked `.claude` symlink is refused before anything is written to disk.
+- Plain-review gates still run in your checkout, never on the PR's code; on the worktree path their results are labelled and cannot fail the PR review.
+- The worktree is removed at the end only when it holds no uncommitted or unpushed work. Removal is never forced.
+- `--local`, `--interactive`, and runs already on the PR head behave as before. `worktree.enabled` does not apply to `/pr-review`.
+
+### Bug Fixes
+
+- **review**: findings from the code, security and architecture review and the skeptic pass on the worktree flow, fixed before merge — CL-157
+- **ci**: shellcheck SC2015 in `pr-worktree.sh` — CL-157
+
+### Other Changes
+
+- **test**: new `tests/pr-review/07-pr-worktree.test` (29 cases); contract tests pinning the step order, placeholder positions and the ban on forced shapes; regression tests for the state-root override, including a separate-git-dir checkout — CL-157
+
+### Known limits
+
+- Not yet checked in a live session: the manual end-to-end run against real PRs (CL-157 task T10).
+- GitHub Enterprise and `ssh://…:22` remotes are not matched: plain review falls back to the in-place diff review, and auto-fix stops.
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.53.1...v1.54.0
+
 ## [1.53.1] - 2026-11-12
 
 ## What's Changed
