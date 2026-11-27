@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.55.0] - 2026-11-27
+
+## What's Changed
+
+21 commits: 3 feat, 12 fix, 1 docs, 1 test, 4 merges. No breaking changes.
+
+### Features
+
+- **review-plan**: offer the work-session plan when no plan text is given — CL-158
+- **review-plan**: optional background text for the review panel — CL-158
+
+### Bug Fixes
+
+- **review-plan**: remove Step 2 temp files on every exit — CL-158
+- **review-plan**: keep lookup fields in place when one is empty — CL-158
+- **review-plan**: close gaps found in the manual end-to-end run — CL-158
+- **review-plan**: address the pre-push security audit, QA panel and PR #455 review findings — CL-158
+
+### Other Changes
+
+- **review-plan**: run the session lookup fence on fixtures (test) — CL-158
+- **skills**: add project-local `/skill-review` and its follow-up fixes (repository only, not shipped in the plugin) — #453, #456
+- **brainstorm**: record the redaction hook bugs (docs) — #457
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.54.0...v1.55.0
+
 ## [1.54.0] - 2026-11-26
 
 ## What's Changed
