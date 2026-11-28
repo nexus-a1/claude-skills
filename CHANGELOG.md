@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.56.0] - 2026-11-28
+
+## What's Changed
+
+32 commits: 8 feat, 21 fix, 1 docs, 1 refactor, 1 merge. No breaking changes. All from CL-159 (`/refactor` skill fixes, #458).
+
+### Features
+
+- **refactor**: shared git-safety library for checkpoints, staging, rollback and the per-category commit loop — CL-159
+- **refactor**: consented checkpoint commit and a recorded start commit — CL-159
+- **refactor**: review the full diff from the start commit — CL-159
+- **refactor**: batch Step 5 and Step B; the lead commits each category — CL-159
+- **refactorer**: batch every category and honour the architect-reviewed marker — CL-159
+- **refactor**: quality-gate script returns no-diff on an empty diff — CL-159
+- **refactor**: a safe flag per finding and one severity scale — CL-159
+
+### Bug Fixes
+
+- **refactorer**: replace the stash with a clean-tree rule and staged categories — CL-159
+- **refactor**: rollback never deletes ignored, plugin-owned or symlinked files — CL-159
+- **refactor**: git reads ignore user settings that change their output (`diff.relative`, `status.showUntrackedFiles`, `GIT_*_PATHSPECS`) — CL-159
+- **refactor**: refuse a records directory reached through a symlink inside the repository — CL-159
+- **refactor**: precheck refuses any staged plugin-owned file, including renames out of one — CL-159
+- **refactor**: gate challengers no longer judge their own dimension — CL-159
+- **refactor**: permissions cover the skill's own commands — CL-159
+- **hooks**: credential scan covers renamed and typechanged files, and runs from a subdirectory with `diff.relative` set — CL-159
+- Further review, audit and CI fixes from seven review rounds on #458 — CL-159
+
+### Other Changes
+
+- **refactor**: load the classic gate and team mode only when used (refactor) — CL-159
+- **refactor**: describe the checkpoint, batched commits and new challengers (docs) — CL-159
+
+**Full Changelog**: https://github.com/nexus-a1/claude/compare/v1.55.0...v1.56.0
+
 ## [1.55.0] - 2026-11-27
 
 ## What's Changed

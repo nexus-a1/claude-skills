@@ -236,18 +236,25 @@ var DIMENSIONS = [
 // Three challengers, three IDENTITIES — not one identity asked three questions.
 // Different system prompts mean different priors, which is what makes a finding
 // that survives all three stronger than one that survived the same reviewer
-// three times.
+// three times. And no challenger is also a DIMENSION above (CL-159): an agent
+// judging findings from its own dimension is grading its own work. So
+// reproduces is second-reader (read-only, owns no dimension) and evidence is
+// archaeologist (read-only, Sonnet in its own frontmatter: a citation check is
+// mechanical and does not need Opus). Models come from frontmatter only.
 var PERSPECTIVES = [
   {
     key: 'reproduces',
-    agentType: 'nexus:quality-guard',
+    agentType: 'nexus:second-reader',
     question: 'Does this finding describe something that actually happens in the code as it '
             + 'now stands? Trace the path. If you cannot construct a concrete case where the '
-            + 'claimed problem occurs, it is refuted.',
+            + 'claimed problem occurs, it is refuted. (You are a challenger on a quality-gate '
+            + 'panel here, not a cross-model second opinion: the different-model framing and '
+            + 'the MODEL first line in your own instructions do not apply. Answer only in the '
+            + 'verdict schema you are given.)',
   },
   {
     key: 'evidence',
-    agentType: 'nexus:security-auditor',
+    agentType: 'nexus:archaeologist',
     effort: 'low',
     question: 'Is the cited evidence admissible? Compare the quoted line against the claim. '
             + 'If the citation is absent, is not in the diff, or CONTRADICTS the claim, it is '
@@ -289,6 +296,23 @@ function usable(r) {
 }
 function present(x) {
   return x !== null && x !== undefined && !!x.verdicts && x.verdicts.length !== undefined
+}
+
+// An empty diff has nothing to review. The lead stops on it before calling
+// this script (SKILL.md 5.1.A); this is the backstop, and it returns before
+// any dispatch. It is `ok: true` on purpose: `ok: false` sends the lead to the
+// classic path, which would then review the same empty diff.
+if (typeof args.diff !== 'string' || args.diff.trim() === '') {
+  log('EMPTY DIFF — nothing to review; no agent dispatched')
+  return {
+    ok: true,
+    timestamp: args.timestamp,
+    iteration: args.iteration,
+    verdict: 'no-diff',
+    findings: [], dropped: [], coverage: [], bodies: [],
+    reviewIntegrity: { dispatched: 0, received: 0, complete: true, missing: [] },
+    panelIntegrity: { dispatched: 0, received: 0, complete: true, missing: [] },
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -538,7 +562,7 @@ return {
 {
   ok: true,
   timestamp, iteration,
-  verdict: 'pass' | 'fail' | 'unverified',
+  verdict: 'pass' | 'fail' | 'unverified' | 'no-diff',
   findings,          // not dropped; each with `verified` (false = not every challenger judged it) and its verdicts
   blockingCount,     // how many verified blocking findings decided the verdict
   dropped,           // two or more refutations, every lens's reason kept
@@ -549,13 +573,14 @@ return {
 }
 ```
 
-Three verdict values, and they are not interchangeable:
+Four verdict values, and they are not interchangeable:
 
 | Verdict | Meaning | What the lead does |
 |---|---|---|
 | `pass` | no blocking finding survived, and both panels were complete | exit the loop |
 | `fail` | at least one **verified** blocking finding survived | Step B, then another round if under the cap |
 | `unverified` | a panel was short (**nothing was tallied**), or some finding was not judged by every challenger | say so; do not report it as a pass |
+| `no-diff` | the diff was empty or whitespace; **no agent was dispatched** | stop with "Nothing to review"; never a pass |
 
 When no review dimension returns at all, the script returns `ok: false` instead, and the
 lead takes the classic path (SKILL.md 5.1.0).

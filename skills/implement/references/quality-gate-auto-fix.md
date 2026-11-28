@@ -9,12 +9,18 @@ Attempt auto-fix for each critical issue sequentially (max 2 fix attempts per is
 ```
 For each critical issue:
 
-1. Attempt fix via refactorer agent (attempt 1)
+1. Attempt fix via refactorer agent (attempt 1, caller-owned mode)
 2. Re-validate the fix
-3. If still unresolved: attempt fix via refactorer agent (attempt 2, with failure context)
+3. If still unresolved: attempt fix via refactorer agent (attempt 2, with failure context and
+   the list of files attempt 1 changed — those edits are still in place)
 4. Re-validate again
-5. Track result (resolved / unresolved)
+5. Track result (resolved / unresolved) and the files each attempt changed
 ```
+
+refactorer runs in **caller-owned** mode here (the prompts' first line), so it never reverts a
+failed attempt: it lists the files it changed and leaves them. Do not revert them yourself with
+`git checkout`/`git restore` either — the same files can also hold uncommitted implementation
+work. Attempt 2 is told what attempt 1 left behind.
 
 Read `references/quality-gate-prompts.md` for the detailed auto-fix and re-validation prompt templates (refactorer fix prompts, code-reviewer/security-auditor re-validation prompts, attempt 2 enriched context prompt).
 
@@ -32,7 +38,9 @@ Issue SA-2: UNRESOLVED - Both auto-fix attempts failed, requires manual interven
 
 If any fixes were applied successfully:
 
-1. Stage the fixed files.
+1. Stage the files the **successful** attempts changed. For an issue that stayed unresolved,
+   stage nothing of its attempts' files unless you reviewed them and they belong in the final
+   state; list any you leave unstaged in the report.
 2. Commit inline (the git-mutation-guard hook runs credential scan automatically):
 
    ```bash

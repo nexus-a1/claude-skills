@@ -396,8 +396,13 @@ for commit_segment in ${commit_segments[@]+"${commit_segments[@]}"}; do
     _scanned_dirs="$_scanned_dirs|$commit_dir|"
     repo_root=$(git -C "$commit_dir" rev-parse --show-toplevel 2>/dev/null || true)
     staged=()
-    while IFS= read -r _f; do [ -n "$_f" ] && staged+=("$_f"); done \
-        < <(git -C "$commit_dir" diff --cached --name-only --diff-filter=ACM 2>/dev/null)
+    # -z and core.quotePath=false: without them git prints a non-ASCII name
+    # quoted and escaped ("cl\303\251.env"), the -f test below fails on that
+    # spelling, and the file is silently left out of the scan. diff.relative=false:
+    # with it set, a commit from a subdirectory lists only that subdirectory,
+    # relative to it, and the scan saw nothing.
+    while IFS= read -r -d '' _f; do [ -n "$_f" ] && staged+=("$_f"); done \
+        < <(git -C "$commit_dir" -c core.quotePath=false -c diff.relative=false diff --cached -z --name-only --diff-filter=ACMRT 2>/dev/null)
     # `while read`, not mapfile. mapfile does not exist in bash 3.2, which is
     # still /bin/bash on macOS — and there the array expansion below would abort
     # under `set -u` with exit 1, a status Claude Code does not treat as a block.
@@ -413,8 +418,8 @@ for commit_segment in ${commit_segments[@]+"${commit_segments[@]}"}; do
     # same command carries `-a`.
     case "$_all_flag_dirs" in
         *"|$commit_dir|"*)
-            while IFS= read -r _f; do [ -n "$_f" ] && extra+=("$_f"); done \
-                < <(git -C "$commit_dir" diff --name-only --diff-filter=ACM 2>/dev/null)
+            while IFS= read -r -d '' _f; do [ -n "$_f" ] && extra+=("$_f"); done \
+                < <(git -C "$commit_dir" -c core.quotePath=false -c diff.relative=false diff -z --name-only --diff-filter=ACMRT 2>/dev/null)
             ;;
     esac
     targets=()

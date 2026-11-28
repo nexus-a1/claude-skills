@@ -737,13 +737,13 @@ requirements:
 #                               reviews one round and reports, it does not loop
 #                               and it never edits a file.
 #
-# --- One behavioural difference, worth knowing before enabling it -----------
+# --- Coverage gaps, on both paths ---------------------------------------------
 #
-# On the classic path test-writer ADDS tests for coverage the refactoring lost.
-# On the orchestrated path it reports those gaps and writes nothing — two agents
-# writing files inside one fan-out is a race, and a reviewer that silently
-# closes the gap it found leaves nothing to audit. The lead authors them in
-# Iteration Step B instead. Same coverage, one step later, and visible.
+# On both paths test-writer REPORTS the coverage the refactoring lost and writes
+# nothing during the gate rounds: a file write inside a fan-out is a race, and a
+# test file left mid-round would make the Step B refactorer refuse the dirty
+# tree. The lead hands the gaps to test-writer at Loop Exit, after the gate
+# passes. Same coverage, after the gate, and visible.
 #
 # --- Example ---------------------------------------------------------------
 #
